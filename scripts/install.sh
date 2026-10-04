@@ -100,21 +100,23 @@ curl -fsSL --retry 3 -o "$apk" "$apk_url"
 }
 
 # --- テレビに繋ぐ ---
+# adb には標準入力を渡さない。curl | bash で流すと、標準入力はこのスクリプトの続きで、
+# adb (とくに shell) がそれを読むと残りが食われる
 if [ -n "$pair" ]; then
     say "$pair とペア設定します"
-    "$adb" pair "$pair" "$code" || die 'ペア設定できませんでした (コードとポートはペア設定の画面に出ているものです)'
+    "$adb" pair "$pair" "$code" </dev/null || die 'ペア設定できませんでした (コードとポートはペア設定の画面に出ているものです)'
 fi
 say "$target に繋ぎます"
 # 届かない宛先への adb connect はなかなか返らないので、10秒で見切る (macOS には timeout が無い)
 connect() {
-    "$adb" connect "$target" >/dev/null 2>&1 &
+    "$adb" connect "$target" </dev/null >/dev/null 2>&1 &
     local pid=$!
     ( sleep 10; kill "$pid" 2>/dev/null ) &
     local watch=$!
     wait "$pid" 2>/dev/null || true
     kill "$watch" 2>/dev/null || true
 }
-state() { "$adb" -s "$target" get-state 2>&1 || true; }
+state() { "$adb" -s "$target" get-state </dev/null 2>&1 || true; }
 for _ in 1 2 3; do
     connect
     case "$(state)" in device | *unauthorized*) break ;; esac
@@ -133,12 +135,12 @@ done
 
 # --- 入れて起こす ---
 say 'インストールします'
-if ! out=$("$adb" -s "$target" install -r "$apk" 2>&1); then
+if ! out=$("$adb" -s "$target" install -r "$apk" </dev/null 2>&1); then
     case "$out" in
         *INSTALL_FAILED_UPDATE_INCOMPATIBLE*)
             die "入っている denpa TV と署名が違うので上書きできません。テレビで denpa TV を消してから流し直してください ($adb -s $target uninstall $PACKAGE で消せます。設定は消えます)" ;;
         *) die "インストールできませんでした: $out" ;;
     esac
 fi
-"$adb" -s "$target" shell am start -n "$PACKAGE/.MainActivity" >/dev/null
+"$adb" -s "$target" shell am start -n "$PACKAGE/.MainActivity" </dev/null >/dev/null
 say '入れて起動しました。終わったら、テレビのデバッグは切っておくのがおすすめです (docs/install.md)'
