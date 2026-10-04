@@ -59,3 +59,17 @@ class ChannelNumberTest {
         assertNull(service("GR", 3227310008, null).number)
     }
 }
+
+class NeighborTest {
+    private fun s(id: Long) = io.github.danything.denpatv.data.Service(id = id, type = "GR", name = "", live = "")
+    private val list = listOf(s(1), s(2), s(3))
+
+    @Test
+    fun 隣の局は端で回り_消えていたら頭から_空なら無し() {
+        assertEquals(2L, io.github.danything.denpatv.data.neighbor(list, 1, 1)?.id)
+        assertEquals(3L, io.github.danything.denpatv.data.neighbor(list, 1, -1)?.id)
+        assertEquals(1L, io.github.danything.denpatv.data.neighbor(list, 3, 1)?.id)
+        assertEquals(1L, io.github.danything.denpatv.data.neighbor(list, 99, 1)?.id)
+        assertNull(io.github.danything.denpatv.data.neighbor(emptyList(), 1, 1))
+    }
+}

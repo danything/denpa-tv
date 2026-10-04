@@ -45,6 +45,8 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
     var playing by remember { mutableStateOf<Service?>(null) }
     /** 局の一覧を読み終えたか (「読み込み中」と「局が無い」を分ける) */
     var ready by remember { mutableStateOf(false) }
+    /** 映している局が一覧から消えたと知らせたか */
+    var gone by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf(false) }
     var controls by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -83,8 +85,14 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
                 services = repo.services
                 val current = playing ?: return@onSuccess
                 val fresh = services.firstOrNull { it.id == current.id }
-                if (fresh == null) flash("${current.name} は局の一覧から無くなりました (スキャンし直した?)。上下で別の局へ")
-                else playing = fresh
+                when {
+                    fresh != null -> { playing = fresh; gone = false }
+                    // 知らせは消えたときに1度だけ (取り直しのたびに出さない)
+                    !gone -> {
+                        gone = true
+                        flash("${current.name} は局の一覧から無くなりました (スキャンし直した?)。上下で別の局へ")
+                    }
+                }
             }
         }
     }
@@ -92,10 +100,8 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
 
     if (!ready) return Centered("読み込んでいます…")
     val current = playing ?: return Centered("局がありません")
-    /** 隣の局。いまの局が一覧から消えていたら、頭から */
     fun zap(step: Int) {
-        val at = services.indexOfFirst { it.id == current.id }
-        playing = services[if (at < 0) 0 else (at + step + services.size) % services.size]
+        neighbor(services, current.id, step)?.let { playing = it }
     }
     PlayerFrame(
         player,

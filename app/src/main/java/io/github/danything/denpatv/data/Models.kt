@@ -24,6 +24,16 @@ data class Service(
 val Service.number: Int?
     get() = remoteControlKey ?: if (type == "GR") null else (id % 100_000).toInt()
 
+/**
+ * 隣の局 (`step` は -1 で前、1 で次。端は反対の端へ回る)。いまの局が一覧から消えていたら頭から。
+ * 一覧が空 (スキャンし直している最中など) なら null — 呼ぶ側は映しているものを続ける
+ */
+fun neighbor(services: List<Service>, currentId: Long, step: Int): Service? {
+    if (services.isEmpty()) return null
+    val at = services.indexOfFirst { it.id == currentId }
+    return services[if (at < 0) 0 else Math.floorMod(at + step, services.size)]
+}
+
 /** 種別の並びと名前 (denpa の番組表・ライブと同じ) */
 val SERVICE_TYPES = listOf("GR" to "地上波", "BS" to "BS", "CS" to "CS")
 
