@@ -6,6 +6,7 @@ import android.net.http.HttpEngine
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -19,11 +20,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -51,12 +56,14 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.ui.SubtitleView
+import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.Http
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executor
 
 /**
@@ -71,7 +78,7 @@ enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val after
     Recording(50_000, 50_000, 1_000, 2_000),
     /** ライブ (denpa が焼く H.264 / AV1)。焼き上がりが塊で届くので少しは溜める */
     Live(2_000, 8_000, 1_000, 1_500),
-    /** 低遅延 (生の TS)。届いたそばから出す */
+    /** 生の TS (MPEG-2)。届いたそばから出す */
     LowLatency(500, 2_000, 250, 500),
 }
 
@@ -154,6 +161,10 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
 
 /**
  * 映像と字幕と、上に重ねる文字。キーは呼ぶ側が受ける (ライブは局送り、録画は送り戻し)。
+ * **決定 (OK) は短押しと長押しを分けて `onCenter` に渡す** (長押しでメニュー。Menu キーの無いリモコンが多いので)。
+ *
+ * 上に重ねたもの (局の一覧・操作の帯) を閉じたら、**必ず映像にキーを戻す** — 閉じたものに合っていたまま
+ * 消えると、どこにも合わずリモコンが効かなくなる。開いている間は `active = false`
  *
  * 字幕は `SubtitleView` (View) で出す。焼いたものの字幕は PGS (絵) で、Compose の部品はまだ絵の字幕を描けない
  */
@@ -166,17 +177,47 @@ fun PlayerFrame(
     /** 映像がキーを受けるか。上に重ねたもの (局の一覧) が開いている間は false。閉じたら映像に戻す */
     active: Boolean = true,
     onKey: (KeyEvent) -> Boolean,
+    onCenter: (CenterPress.Action) -> Unit = {},
+    /** 知らせの下に出す進み (ライブの番組の進み)。null なら出さない */
+    progress: Pair<Long, Long>? = null,
     above: @Composable BoxScope.() -> Unit = {},
 ) {
     val focus = remember { FocusRequester() }
-    LaunchedEffect(active) { if (active) runCatching { focus.requestFocus() } }
+    val center = remember { CenterPress() }
+    val isActive by rememberUpdatedState(active)
+    val scope = rememberCoroutineScope()
+    /** 映像に合わせ直す。閉じたものが消えるのを1こま待ってから (同じこまだと、消えるときに合いが外れる) */
+    fun refocus() {
+        scope.launch {
+            withFrameNanos { }
+            if (isActive) runCatching { focus.requestFocus() }
+        }
+    }
+    LaunchedEffect(active) {
+        center.reset()
+        if (active) refocus()
+    }
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(focus)
+            // 開いていたものが閉じて合いがどこにも無くなったら、映像に戻す
+            .onFocusChanged { if (!it.hasFocus && isActive) refocus() }
             // 上に重ねたものが開いている間は受けない (そちらのキーがここまで上がってくるので)
-            .onKeyEvent { if (active && it.type == KeyEventType.KeyDown) onKey(it) else false }
+            .onKeyEvent { event ->
+                if (!active) return@onKeyEvent false
+                if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                    val action = when (event.type) {
+                        KeyEventType.KeyDown -> center.down(event.nativeKeyEvent.repeatCount, event.nativeKeyEvent.isLongPress)
+                        KeyEventType.KeyUp -> center.up()
+                        else -> null
+                    }
+                    action?.let(onCenter)
+                    return@onKeyEvent true
+                }
+                event.type == KeyEventType.KeyDown && onKey(event)
+            }
             .focusable(),
     ) {
         PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
@@ -192,20 +233,23 @@ fun PlayerFrame(
         )
         val text = error ?: overlay
         if (text != null) {
+            // 操作の帯と同じく、下の端に小さく (下から薄く暗くするだけ)
             Column(
                 Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .background(Color(0xE6000000)) // 映像の上でも読めるように濃いめに
-                    .padding(horizontal = 48.dp, vertical = 24.dp),
+                    .background(SCRIM)
+                    .padding(start = 48.dp, end = 48.dp, top = 48.dp, bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 text.lines().forEachIndexed { index, line ->
                     Text(
                         line,
-                        style = if (index == 0) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
-                        color = Color.White,
+                        style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
+                        color = if (index == 0) Color.White else Color(0xFFD0D0D0),
                     )
                 }
+                if (error == null) progress?.let { (at, length) -> ProgressLine(at, length) }
             }
         }
         above()

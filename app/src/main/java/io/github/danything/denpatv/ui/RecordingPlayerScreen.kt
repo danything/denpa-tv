@@ -7,20 +7,24 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.key
+import androidx.compose.ui.focus.FocusRequester
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import io.github.danything.denpatv.R
+import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
-import io.github.danything.denpatv.data.SPEEDS
+import io.github.danything.denpatv.data.recordingCommand
+import io.github.danything.denpatv.data.SEEK_STEP_MS
+import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.nextSpeed
 import io.github.danything.denpatv.data.speedLabel
@@ -36,10 +40,12 @@ import kotlinx.coroutines.launch
  * 録画を観る。解ける中でいちばん軽いファイルを開き (AV1 → H.264 → 生の TS)、
  * **続きの位置があればそこから** (denpa の `resumeMs`)。
  *
- * - 左右で 10 秒戻す / 30 秒送る、決定で止める・動かす
- * - 上下 (リモコンの次へ・前へ) でチャプター送り
- * - メニューで操作の帯を開く: **速さ** (1 / 1.25 / 1.5 / 2 倍) と **CM 飛ばし** (既定で入)、**削除** (2回押し)。
- *   ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。緑のボタンは速さを1段送る
+ * - 左右で 10 秒戻す・送る、決定で止める・動かす (キーの割り当ては data/Remote.kt と README の「操作」)
+ * - **下でシークバー** (左右で 10 秒ずつ。CM は色を変えて出す)、下でその下の操作の列へ
+ * - **上 (か決定の長押し・Menu) で操作の列**: 再生 / 一時停止、前・次のチャプター、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
+ *   **CM 飛ばし** (既定で入)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
+ *   動いている間は 5 秒触らなければ閉じる。戻るでも閉じる。緑のボタンは速さを1段送る
+ * - リモコンの次へ・前へでチャプター送り
  * - CM 飛ばしが入っていれば CM に入ったら終わりまで飛ぶ。区切りは動画に入っているチャプター (`CM` / `本編`)
  *
  * 観た位置は denpa に預ける (15 秒ごとと、閉じるとき)。ブラウザで続きから観られる
@@ -60,8 +66,26 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     val (player, error) = rememberPlayer(repo, Buffering.Recording, onUnauthorized)
     val (overlay, flash) = rememberFlash()
     val skipCm by repo.app.settings.skipCm.collectAsState(initial = true)
-    var controls by remember { mutableStateOf(false) }
-    BackHandler(enabled = controls) { controls = false }
+    /** 開いている帯 (null なら何も出していない) */
+    var bar by remember { mutableStateOf<Bar?>(null) }
+    BackHandler(enabled = bar != null) { bar = null }
+    /** 帯に出す位置と、止まっているか (帯を開いている間だけ取り直す) */
+    var at by remember { mutableLongStateOf(0L) }
+    var playing by remember { mutableStateOf(true) }
+    /** 帯で最後にキーを押したとき。動いている間は、5 秒触らなければ帯を閉じる */
+    var touched by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(bar) {
+        while (bar != null) {
+            at = player.currentPosition
+            playing = player.playWhenReady
+            delay(500)
+        }
+    }
+    LaunchedEffect(bar, touched, playing) {
+        if (bar == null || !playing) return@LaunchedEffect
+        delay(5_000)
+        bar = null
+    }
     /** 最後まで観た (終わりの帯を出す)。勝手に一覧へは戻らない */
     var ended by remember { mutableStateOf(false) }
     /** 消した (閉じるときに観た位置を預けない) */
@@ -83,7 +107,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
         player.prepare()
         player.playWhenReady = true
         val pace = repo.app.settings.playbackSpeed.first().takeIf { it != 1f }?.let { "  速さ ${speedLabel(it)}" } ?: ""
-        flash(if (resume > 0) "${recording.title}\n続きから (${position(resume)})$pace" else "${recording.title}$pace")
+        flash((if (resume > 0) "${recording.title}\n続きから (${position(resume)})$pace" else "${recording.title}$pace") + "\n$RECORDING_HINT")
     }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -98,7 +122,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != Player.STATE_ENDED || ended) return
                 ended = true
-                controls = false
+                bar = null
                 val length = length()
                 repo.app.scope.launch { repo.api.saveResume(repo.base, recording.id, length, length) }
             }
@@ -149,76 +173,109 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
             onLeave()
         }
     }
-    val deleteControl = Control(deleteLabel(delete.armed)) { if (delete.press()) deleteNow() }
+    fun togglePause() {
+        player.playWhenReady = !player.playWhenReady
+        playing = player.playWhenReady
+        flash(
+            (if (player.playWhenReady) "再生" else "一時停止  ${position(player.currentPosition)}") +
+                "\n速さ ${speedLabel(speed)}・CM 飛ばし ${if (skipCm) "入" else "切"}  $RECORDING_HINT",
+        )
+    }
+    /** 10 秒ずつ戻す・送る (左右とシークバー)。戻して CM を観に行ったなら、そこは飛ばさない */
+    fun step(direction: Int): Long {
+        val end = player.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
+        val to = (player.currentPosition + direction * SEEK_STEP_MS).coerceIn(0, end)
+        if (direction < 0) chapters.firstOrNull { it.isCm && to >= it.startMs && to < it.endMs }?.let { skipped += it.startMs }
+        player.seekTo(to)
+        at = to
+        return to
+    }
+    // CM を飛ばしているなら、送り先も本編だけ (CM の頭に止まっても、すぐ飛ばされるだけ)
+    fun nextChapterNow() {
+        val next = nextChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, player.currentPosition)
+        if (next == null) flash(if (chapters.isEmpty()) "チャプターがありません" else "最後のチャプターです")
+        else { player.seekTo(next.startMs); at = next.startMs; flash("${next.title}  ${position(next.startMs)}") }
+    }
+    fun previousChapterNow() {
+        val previous = previousChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, player.currentPosition)
+        if (previous == null) flash("チャプターがありません")
+        else {
+            if (previous.isCm) skipped += previous.startMs
+            player.seekTo(previous.startMs); at = previous.startMs; flash("${previous.title}  ${position(previous.startMs)}")
+        }
+    }
+    fun open(which: Bar) {
+        at = player.currentPosition
+        playing = player.playWhenReady
+        bar = which
+    }
+    val deleteControl = Control(deleteLabel(delete.armed), icon = R.drawable.ic_delete) { if (delete.press()) deleteNow() }
+    val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, error, active = !controls && !ended, above = {
+    PlayerFrame(player, overlay, error, active = bar == null && !ended, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
-                listOf("" to listOf(Control("一覧に戻る", on = true) { onLeave() }, deleteControl)),
+                listOf("" to listOf(Control("一覧に戻る", on = true, icon = R.drawable.ic_back) { onLeave() }, deleteControl)),
             )
-        } else if (controls) {
+        } else bar?.let { which ->
+            val total = player.duration.takeIf { it != C.TIME_UNSET }
+            LaunchedEffect(which) { if (which == Bar.SeekBar) runCatching { seekFocus.requestFocus() } }
             ControlBar(
-                recording.title,
+                "${recording.title}\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}",
                 listOf(
-                    "速さ" to SPEEDS.map { pace ->
-                        Control(speedLabel(pace), on = pace == speed) {
-                            scope.launch { repo.app.settings.setPlaybackSpeed(pace) }
-                        }
-                    },
-                    "CM" to listOf(
-                        Control(if (skipCm) "CMを自動で飛ばす: 入" else "CMを自動で飛ばす: 切", on = skipCm) {
+                    "" to listOf(
+                        Control(if (playing) "一時停止" else "再生", on = true, icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play) { togglePause() },
+                        Control("前のチャプター", icon = R.drawable.ic_previous) { previousChapterNow() },
+                        Control("次のチャプター", icon = R.drawable.ic_next) { nextChapterNow() },
+                    ),
+                    // 速さは1つの札で送る (1 → 1.25 → 1.5 → 2 → 1)。列を短くして、押す回数も少なく
+                    "" to listOf(
+                        Control("速さ ${speedLabel(speed)}", on = speed != 1f, icon = R.drawable.ic_speed) {
+                            scope.launch { repo.app.settings.setPlaybackSpeed(nextSpeed(speed)) }
+                        },
+                    ),
+                    "" to listOf(
+                        Control(if (skipCm) "CM 飛ばし 入" else "CM 飛ばし 切", on = skipCm, icon = R.drawable.ic_skip_cm) {
                             scope.launch { repo.app.settings.setSkipCm(!skipCm) }
                         },
                     ),
                     "" to listOf(deleteControl),
                 ),
+                header = { actions ->
+                    ProgressLine(at, total ?: 0, chapters, seekFocus, down = actions) { direction -> step(direction) }
+                },
+                focusActions = which == Bar.Actions,
+                onActivity = { touched = System.nanoTime() },
             )
         }
     }, onKey = { event ->
-        when (event.key) {
-            Key.DirectionLeft, Key.MediaRewind -> {
-                val to = (player.currentPosition - 10_000).coerceAtLeast(0)
-                // 戻して CM を観に行ったなら、そこは飛ばさない
-                chapters.firstOrNull { it.isCm && to >= it.startMs && to < it.endMs }?.let { skipped += it.startMs }
-                player.seekTo(to); flash(position(to)); true
-            }
-            Key.DirectionRight, Key.MediaFastForward -> {
-                player.seekTo(player.currentPosition + 30_000); flash(position(player.currentPosition)); true
-            }
-            Key.DirectionUp, Key.MediaNext, Key.MediaSkipForward -> {
-                // CM を飛ばしているなら、送り先も本編だけ (CM の頭に止まっても、すぐ飛ばされるだけ)
-                val next = nextChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, player.currentPosition)
-                if (next == null) flash(if (chapters.isEmpty()) "チャプターがありません" else "最後のチャプターです")
-                else { player.seekTo(next.startMs); flash("${next.title}  ${position(next.startMs)}") }
-                true
-            }
-            Key.DirectionDown, Key.MediaPrevious, Key.MediaSkipBackward -> {
-                val previous = previousChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, player.currentPosition)
-                if (previous == null) flash("チャプターがありません")
-                else {
-                    if (previous.isCm) skipped += previous.startMs
-                    player.seekTo(previous.startMs); flash("${previous.title}  ${position(previous.startMs)}")
-                }
-                true
-            }
-            Key.Menu -> { controls = true; true }
+        when (recordingCommand(event.nativeKeyEvent.keyCode)) {
+            RecordingCommand.Back -> { flash(position(step(-1))); true }
+            RecordingCommand.Forward -> { flash(position(step(1))); true }
+            RecordingCommand.SeekBar -> { open(Bar.SeekBar); true }
+            RecordingCommand.Actions -> { open(Bar.Actions); true }
+            RecordingCommand.NextChapter -> { nextChapterNow(); true }
+            RecordingCommand.PreviousChapter -> { previousChapterNow(); true }
+            RecordingCommand.PlayPause -> { togglePause(); true }
             // 速さを1段送る (1 → 1.25 → 1.5 → 2 → 1)
-            Key.ProgramGreen -> {
+            RecordingCommand.NextSpeed -> {
                 val next = nextSpeed(speed)
                 scope.launch { repo.app.settings.setPlaybackSpeed(next) }
                 flash("速さ ${speedLabel(next)}")
                 true
             }
-            Key.DirectionCenter, Key.Enter, Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> {
-                player.playWhenReady = !player.playWhenReady
-                flash(
-                    (if (player.playWhenReady) "再生" else "一時停止  ${position(player.currentPosition)}") +
-                        "\n速さ ${speedLabel(speed)}・CM 飛ばし ${if (skipCm) "入" else "切"} (メニューで変える)",
-                )
-                true
-            }
-            else -> false
+            null -> false
+        }
+    }, onCenter = { press ->
+        when (press) {
+            CenterPress.Action.Short -> togglePause()
+            CenterPress.Action.Long -> open(Bar.Actions)
         }
     })
 }
+
+/** 録画の帯をどこに合わせて開いたか。下キーならシークバー、上キー・決定の長押し・Menu なら操作の列 */
+private enum class Bar { SeekBar, Actions }
+
+private const val RECORDING_HINT = "下でシークバー・上でメニュー"
