@@ -54,6 +54,9 @@ import kotlinx.coroutines.launch
 @OptIn(UnstableApi::class)
 @Composable
 fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
+    /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
+    var leaving by remember { mutableStateOf(false) }
+    val leave = { leaving = true; onLeave() }
     val recording = remember { repo.recordings.firstOrNull { it.id == recordingId } }
     if (recording == null) {
         Centered("録画が見つかりません")
@@ -70,13 +73,15 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     /** 開いている帯 (null なら何も出していない) */
     var bar by remember { mutableStateOf<Bar?>(null) }
     BackHandler(enabled = bar != null) { bar = null }
+    BackHandler(enabled = bar == null) { leave() }
     /** 帯に出す位置と、止まっているか (帯を開いている間だけ取り直す) */
     var at by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(true) }
     /** 帯で最後にキーを押したとき。動いている間は、5 秒触らなければ帯を閉じる */
     var touched by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(bar) {
-        while (bar != null) {
+    // 帯を開いている間と止めている間 (止めると位置の帯を出す) は、位置を取り直す
+    LaunchedEffect(bar, playing) {
+        while (bar != null || !playing) {
             at = player.currentPosition
             playing = player.playWhenReady
             delay(500)
@@ -186,16 +191,15 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
             if (!done) return@launch flash("消せませんでした (録画中は消せません)")
             deleted = true
             repo.focusOnReturn = repo.forgetRecording(recording.id)
-            onLeave()
+            leave()
         }
     }
+    /** 止める・動かす。止めている間は位置の帯 (シークバーと同じ見た目、合わせない) を出したままにする */
     fun togglePause() {
         player.playWhenReady = !player.playWhenReady
         playing = player.playWhenReady
-        flash(
-            (if (player.playWhenReady) "再生" else "一時停止  ${position(player.currentPosition)}") +
-                "\n速さ ${speedLabel(speed)}・CM 飛ばし ${if (skipCm) "入" else "切"}  $RECORDING_HINT",
-        )
+        at = player.currentPosition
+        if (playing) flash("再生  速さ ${speedLabel(speed)}・CM 飛ばし ${if (skipCm) "入" else "切"}")
     }
     /** 10 秒ずつ戻す・送る (左右とシークバー)。戻して CM を観に行ったなら、そこは飛ばさない */
     fun step(direction: Int): Long {
@@ -228,11 +232,21 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     val deleteControl = Control(deleteLabel(delete.armed), icon = R.drawable.ic_delete) { if (delete.press()) deleteNow() }
     val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, error, active = bar == null && !ended, above = {
+    PlayerFrame(player, overlay, error, active = bar == null && !ended && !leaving, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
-                listOf("" to listOf(Control("一覧に戻る", on = true, icon = R.drawable.ic_back) { onLeave() }, deleteControl)),
+                // 観終えたものは消すことが多いので、最初は削除に合わせる (2回押しなので、1回では消えない)
+                listOf("" to listOf(Control("一覧に戻る", icon = R.drawable.ic_back) { leave() }, deleteControl.copy(initial = true))),
+            )
+        } else if (bar == null && !playing) {
+            // 止めている間の位置の帯。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上・長押しで操作の列)
+            val total = player.duration.takeIf { it != C.TIME_UNSET }
+            ControlBar(
+                "一時停止  ${recording.title}\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}  ・決定で再生  $RECORDING_HINT",
+                emptyList(),
+                header = { ProgressLine(at, total ?: 0, chapters) },
+                focusActions = false,
             )
         } else bar?.let { which ->
             val total = player.duration.takeIf { it != C.TIME_UNSET }
@@ -267,8 +281,9 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
         }
     }, onKey = { event ->
         when (recordingCommand(event.nativeKeyEvent.keyCode)) {
-            RecordingCommand.Back -> { flash(position(step(-1))); true }
-            RecordingCommand.Forward -> { flash(position(step(1))); true }
+            // 止めている間は位置の帯に出るので、知らせは出さない
+            RecordingCommand.Back -> { step(-1).let { if (playing) flash(position(it)) }; true }
+            RecordingCommand.Forward -> { step(1).let { if (playing) flash(position(it)) }; true }
             RecordingCommand.SeekBar -> { open(Bar.SeekBar); true }
             RecordingCommand.Actions -> { open(Bar.Actions); true }
             RecordingCommand.NextChapter -> { nextChapterNow(); true }

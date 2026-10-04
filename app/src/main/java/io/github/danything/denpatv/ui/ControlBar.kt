@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
@@ -46,14 +48,21 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
+import androidx.tv.material3.OutlinedButtonDefaults
 import androidx.tv.material3.Text
 import io.github.danything.denpatv.data.ChapterMark
 
 /** 操作の帯の押すもの1つ。`on` は入っているか (塗って出す)。`icon` は札の頭の印 (drawable) */
-data class Control(val label: String, val on: Boolean = false, val icon: Int? = null, val onClick: () -> Unit)
+data class Control(
+    val label: String,
+    val on: Boolean = false,
+    val icon: Int? = null,
+    /** 開いたときにここに合わせる (無ければ、入っているものの1つ目) */
+    val initial: Boolean = false,
+    val onClick: () -> Unit,
+)
 
 /**
  * 映像の下に出す帯。**ブラウザの denpa の再生の操作列にあたるもの** (画質・速さ・CM 飛ばしなど)。
@@ -84,6 +93,8 @@ fun BoxScope.ControlBar(
             .fillMaxWidth()
             .background(SCRIM)
             .onPreviewKeyEvent { onActivity(); false }
+            // 決定の長押しで開くので、押し続けている決定の続きと離しで札が押されないように (押し直したら効く)
+            .ignoreHeldCenter()
             .padding(start = 48.dp, end = 48.dp, top = 48.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -105,8 +116,11 @@ fun BoxScope.ControlBar(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (name.isNotEmpty()) Text(name, style = MaterialTheme.typography.labelSmall, color = Color(0xFFD0D0D0))
                     controls.forEach { control ->
-                        // 入っているものの1つ目に合わせる (無ければいちばん最初)
-                        val take = !focused && (control.on || controls.none { it.on })
+                        // `initial` のもの、無ければ入っているものの1つ目に合わせる (それも無ければいちばん最初)
+                        val take = !focused && when {
+                            groups.any { (_, all) -> all.any { it.initial } } -> control.initial
+                            else -> control.on || controls.none { it.on }
+                        }
                         if (take) focused = true
                         Chip(control, if (take) Modifier.focusRequester(first) else Modifier)
                     }
@@ -128,10 +142,26 @@ private fun Chip(control: Control, modifier: Modifier) {
             Icon(painterResource(it), contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
         }
-        Text(control.label, style = MaterialTheme.typography.labelMedium)
+        // 1行のまま中身に合わせて伸ばす (「もう一度押すと削除」のように押すと長くなる札が切れないように)
+        Text(control.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
     }
-    if (control.on) Button(onClick = control.onClick, modifier = modifier.height(32.dp), contentPadding = padding, content = content)
-    else OutlinedButton(onClick = control.onClick, modifier = modifier.height(32.dp), contentPadding = padding, content = content)
+    // 入れ切りで部品を替えない (Button と OutlinedButton を替えると、押した札から合いが外れて列の頭に飛ぶ・
+    // どこにも合わなくなる)。色だけ変える
+    val colors = if (control.on) {
+        OutlinedButtonDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        )
+    } else {
+        OutlinedButtonDefaults.colors()
+    }
+    OutlinedButton(
+        onClick = control.onClick,
+        modifier = modifier.heightIn(min = 32.dp).wrapContentWidth(unbounded = true),
+        contentPadding = padding,
+        colors = colors,
+        content = content,
+    )
 }
 
 /**

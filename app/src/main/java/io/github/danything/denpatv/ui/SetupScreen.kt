@@ -53,7 +53,7 @@ private sealed interface SetupState {
     data object Waiting : SetupState
     data object Checking : SetupState
     /** denpa にログインして、テレビを登録してもらうのを待っている */
-    data class Login(val userCode: String, val verificationUrl: String) : SetupState
+    data class Login(val verificationUrl: String) : SetupState
 }
 
 /**
@@ -93,7 +93,7 @@ fun SetupScreen(app: DenpaApp) {
                 donePage()
             }
             is ConnectStep.NeedsLogin -> {
-                state = SetupState.Login(step.code.userCode, step.verificationUrl)
+                state = SetupState.Login(step.verificationUrl)
                 message = null
                 polling = scope.launch {
                     val outcome = pollForToken(step.code, { api.deviceToken(step.base, step.code.deviceCode) })
@@ -105,7 +105,7 @@ fun SetupScreen(app: DenpaApp) {
                     }
                     if (outcome !is PairingOutcome.Paired) state = SetupState.Waiting
                 }
-                approvePage(step.verificationUrl, step.code.userCode)
+                approvePage(step.verificationUrl)
             }
             is ConnectStep.Failed -> {
                 state = SetupState.Waiting
@@ -131,9 +131,6 @@ fun SetupScreen(app: DenpaApp) {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("スマホで denpa にログインしてください", style = MaterialTheme.typography.headlineSmall)
                     Text("スマホが denpa の画面に移ります。ログインが済むと、テレビは自動で次に進みます。", style = MaterialTheme.typography.bodyLarge)
-                    Text("コード", style = MaterialTheme.typography.titleMedium)
-                    Text(current.userCode, style = MaterialTheme.typography.displayMedium)
-                    Text("スマホの画面にも同じコードが出ます。違っていたら進めないでください。", style = MaterialTheme.typography.bodyMedium)
                     Text("スマホが移らないときは、左の QR か次の URL を開いてください: ${current.verificationUrl}", style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = { polling?.cancel(); state = SetupState.Waiting }) { Text("やめる") }
                 }

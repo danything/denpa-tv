@@ -1,5 +1,6 @@
 package io.github.danything.denpatv.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -15,7 +17,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.DrawerValue
@@ -51,22 +59,27 @@ fun MainScreen(
     onUnauthorized: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf(Destination.Recordings) }
-    /** ライブから戻ったら、メニューの「ライブ」に合わせ直す (どこにも合っていないと最初の1押しが空振りする) */
-    var returnToLive by rememberSaveable { mutableStateOf(false) }
     val items = remember { Destination.entries.associateWith { FocusRequester() } }
-    val liveItem = items.getValue(Destination.Live)
     val drawer = rememberDrawerState(DrawerValue.Closed)
+    val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(Unit) {
-        if (returnToLive) runCatching { liveItem.requestFocus() }
-    }
-
-    // 開いたら、いま出している行き先に合わせる (左キーで近いものに合うので、録画の2列目から開くとライブに合ってしまう)
+    /** 最後に左キーを押したとき (左キーで開いたのか、戻ってきて合いが仮にメニューへ落ちたのかを分ける) */
+    var leftAt by remember { mutableLongStateOf(0L) }
+    // 左キーで開いたら、いま出している行き先に合わせる (近いものに合うので、録画の2列目から開くとライブに合ってしまう)。
+    // 観て戻ってきたときは、右の画面 (録画の一覧なら開いた録画) が合いを取るので、ここでは取らない。
+    // 取るとメニューが開いたままになる
     LaunchedEffect(drawer.currentValue) {
-        if (drawer.currentValue == DrawerValue.Open && !returnToLive) runCatching { items.getValue(selected).requestFocus() }
+        val byKey = System.nanoTime() - leftAt < 1_000_000_000L
+        if (drawer.currentValue == DrawerValue.Open && byKey) runCatching { items.getValue(selected).requestFocus() }
     }
+    // メニューが開いているときの戻るは、右の画面へ戻す (右キーと同じ)。何もしないと戻るが効かないように見える
+    BackHandler(enabled = drawer.currentValue == DrawerValue.Open) { focusManager.moveFocus(FocusDirection.Right) }
 
     NavigationDrawer(
+        modifier = Modifier.onPreviewKeyEvent {
+            if (it.key == Key.DirectionLeft && it.type == KeyEventType.KeyDown) leftAt = System.nanoTime()
+            false
+        },
         drawerState = drawer,
         drawerContent = {
             Column(
@@ -77,13 +90,7 @@ fun MainScreen(
                     NavigationDrawerItem(
                         selected = selected == destination,
                         onClick = {
-                            if (destination == Destination.Live) {
-                                returnToLive = true
-                                onLive()
-                            } else {
-                                returnToLive = false
-                                selected = destination
-                            }
+                            if (destination == Destination.Live) onLive() else selected = destination
                         },
                         leadingContent = { Icon(painterResource(destination.icon), contentDescription = null) },
                         modifier = Modifier.focusRequester(items.getValue(destination)),
@@ -92,12 +99,10 @@ fun MainScreen(
             }
         },
     ) {
-        // 右の画面に入ったら、ライブに戻す印は外す (録画を観て戻ったときは、開いた録画に合わせる)
-        Box(Modifier.onFocusChanged { if (it.hasFocus) returnToLive = false }) {
-            when (selected) {
-                Destination.Settings -> SettingsScreen(repo)
-                else -> RecordingsScreen(repo, onWatch, onUnauthorized, takeFocus = !returnToLive)
-            }
+        // 観て戻ったら右の画面が合いを取る (録画の一覧なら開いた録画、設定なら頭のボタン)
+        when (selected) {
+            Destination.Settings -> SettingsScreen(repo)
+            else -> RecordingsScreen(repo, onWatch, onUnauthorized)
         }
     }
 }

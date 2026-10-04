@@ -64,7 +64,10 @@ class DenpaApiTest {
         assertEquals("""{"at":754.5,"length":1800.0}""", request.body)
     }
 
-    /** 消すのは DELETE api/recordings/<id>。denpa は 204 を返す。断られたら false */
+    /**
+     * 消すのは DELETE api/recordings/<id>。denpa は 204 を返す。断られたら false。
+     * 本文が無くても Content-Type を付ける (無いと SvelteKit がよそのサイトからのフォーム送信と見なして 403)
+     */
     @Test
     fun 録画を消す() = runTest {
         val base = BaseUrl.normalize(denpa.url())!!
@@ -73,6 +76,7 @@ class DenpaApiTest {
         val request = denpa.requests.take()
         assertEquals("DELETE", request.method)
         assertEquals("/api/recordings/12", request.target)
+        assertEquals("application/json", request.contentType)
 
         denpa.enqueue("""{"message":"録画中は消せません"}""", code = 409)
         assertFalse(api.deleteRecording(base, 13))

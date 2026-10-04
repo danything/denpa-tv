@@ -37,7 +37,7 @@ import kotlinx.coroutines.launch
  * - 何も開いていないときの戻るは、メニューの画面へ
  */
 @Composable
-fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
+fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
     val saved by repo.app.settings.liveQuality.collectAsState(initial = LOADING_QUALITY)
     if (saved == LOADING_QUALITY) return
     val quality = remember(saved) { LiveQuality.choose(saved, repo.app.decoders) }
@@ -113,6 +113,9 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
         }
     }
     BackHandler(enabled = panel || controls) { panel = false; controls = false }
+    /** メニューの画面へ戻るところ (映像に合いを取り返させない。戻った先が合いを取るので) */
+    var leaving by remember { mutableStateOf(false) }
+    BackHandler(enabled = !panel && !controls) { leaving = true; onLeave() }
 
     if (!ready) return Centered("読み込んでいます…")
     val current = playing ?: return Centered("局がありません")
@@ -123,7 +126,7 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
         player,
         overlay,
         error,
-        active = !panel && !controls,
+        active = !panel && !controls && !leaving,
         onKey = { event ->
             when (liveCommand(event.nativeKeyEvent.keyCode)) {
                 LiveCommand.PreviousChannel -> { zap(-1); true }
