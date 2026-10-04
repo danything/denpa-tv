@@ -18,9 +18,9 @@ object Images {
     fun cached(url: String, widthPx: Int, heightPx: Int): Bitmap? = cache.get(key(url, widthPx, heightPx))
 
     /** 取ってきて、出す大きさに縮めて読む。読めなければ null。IO の上で呼ぶ */
-    fun load(url: String, widthPx: Int, heightPx: Int): Bitmap? {
+    fun load(url: String, widthPx: Int, heightPx: Int, token: String? = null): Bitmap? {
         cached(url, widthPx, heightPx)?.let { return it }
-        val res = runCatching { Http.request(URI(url)) }.getOrNull() ?: return null
+        val res = runCatching { Http.request(URI(url), token = token) }.getOrNull() ?: return null
         if (!res.ok || res.body.isEmpty()) return null
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(res.body, 0, res.body.size, bounds)

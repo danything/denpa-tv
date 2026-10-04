@@ -41,6 +41,7 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.Service
+import io.github.danything.denpatv.data.Unauthorized
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -52,6 +53,7 @@ fun HomeScreen(
     onLive: (Service) -> Unit,
     onWatch: (Recording) -> Unit,
     onSettings: () -> Unit,
+    onUnauthorized: () -> Unit,
 ) {
     var error by remember { mutableStateOf<String?>(null) }
     var services by remember { mutableStateOf(repo.services) }
@@ -69,6 +71,10 @@ fun HomeScreen(
             services = repo.services
             recordings = repo.recordings
             error = null
+        } catch (_: Unauthorized) {
+            // トークンが外された・期限切れ、または家の外と見なされた。繋ぐ画面へ
+            onUnauthorized()
+            return@LaunchedEffect
         } catch (e: Exception) {
             error = "denpa から一覧を取れません: ${e.message}"
         }
@@ -137,7 +143,13 @@ fun HomeScreen(
             onConfirm = {
                 deleting = null
                 scope.launch {
-                    if (repo.app.api.deleteRecording(repo.base, recording.id)) {
+                    val deleted = try {
+                        repo.api.deleteRecording(repo.base, recording.id)
+                    } catch (_: Unauthorized) {
+                        onUnauthorized()
+                        return@launch
+                    }
+                    if (deleted) {
                         runCatching { repo.refresh() }
                         services = repo.services
                         recordings = repo.recordings
@@ -187,7 +199,7 @@ private fun ServiceCard(repo: Repository, service: Service, modifier: Modifier, 
             contentAlignment = Alignment.Center,
         ) {
             val logo = repo.url(service.logo)
-            if (logo != null) RemoteImage(logo, ContentScale.Fit, Modifier.fillMaxSize())
+            if (logo != null) RemoteImage(logo, ContentScale.Fit, Modifier.fillMaxSize(), repo.token)
         }
         Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
             Text(
@@ -213,7 +225,7 @@ private fun ServiceCard(repo: Repository, service: Service, modifier: Modifier, 
 @Composable
 private fun RecordingCard(repo: Repository, recording: Recording, onClick: () -> Unit, onLongClick: () -> Unit) {
     Card(onClick = onClick, onLongClick = onLongClick, modifier = Modifier.width(280.dp).height(250.dp)) {
-        RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+        RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(16f / 9f), repo.token)
         Column(Modifier.padding(12.dp)) {
             Text(recording.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
             Text(

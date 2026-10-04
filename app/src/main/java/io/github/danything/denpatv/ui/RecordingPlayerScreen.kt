@@ -37,7 +37,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun RecordingPlayerScreen(repo: Repository, recordingId: Long) {
+fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: () -> Unit) {
     val recording = remember { repo.recordings.firstOrNull { it.id == recordingId } }
     if (recording == null) {
         Centered("録画が見つかりません")
@@ -48,7 +48,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long) {
         Centered("この端末で再生できる形のファイルがありません")
         return
     }
-    val (player, error) = rememberPlayer(repo, Buffering.Recording)
+    val (player, error) = rememberPlayer(repo, Buffering.Recording, onUnauthorized)
     val (overlay, flash) = rememberFlash()
     val skipCm by repo.app.settings.skipCm.collectAsState(initial = true)
     var chapters by remember { mutableStateOf(emptyList<ChapterMark>()) }
@@ -89,7 +89,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long) {
     LaunchedEffect(player) {
         while (true) {
             delay(15_000)
-            if (player.isPlaying) repo.app.api.saveResume(repo.base, recording.id, player.currentPosition / 1000.0, length())
+            if (player.isPlaying) repo.api.saveResume(repo.base, recording.id, player.currentPosition / 1000.0, length())
         }
     }
     // 閉じるときに1回。画面はもう閉じるので、アプリの寿命で送る (画面の scope だと送る前に取り消される)。
@@ -98,7 +98,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long) {
         onDispose {
             val at = player.currentPosition / 1000.0
             val length = length()
-            if (at > 0) repo.app.scope.launch { repo.app.api.saveResume(repo.base, recording.id, at, length) }
+            if (at > 0) repo.app.scope.launch { repo.api.saveResume(repo.base, recording.id, at, length) }
         }
     }
 

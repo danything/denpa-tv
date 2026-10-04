@@ -10,13 +10,30 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
-/** 覚えておくもの: 繋ぐ先の denpa・ライブの画質・CM を飛ばすか */
+/** 繋ぐ先。`token` は家の外の denpa に登録したときだけ */
+data class Connection(val server: String, val token: String?)
+
+/**
+ * 覚えておくもの: 繋ぐ先 (とトークン)・ライブの画質・CM を飛ばすか。
+ *
+ * **トークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
+ * 2025 年に全部非推奨になった。アプリの領域は他のアプリから読めず、トークンは denpa の画面からいつでも外せる
+ * (docs/libraries.md)
+ */
 class Settings(private val context: Context) {
     private val serverKey = stringPreferencesKey("server")
+    private val tokenKey = stringPreferencesKey("token")
+    private val lastServerKey = stringPreferencesKey("last_server")
     private val liveQualityKey = stringPreferencesKey("live_quality")
     private val skipCmKey = booleanPreferencesKey("skip_cm")
 
-    val server: Flow<String?> = context.dataStore.data.map { it[serverKey] }
+    /** 繋ぐ先。まだ無ければ null */
+    val connection: Flow<Connection?> = context.dataStore.data.map { prefs ->
+        prefs[serverKey]?.let { Connection(it, prefs[tokenKey]) }
+    }
+
+    /** 前に繋いでいた先 (外れたあと、繋ぐ画面に最初から入れておく) */
+    val lastServer: Flow<String?> = context.dataStore.data.map { it[lastServerKey] ?: it[serverKey] }
 
     /** `LiveQuality` の名前。未設定なら null (端末に合わせて選ぶ) */
     val liveQuality: Flow<String?> = context.dataStore.data.map { it[liveQualityKey] }
@@ -24,8 +41,20 @@ class Settings(private val context: Context) {
     /** 既定で飛ばす (denpa が CM の区切りをチャプターに書いた録画だけ効く) */
     val skipCm: Flow<Boolean> = context.dataStore.data.map { it[skipCmKey] ?: true }
 
-    suspend fun setServer(url: String) {
-        context.dataStore.edit { it[serverKey] = url }
+    suspend fun connect(server: String, token: String?) {
+        context.dataStore.edit {
+            it[serverKey] = server
+            it[lastServerKey] = server
+            if (token == null) it.remove(tokenKey) else it[tokenKey] = token
+        }
+    }
+
+    /** 繋ぐ先を忘れる (外したとき・トークンが効かなくなったとき)。繋ぐ画面に戻る */
+    suspend fun disconnect() {
+        context.dataStore.edit {
+            it.remove(serverKey)
+            it.remove(tokenKey)
+        }
     }
 
     suspend fun setLiveQuality(quality: LiveQuality) {

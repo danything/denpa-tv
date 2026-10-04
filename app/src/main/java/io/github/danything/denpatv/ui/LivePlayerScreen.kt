@@ -21,7 +21,7 @@ import kotlinx.coroutines.delay
  * 上下キー (とリモコンのチャンネル送り) で隣の局へ。決定でいま放送中の番組を出す
  */
 @Composable
-fun LivePlayerScreen(repo: Repository, serviceId: Long) {
+fun LivePlayerScreen(repo: Repository, serviceId: Long, onUnauthorized: () -> Unit) {
     val saved by repo.app.settings.liveQuality.collectAsState(initial = LOADING_QUALITY)
     if (saved == LOADING_QUALITY) return
     val quality = remember(saved) { LiveQuality.choose(saved, repo.app.decoders) }
@@ -29,7 +29,7 @@ fun LivePlayerScreen(repo: Repository, serviceId: Long) {
 
     var services by remember { mutableStateOf(repo.services) }
     var index by remember { mutableIntStateOf(services.indexOfFirst { it.id == serviceId }.coerceAtLeast(0)) }
-    val (player, error) = rememberPlayer(repo, buffering)
+    val (player, error) = rememberPlayer(repo, buffering, onUnauthorized)
     val (overlay, flash) = rememberFlash()
     CatchUp(player, buffering)
 

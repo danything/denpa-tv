@@ -51,6 +51,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.ui.SubtitleView
 import io.github.danything.denpatv.data.ChapterMark
+import io.github.danything.denpatv.data.Http
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -80,7 +81,7 @@ enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val after
  */
 @OptIn(UnstableApi::class)
 @SuppressLint("NewApi") // HttpEngine は hasHttpEngine() で確かめてから作る (DenpaApp.httpEngine)
-fun dataSourceFactory(context: Context, engine: HttpEngine?): DataSource.Factory {
+fun dataSourceFactory(context: Context, engine: HttpEngine?, token: String?): DataSource.Factory {
     val http: HttpDataSource.Factory = if (engine != null) {
         HttpEngineDataSource.Factory(engine, Executors.newSingleThreadExecutor())
             .setConnectionTimeoutMs(CONNECT_TIMEOUT_MS)
@@ -90,17 +91,23 @@ fun dataSourceFactory(context: Context, engine: HttpEngine?): DataSource.Factory
             .setConnectTimeoutMs(CONNECT_TIMEOUT_MS)
             .setReadTimeoutMs(READ_TIMEOUT_MS)
     }
+    // 家の外の denpa に登録してあれば、映像にもトークンを付ける
+    http.setDefaultRequestProperties(authorizationHeaders(token))
     return DefaultDataSource.Factory(context, http)
 }
+
+/** 映像の要求に足すヘッダ。トークンが無ければ空 */
+fun authorizationHeaders(token: String?): Map<String, String> =
+    Http.bearer(token)?.let { mapOf("Authorization" to it) } ?: emptyMap()
 
 private const val CONNECT_TIMEOUT_MS = 10_000
 // ライブは流しっぱなしなので読みの時間切れは長めに (止まったら ExoPlayer が言う)
 private const val READ_TIMEOUT_MS = 30_000
 
 @OptIn(UnstableApi::class)
-fun buildPlayer(context: Context, engine: HttpEngine?, buffering: Buffering): ExoPlayer =
+fun buildPlayer(context: Context, engine: HttpEngine?, token: String?, buffering: Buffering): ExoPlayer =
     ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory(context, engine)))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory(context, engine, token)))
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(buffering.minMs, buffering.maxMs, buffering.startMs, buffering.afterRebufferMs)
@@ -217,13 +224,17 @@ fun rememberFlash(): Pair<String?, (String) -> Unit> {
 
 /** ExoPlayer を画面の寿命に合わせる。エラーは文にして返す */
 @Composable
-fun rememberPlayer(repo: Repository, buffering: Buffering): Pair<ExoPlayer, String?> {
+fun rememberPlayer(repo: Repository, buffering: Buffering, onUnauthorized: () -> Unit = {}): Pair<ExoPlayer, String?> {
     val context = LocalContext.current
-    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, buffering) }
+    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, repo.token, buffering) }
     var error by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
+            @OptIn(UnstableApi::class)
             override fun onPlayerError(e: PlaybackException) {
+                // トークンが外された・期限切れ。繋ぐ画面へ
+                val code = (e.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
+                if (code == 401) onUnauthorized()
                 error = "再生できません: ${e.errorCodeName}"
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {

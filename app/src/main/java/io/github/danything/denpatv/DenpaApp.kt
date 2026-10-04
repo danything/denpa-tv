@@ -5,7 +5,6 @@ import android.net.http.HttpEngine
 import android.os.Build
 import android.os.ext.SdkExtensions
 import io.github.danything.denpatv.data.Decoders
-import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +15,6 @@ import kotlinx.coroutines.SupervisorJob
  * 数が少ないので、ここで作って画面に渡すほうが追いやすい
  */
 class DenpaApp : Application() {
-    val api: DenpaApi by lazy { DenpaApi() }
     val settings: Settings by lazy { Settings(this) }
     val decoders: Decoders by lazy { Decoders.detect() }
 

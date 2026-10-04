@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 
 /** URL の絵。読み終えるまでは地の色だけ。出す大きさに縮めて読む (`Images`) */
 @Composable
-fun RemoteImage(url: String?, contentScale: ContentScale, modifier: Modifier = Modifier) {
+fun RemoteImage(url: String?, contentScale: ContentScale, modifier: Modifier = Modifier, token: String? = null) {
     BoxWithConstraints(modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
         val density = LocalDensity.current
         val width = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
@@ -29,7 +29,7 @@ fun RemoteImage(url: String?, contentScale: ContentScale, modifier: Modifier = M
             url, width, height,
         ) {
             if (url != null && value == null) {
-                value = withContext(Dispatchers.IO) { Images.load(url, width, height) }?.asImageBitmap()
+                value = withContext(Dispatchers.IO) { Images.load(url, width, height, token) }?.asImageBitmap()
             }
         }
         image?.let { Image(it, contentDescription = null, contentScale = contentScale, modifier = Modifier.matchParentSize()) }

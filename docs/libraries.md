@@ -91,6 +91,28 @@ OkHttp (と Retrofit / Ktor) を採らない理由:
 やり方 (`inSampleSize` で 2 の冪に縮める) と `LruCache` で 60 行ほどに収まる (`data/Images.kt`、
 `ui/RemoteImage.kt`)。Coil 3.6.3 / Glide 5 の持つディスクキャッシュ・変換・GIF などは使わない。
 
+### QR コード: Project Nayuki の QR Code generator を同梱する (MIT)
+
+繋ぐ画面で、スマホに読ませる QR を出すのに使う (2026-10-04 に決めた)。
+
+| 候補 | 版 (日付) | 見たところ |
+| --- | --- | --- |
+| ZXing (`com.google.zxing:core`) | 3.5.4 (2025-11) | 定番。読み取り (カメラ) まで入った大きなライブラリで、要るのは書き出しの一部だけ。依存が1つ増える |
+| **[QR Code generator](https://github.com/nayuki/QR-Code-generator) (Project Nayuki)** | main 3c6d0b3 (2026-08-31) | 書き出しだけの小さなもの。Java 版は依存なしの 4 ファイル (約 1,300 行)。MIT |
+
+→ **Nayuki の Java 版を `app/src/main/java/io/nayuki/qrcodegen/` に同梱**
+(`QrCode` / `QrSegment` / `BitBuffer` / `DataTooLongException`。漢字向けの `QrSegmentAdvanced` は使わないので入れない)。
+依存を増やさず、描くのは Compose の Canvas (`ui/QrCodeView.kt`)。各ファイルの頭に元の著作権表示と MIT の許諾文を残してある。
+更新は Renovate では追えないので、上流に直しが入ったら手で写す。
+
+### トークンの置き場: 暗号化しない DataStore
+
+テレビを denpa に登録して受け取るトークンは、ほかの設定と同じ DataStore (アプリの領域) に置く。
+EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta01 (2025-06) で**全部非推奨**になり、
+「プラットフォームの API と Android Keystore を直に使え」とされている
+([リリースノート](https://developer.android.com/jetpack/androidx/releases/security))。アプリの領域は他のアプリから読めず、
+トークンは denpa の画面から (またはこのアプリの「サーバーから外す」で) いつでも無効にできるので、暗号化の仕組みは足さない。
+
 ### DI: 入れない (手で渡す)
 
 | 候補 | 版 | 見たところ |
@@ -108,7 +130,7 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 ## まとめ: AndroidX / Kotlin の外から入れているもの
 
 なし。kotlinx.serialization と kotlinx.coroutines は Kotlin 公式 (JetBrains) のライブラリで、
-Navigation 3 と DataStore が既に使っている。
+Navigation 3 と DataStore が既に使っている。QR の符号化だけはソースを同梱している (上の「QR コード」)。
 
 ## テストだけで使うもの
 

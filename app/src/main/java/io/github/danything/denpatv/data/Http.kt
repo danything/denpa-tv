@@ -17,13 +17,17 @@ object Http {
         fun text(): String = body.toString(Charsets.UTF_8)
     }
 
-    fun request(url: URI, method: String = "GET", json: String? = null): Response {
+    /**
+     * `token` があれば `Authorization: Bearer` を付ける (denpa の外から繋ぐとき。docs/pairing は README)
+     */
+    fun request(url: URI, method: String = "GET", json: String? = null, token: String? = null): Response {
         val connection = url.toURL().openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = CONNECT_TIMEOUT_MS
             connection.readTimeout = READ_TIMEOUT_MS
             connection.requestMethod = method
             connection.instanceFollowRedirects = true
+            bearer(token)?.let { connection.setRequestProperty("Authorization", it) }
             if (json != null) {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")
@@ -37,9 +41,19 @@ object Http {
         }
     }
 
-    fun get(url: URI): String {
-        val res = request(url)
+    fun get(url: URI, token: String? = null): String {
+        val res = request(url, token = token)
+        if (res.code == 401) throw Unauthorized(url)
         if (!res.ok) throw IOException("${res.code} $url")
         return res.text()
     }
+
+    /** Authorization の値。トークンが無ければ null */
+    fun bearer(token: String?): String? = token?.takeIf { it.isNotEmpty() }?.let { "Bearer $it" }
 }
+
+/**
+ * denpa に断られた (401)。**トークンが無効になった (外された・期限切れ) か、denpa が家の外と見なした。**
+ * 呼ぶ側はトークンを捨てて、繋ぐ画面に戻す
+ */
+class Unauthorized(url: URI) : IOException("401 $url")

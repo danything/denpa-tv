@@ -16,13 +16,13 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Switch
 import androidx.tv.material3.Text
-import io.github.danything.denpatv.DenpaApp
 import io.github.danything.denpatv.data.LiveQuality
 import kotlinx.coroutines.launch
 
 /** 設定。ライブの画質・CM を飛ばすか・繋ぐ先 */
 @Composable
-fun SettingsScreen(app: DenpaApp, server: String, onChangeServer: () -> Unit) {
+fun SettingsScreen(repo: Repository) {
+    val app = repo.app
     val scope = rememberCoroutineScope()
     val saved by app.settings.liveQuality.collectAsState(initial = null)
     val skipCm by app.settings.skipCm.collectAsState(initial = true)
@@ -62,7 +62,16 @@ fun SettingsScreen(app: DenpaApp, server: String, onChangeServer: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
         )
 
-        Text("繋ぐ先: $server", style = MaterialTheme.typography.titleMedium)
-        Button(onClick = onChangeServer) { Text("繋ぐ先を変える") }
+        Text(
+            "繋ぐ先: ${repo.base}" + if (repo.token != null) " (このテレビを登録済み)" else "",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        // 登録してあれば denpa からも外す (トークンを無効にする)。家の LAN の繋ぎ方なら忘れるだけ
+        Button(onClick = {
+            scope.launch {
+                if (repo.token != null) repo.api.logout(repo.base)
+                app.settings.disconnect()
+            }
+        }) { Text(if (repo.token != null) "サーバーから外す" else "繋ぐ先を変える") }
     }
 }
