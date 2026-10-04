@@ -74,6 +74,7 @@ class ConnectTest {
         denpa.requests.take()
         val logout = denpa.requests.take()
         assertEquals("/api/device/logout", logout.target)
+        assertEquals("application/json", logout.contentType)
         assertEquals("Bearer denpa_abc", logout.authorization)
 
         // トークンの無い繋ぎ方では何も付けない

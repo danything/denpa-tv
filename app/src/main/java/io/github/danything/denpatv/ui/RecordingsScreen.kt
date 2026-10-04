@@ -62,8 +62,6 @@ fun RecordingsScreen(
     onWatch: (Recording) -> Unit,
     onUnauthorized: () -> Unit,
     modifier: Modifier = Modifier,
-    /** 開いたときに一覧へ合わせるか (ライブから戻ったときは、横のメニューに合わせるので false) */
-    takeFocus: Boolean = true,
 ) {
     var recordings by remember { mutableStateOf(repo.recordings) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -95,7 +93,6 @@ fun RecordingsScreen(
         if (repo.recordings.isEmpty() || retry > 0) guarded { repo.refreshRecordings() }
     }
     LaunchedEffect(loaded) {
-        if (!takeFocus) return@LaunchedEffect
         // 再生の画面で消して戻ってきたら、その隣に合わせる
         repo.focusOnReturn?.let { lastFocused = it; repo.focusOnReturn = null }
         // 観て戻ったら開いた録画に。初めては一番下 (いちばん古い録画): 古いものから片付けられるように (ブラウザの denpa と同じ)

@@ -66,8 +66,10 @@ fun RecordingDetailDialog(
     LaunchedEffect(Unit) { runCatching { play.requestFocus() } }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // 長押しで開いたので、離すまでのキーがこの窓に来る。「再生」が押されないよう捨てる
         Row(
             Modifier
+                .ignoreHeldCenter()
                 .width(1200.dp)
                 .fillMaxHeight(0.86f)
                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
@@ -80,7 +82,10 @@ fun RecordingDetailDialog(
                 Button(onClick = onPlay, modifier = Modifier.focusRequester(play)) {
                     Text(if (resume != null) "続きから再生 (${position(resume)})" else "再生")
                 }
-                OutlinedButton(onClick = { if (delete.press()) onDelete() }) { Text(deleteLabel(delete.armed)) }
+                OutlinedButton(onClick = { if (delete.press()) onDelete() }) {
+                    // 押すと「もう一度押すと削除」と長くなる。1行のまま伸ばす (切れないように)
+                    Text(deleteLabel(delete.armed), maxLines = 1, softWrap = false)
+                }
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item {

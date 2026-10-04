@@ -66,7 +66,7 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?) {
                     onUnauthorized = unauthorized,
                 )
             }
-            entry<Live> { LivePlayerScreen(repo, unauthorized) }
+            entry<Live> { LivePlayerScreen(repo, onLeave = { backStack.removeAt(backStack.lastIndex) }, onUnauthorized = unauthorized) }
             entry<Watch> { key ->
                 RecordingPlayerScreen(repo, key.recordingId, onLeave = { backStack.removeAt(backStack.lastIndex) }, onUnauthorized = unauthorized)
             }

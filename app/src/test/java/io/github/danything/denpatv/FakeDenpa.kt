@@ -9,7 +9,7 @@ import java.util.concurrent.LinkedBlockingQueue
  * 届いた要求は `requests` に溜める
  */
 class FakeDenpa : AutoCloseable {
-    data class Request(val method: String, val target: String, val body: String, val authorization: String?)
+    data class Request(val method: String, val target: String, val body: String, val authorization: String?, val contentType: String? = null)
 
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val responses = LinkedBlockingQueue<Pair<Int, String>>()
@@ -18,7 +18,13 @@ class FakeDenpa : AutoCloseable {
     init {
         server.createContext("/") { exchange ->
             val body = exchange.requestBody.readBytes().toString(Charsets.UTF_8)
-            requests += Request(exchange.requestMethod, exchange.requestURI.toString(), body, exchange.requestHeaders.getFirst("Authorization"))
+            requests += Request(
+                exchange.requestMethod,
+                exchange.requestURI.toString(),
+                body,
+                exchange.requestHeaders.getFirst("Authorization"),
+                exchange.requestHeaders.getFirst("Content-Type"),
+            )
             val (code, text) = responses.poll() ?: (404 to "")
             val bytes = text.toByteArray()
             exchange.sendResponseHeaders(code, if (bytes.isEmpty()) -1 else bytes.size.toLong())

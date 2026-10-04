@@ -5,7 +5,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
@@ -21,6 +26,12 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(repo: Repository) {
     val app = repo.app
     val scope = rememberCoroutineScope()
+    // 開いたら (メニューで選んだとき・ライブから戻ったとき) ボタンに合わせる。どこにも合っていないとリモコンが空振りする
+    val button = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        runCatching { button.requestFocus() }
+    }
 
     Column(
         Modifier.fillMaxSize().padding(48.dp),
@@ -33,7 +44,7 @@ fun SettingsScreen(repo: Repository) {
             style = MaterialTheme.typography.titleMedium,
         )
         // 登録してあれば denpa からも外す (トークンを無効にする)。家の LAN の繋ぎ方なら忘れるだけ
-        Button(onClick = {
+        Button(modifier = Modifier.focusRequester(button), onClick = {
             scope.launch {
                 if (repo.token != null) repo.api.logout(repo.base)
                 app.settings.disconnect()

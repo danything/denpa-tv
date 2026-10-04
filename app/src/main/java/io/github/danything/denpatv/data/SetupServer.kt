@@ -139,7 +139,7 @@ private fun page(body: String) = """<!doctype html><html lang="ja"><head><meta c
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>denpa TV</title>
 <style>body{font-family:system-ui,sans-serif;margin:24px;line-height:1.6;background:#13171f;color:#eee}
 input,button{font-size:18px;padding:12px;width:100%;box-sizing:border-box;border-radius:8px;border:0;margin-top:8px}
-button{background:#0172ad;color:#fff}a{color:#7cc4ff}.code{font-size:32px;letter-spacing:4px;font-weight:bold}
+button{background:#0172ad;color:#fff}a{color:#7cc4ff}
 .error{color:#ff8a80}</style></head><body>$body</body></html>"""
 
 /** スマホに出すフォーム */
@@ -156,11 +156,11 @@ fun donePage() = page("<h1>設定しました</h1><p>テレビの画面に戻っ
 
 /**
  * denpa にテレビを登録してもらう。denpa の登録の画面へ送る (ログインが要ればそこで)。
- * テレビにも同じコードが出ているので見比べられる
+ * コードは見せない — QR でこのテレビのページを開いた時点でテレビと結び付いていて、コードは URL に入って届く
+ * (`verification_uri_complete`)。見比べさせても足すものが無い
  */
-fun approvePage(verificationUrl: String, userCode: String) = page(
+fun approvePage(verificationUrl: String) = page(
     """<h1>denpa にログインしてください</h1>
-<p>テレビに出ているコードと同じか確かめてください。</p><p class="code">${escape(userCode)}</p>
 <p><a href="${escape(verificationUrl)}">denpa を開く</a> (自動で移ります)</p>
 <script>setTimeout(function(){location.href=${escapeJs(verificationUrl)}},1500)</script>""",
 )

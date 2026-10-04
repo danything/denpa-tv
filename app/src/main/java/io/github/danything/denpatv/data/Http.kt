@@ -28,9 +28,11 @@ object Http {
             connection.requestMethod = method
             connection.instanceFollowRedirects = true
             bearer(token)?.let { connection.setRequestProperty("Authorization", it) }
+            // GET 以外には本文が無くても Content-Type を付ける。denpa (SvelteKit) は Content-Type も Origin も無い
+            // GET 以外を「よそのサイトからのフォーム送信」と見なして 403 で断る (本文の無い DELETE が消せなかった)
+            if (method != "GET") connection.setRequestProperty("Content-Type", "application/json")
             if (json != null) {
                 connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json")
                 connection.outputStream.use { it.write(json.toByteArray()) }
             }
             val code = connection.responseCode

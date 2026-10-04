@@ -20,8 +20,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,7 +61,6 @@ import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.util.concurrent.Executor
 
 /**
@@ -164,7 +161,9 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
  * **決定 (OK) は短押しと長押しを分けて `onCenter` に渡す** (長押しでメニュー。Menu キーの無いリモコンが多いので)。
  *
  * 上に重ねたもの (局の一覧・操作の帯) を閉じたら、**必ず映像にキーを戻す** — 閉じたものに合っていたまま
- * 消えると、どこにも合わずリモコンが効かなくなる。開いている間は `active = false`
+ * 消えると、どこにも合わずリモコンが効かなくなる。`active` の間は**映像そのものに合っているか見張り、外れていたら
+ * 取り戻す** (閉じたものが消える間・帯が勝手に消えたとき・端末によって遅れて合いが外れる場合も)。
+ * 開いている間と、画面を離れるとき (一覧に戻る間に一覧が合いを取るので、取り返さない) は `active = false`
  *
  * 字幕は `SubtitleView` (View) で出す。焼いたものの字幕は PGS (絵) で、Compose の部品はまだ絵の字幕を描けない
  */
@@ -184,18 +183,17 @@ fun PlayerFrame(
 ) {
     val focus = remember { FocusRequester() }
     val center = remember { CenterPress() }
-    val isActive by rememberUpdatedState(active)
-    val scope = rememberCoroutineScope()
-    /** 映像に合わせ直す。閉じたものが消えるのを1こま待ってから (同じこまだと、消えるときに合いが外れる) */
-    fun refocus() {
-        scope.launch {
-            withFrameNanos { }
-            if (isActive) runCatching { focus.requestFocus() }
-        }
-    }
+    /** 映像そのものに合っているか */
+    var focused by remember { mutableStateOf(false) }
     LaunchedEffect(active) {
         center.reset()
-        if (active) refocus()
+        if (!active) return@LaunchedEffect
+        // 閉じたものが消えるのを1こま待ってから合わせ、その後も外れたら取り戻す
+        while (true) {
+            withFrameNanos { }
+            if (!focused) runCatching { focus.requestFocus() }
+            delay(FOCUS_WATCH_MS)
+        }
     }
     Box(
         Modifier
@@ -203,7 +201,7 @@ fun PlayerFrame(
             .background(Color.Black)
             .focusRequester(focus)
             // 開いていたものが閉じて合いがどこにも無くなったら、映像に戻す
-            .onFocusChanged { if (!it.hasFocus && isActive) refocus() }
+            .onFocusChanged { focused = it.isFocused }
             // 上に重ねたものが開いている間は受けない (そちらのキーがここまで上がってくるので)
             .onKeyEvent { event ->
                 if (!active) return@onKeyEvent false
@@ -255,6 +253,9 @@ fun PlayerFrame(
         above()
     }
 }
+
+/** 映像に合っているか見張る間 (ミリ秒) */
+private const val FOCUS_WATCH_MS = 250L
 
 /** 何秒かだけ出して消える文字 */
 @Composable
