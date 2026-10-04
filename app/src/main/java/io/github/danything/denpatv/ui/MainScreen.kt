@@ -53,11 +53,17 @@ fun MainScreen(
     var selected by rememberSaveable { mutableStateOf(Destination.Recordings) }
     /** ライブから戻ったら、メニューの「ライブ」に合わせ直す (どこにも合っていないと最初の1押しが空振りする) */
     var returnToLive by rememberSaveable { mutableStateOf(false) }
-    val liveItem = remember { FocusRequester() }
+    val items = remember { Destination.entries.associateWith { FocusRequester() } }
+    val liveItem = items.getValue(Destination.Live)
     val drawer = rememberDrawerState(DrawerValue.Closed)
 
     LaunchedEffect(Unit) {
         if (returnToLive) runCatching { liveItem.requestFocus() }
+    }
+
+    // 開いたら、いま出している行き先に合わせる (左キーで近いものに合うので、録画の2列目から開くとライブに合ってしまう)
+    LaunchedEffect(drawer.currentValue) {
+        if (drawer.currentValue == DrawerValue.Open && !returnToLive) runCatching { items.getValue(selected).requestFocus() }
     }
 
     NavigationDrawer(
@@ -80,7 +86,7 @@ fun MainScreen(
                             }
                         },
                         leadingContent = { Icon(painterResource(destination.icon), contentDescription = null) },
-                        modifier = if (destination == Destination.Live) Modifier.focusRequester(liveItem) else Modifier,
+                        modifier = Modifier.focusRequester(items.getValue(destination)),
                     ) { Text(destination.label) }
                 }
             }

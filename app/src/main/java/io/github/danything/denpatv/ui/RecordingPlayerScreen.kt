@@ -21,6 +21,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.SPEEDS
+import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.nextSpeed
 import io.github.danything.denpatv.data.speedLabel
 import io.github.danything.denpatv.data.cmSkipTarget
@@ -37,7 +38,7 @@ import kotlinx.coroutines.launch
  *
  * - 左右で 10 秒戻す / 30 秒送る、決定で止める・動かす
  * - 上下 (リモコンの次へ・前へ) でチャプター送り
- * - メニューで操作の帯を開く: **速さ** (1 / 1.25 / 1.5 / 2 倍) と **CM 飛ばし** (既定で入)。
+ * - メニューで操作の帯を開く: **速さ** (1 / 1.25 / 1.5 / 2 倍) と **CM 飛ばし** (既定で入)、**削除** (2回押し)。
  *   ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。緑のボタンは速さを1段送る
  * - CM 飛ばしが入っていれば CM に入ったら終わりまで飛ぶ。区切りは動画に入っているチャプター (`CM` / `本編`)
  *
@@ -45,7 +46,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: () -> Unit) {
+fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
     val recording = remember { repo.recordings.firstOrNull { it.id == recordingId } }
     if (recording == null) {
         Centered("録画が見つかりません")
@@ -61,10 +62,16 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
     val skipCm by repo.app.settings.skipCm.collectAsState(initial = true)
     var controls by remember { mutableStateOf(false) }
     BackHandler(enabled = controls) { controls = false }
+    /** 最後まで観た (終わりの帯を出す)。勝手に一覧へは戻らない */
+    var ended by remember { mutableStateOf(false) }
+    /** 消した (閉じるときに観た位置を預けない) */
+    var deleted by remember { mutableStateOf(false) }
+    val delete = rememberTwoPress()
     val speed by repo.app.settings.playbackSpeed.collectAsState(initial = 1f)
     val scope = rememberCoroutineScope()
     // 速さは録画だけ (ライブは追いつくための 1.05 倍を自分で回す)。CM 飛ばしと観た位置は再生位置で見るので速さに関わらない
     LaunchedEffect(player, speed) { player.setPlaybackSpeed(speed) }
+    fun length() = player.duration.takeIf { it != C.TIME_UNSET }?.div(1000.0) ?: 0.0
     var chapters by remember { mutableStateOf(emptyList<ChapterMark>()) }
     val skipped = remember { mutableSetOf<Long>() }
 
@@ -83,6 +90,18 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
             override fun onTracksChanged(tracks: Tracks) {
                 chaptersOf(tracks).takeIf { it.isNotEmpty() }?.let { chapters = it }
             }
+
+            /*
+             * **最後まで来たら、すぐ終わりの位置を預ける。** 終わりの CM を飛ばして終わると、閉じるまで預けないうちは
+             * denpa が観終えたと分からない (ブラウザの denpa の `finished()` と同じ)。末尾の位置を渡せば denpa が続きを消す
+             */
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state != Player.STATE_ENDED || ended) return
+                ended = true
+                controls = false
+                val length = length()
+                repo.app.scope.launch { repo.api.saveResume(repo.base, recording.id, length, length) }
+            }
         }
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
@@ -100,7 +119,6 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
         }
     }
 
-    fun length() = player.duration.takeIf { it != C.TIME_UNSET }?.div(1000.0) ?: 0.0
     LaunchedEffect(player) {
         while (true) {
             delay(15_000)
@@ -113,12 +131,33 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
         onDispose {
             val at = player.currentPosition / 1000.0
             val length = length()
-            if (at > 0) repo.app.scope.launch { repo.api.saveResume(repo.base, recording.id, at, length) }
+            if (at > 0 && !deleted) repo.app.scope.launch { repo.api.saveResume(repo.base, recording.id, at, length) }
         }
     }
 
-    PlayerFrame(player, overlay, error, active = !controls, above = {
-        if (controls) {
+    /** 消して一覧へ戻る。一覧からも抜き、隣に合わせる */
+    fun deleteNow() {
+        scope.launch {
+            val done = try {
+                repo.api.deleteRecording(repo.base, recording.id)
+            } catch (_: Unauthorized) {
+                return@launch onUnauthorized()
+            }
+            if (!done) return@launch flash("消せませんでした (録画中は消せません)")
+            deleted = true
+            repo.focusOnReturn = repo.forgetRecording(recording.id)
+            onLeave()
+        }
+    }
+    val deleteControl = Control(deleteLabel(delete.armed)) { if (delete.press()) deleteNow() }
+
+    PlayerFrame(player, overlay, error, active = !controls && !ended, above = {
+        if (ended) {
+            ControlBar(
+                "最後まで観ました",
+                listOf("" to listOf(Control("一覧に戻る", on = true) { onLeave() }, deleteControl)),
+            )
+        } else if (controls) {
             ControlBar(
                 recording.title,
                 listOf(
@@ -132,6 +171,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
                             scope.launch { repo.app.settings.setSkipCm(!skipCm) }
                         },
                     ),
+                    "" to listOf(deleteControl),
                 ),
             )
         }
@@ -181,9 +221,4 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
             else -> false
         }
     })
-}
-
-private fun position(ms: Long): String {
-    val s = ms / 1000
-    return "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60)
 }

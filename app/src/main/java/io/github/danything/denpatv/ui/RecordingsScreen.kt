@@ -1,7 +1,9 @@
 package io.github.danything.denpatv.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,6 +16,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,16 +33,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.tv.material3.Button
 import androidx.tv.material3.Card
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import io.github.danything.denpatv.data.Recording
+import io.github.danything.denpatv.data.codecLabels
+import io.github.danything.denpatv.data.durationLabel
+import io.github.danything.denpatv.data.watched
 import io.github.danything.denpatv.data.Unauthorized
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -48,7 +53,7 @@ import java.util.Locale
 
 /**
  * 録画の一覧。**数が多いので格子にして、放送日ごとに見出しを挟む** (新しい順)。
- * 終わりに近づいたら続きを読む。長押しで消す (確かめてから)。
+ * 開くと一番下 (いちばん古い録画) に合わせる。長押しで詳しく (説明・再生・削除)。
  * 観て戻ってきたら、開いた録画に合わせ直す
  */
 @Composable
@@ -64,9 +69,8 @@ fun RecordingsScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var loaded by remember { mutableStateOf(recordings.isNotEmpty()) }
     var retry by remember { mutableIntStateOf(0) }
-    var deleting by remember { mutableStateOf<Recording?>(null) }
-    /** 続きを読めなかった (一覧は残し、終わりに小さく出してやり直せるようにする) */
-    var moreError by remember { mutableStateOf<String?>(null) }
+    /** 詳しいところを開いている録画 (長押し) */
+    var opened by remember { mutableStateOf<Recording?>(null) }
     /** 最後に合わせていた録画。観て戻ってきたらここに合わせ直す (画面を作り直しても残る) */
     var lastFocused by rememberSaveable { mutableStateOf<Long?>(null) }
     val requesters = remember { mutableMapOf<Long, FocusRequester>() }
@@ -86,26 +90,22 @@ fun RecordingsScreen(
         loaded = true
     }
 
-    suspend fun loadMore() {
-        try {
-            repo.loadMoreRecordings()
-            moreError = null
-        } catch (_: Unauthorized) {
-            onUnauthorized()
-        } catch (e: Exception) {
-            moreError = "続きを読めませんでした: ${e.message}"
-        }
-        recordings = repo.recordings
-    }
-
     LaunchedEffect(retry) {
         // 戻ってきたときは読み直さない (並びが変わると合わせ直す先がずれる)
         if (repo.recordings.isEmpty() || retry > 0) guarded { repo.refreshRecordings() }
     }
     LaunchedEffect(loaded) {
         if (!takeFocus) return@LaunchedEffect
-        val id = lastFocused ?: recordings.firstOrNull()?.id ?: return@LaunchedEffect
+        // 再生の画面で消して戻ってきたら、その隣に合わせる
+        repo.focusOnReturn?.let { lastFocused = it; repo.focusOnReturn = null }
+        // 観て戻ったら開いた録画に。初めては一番下 (いちばん古い録画): 古いものから片付けられるように (ブラウザの denpa と同じ)
+        val id = lastFocused?.takeIf { id -> recordings.any { it.id == id } } ?: recordings.lastOrNull()?.id ?: return@LaunchedEffect
         withFrameNanos { }
+        // 見えていなければ (一番下・消した隣)、そこまで送ってから合わせる
+        if (requesters[id] == null || grid.layoutInfo.visibleItemsInfo.none { it.key == id }) {
+            gridIndex(recordings, id)?.let { grid.scrollToItem(it) }
+            withFrameNanos { }
+        }
         runCatching { requesters[id]?.requestFocus() }
     }
 
@@ -135,7 +135,7 @@ fun RecordingsScreen(
         item(span = { GridItemSpan(maxLineSpan) }) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Text("録画", style = MaterialTheme.typography.headlineMedium)
-                Text("長押しで消せます", style = MaterialTheme.typography.bodySmall)
+                Text("長押しで詳しく (説明・削除)", style = MaterialTheme.typography.bodyMedium)
             }
         }
         groups.forEach { (day, items) ->
@@ -149,53 +149,51 @@ fun RecordingsScreen(
                         repo,
                         recording,
                         modifier = Modifier.focusRequester(requester).onFocusChanged {
-                            if (!it.isFocused) return@onFocusChanged
-                            lastFocused = recording.id
-                            // 終わりに近づいたら続きを読む
-                            val index = recordings.indexOfFirst { r -> r.id == recording.id }
-                            if (repo.hasMoreRecordings && moreError == null && index >= recordings.size - 12) {
-                                scope.launch { loadMore() }
-                            }
+                            if (it.isFocused) lastFocused = recording.id
                         },
                         onClick = { onWatch(recording) },
-                        onLongClick = { deleting = recording },
+                        onLongClick = { opened = recording },
                     )
                 }
             }
         }
-        moreError?.let { message ->
-            item(span = { GridItemSpan(maxLineSpan) }, key = "more-error") {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(message, style = MaterialTheme.typography.bodyMedium)
-                    Button(onClick = { moreError = null; scope.launch { loadMore() } }) { Text("やり直す") }
-                }
-            }
-        }
     }
 
-    deleting?.let { recording ->
-        ConfirmDelete(
-            title = recording.title,
-            onCancel = { deleting = null },
-            onConfirm = {
-                deleting = null
+    opened?.let { recording ->
+        RecordingDetailDialog(
+            repo,
+            recording,
+            onPlay = { opened = null; onWatch(recording) },
+            onDelete = {
+                opened = null
                 scope.launch {
                     guarded {
                         if (repo.api.deleteRecording(repo.base, recording.id)) {
                             // 消したものの隣に合わせ直す。読み直さず手元から抜く (続きまで読んだぶんを残す)
-                            val index = recordings.indexOfFirst { it.id == recording.id }
-                            lastFocused = (recordings.getOrNull(index + 1) ?: recordings.getOrNull(index - 1))?.id
-                            repo.forgetRecording(recording.id)
+                            lastFocused = repo.forgetRecording(recording.id)
                         }
                     }
                     withFrameNanos { }
-                    lastFocused?.let { runCatching { requesters[it]?.requestFocus() } }
+                    lastFocused?.let { id ->
+                        if (grid.layoutInfo.visibleItemsInfo.none { it.key == id }) gridIndex(recordings, id)?.let { grid.scrollToItem(it) }
+                        withFrameNanos { }
+                        runCatching { requesters[id]?.requestFocus() }
+                    }
                 }
             },
+            onDismiss = {
+                opened = null
+                runCatching { requesters[recording.id]?.requestFocus() }
+            },
+            onUnauthorized = onUnauthorized,
         )
     }
 }
 
+/**
+ * 録画のカード。**ブラウザの denpa の録画の行と同じものを出す**: 番組名・局・放送日時・長さ・観た割合・形の札。
+ * テレビは離れて観るので、文字は小さくしすぎない
+ */
 @Composable
 private fun RecordingCard(
     repo: Repository,
@@ -204,43 +202,55 @@ private fun RecordingCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    Card(onClick = onClick, onLongClick = onLongClick, modifier = modifier.height(216.dp)) {
-        RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(16f / 9f), repo.token)
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Text(recording.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-            Text(
-                listOfNotNull(recording.serviceName, TIME.format(Date(recording.startAt))).joinToString(" ・ "),
-                maxLines = 1,
-                style = MaterialTheme.typography.bodySmall,
-            )
+    Card(onClick = onClick, onLongClick = onLongClick, modifier = modifier.height(256.dp)) {
+        Box {
+            RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(16f / 9f), repo.token)
+            // 観た割合 (続きの位置があるときだけ)。ポスターの下の縁に
+            recording.watched?.let { part ->
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(5.dp).background(Color(0x99000000))) {
+                    Box(Modifier.fillMaxWidth(part).height(5.dp).background(MaterialTheme.colorScheme.primary))
+                }
+            }
         }
-    }
-}
-
-/**
- * 消す前に聞く。**最初はキャンセルに合わせておく** — 決定の押し間違いで消えないように
- */
-@Composable
-private fun ConfirmDelete(title: String, onCancel: () -> Unit, onConfirm: () -> Unit) {
-    val cancel = remember { FocusRequester() }
-    LaunchedEffect(Unit) { cancel.requestFocus() }
-    Dialog(onDismissRequest = onCancel) {
-        Column(
-            Modifier
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-                .padding(32.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            Text("録画を消しますか", style = MaterialTheme.typography.headlineSmall)
-            Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("ファイルも消えます。元に戻せません", style = MaterialTheme.typography.bodyMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(onClick = onCancel, modifier = Modifier.focusRequester(cancel)) { Text("キャンセル") }
-                OutlinedButton(onClick = onConfirm) { Text("消す") }
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(recording.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+            // 4 列だと 1 行に収まらないので、局と日時・長さを分ける
+            recording.serviceName?.let {
+                Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+            }
+            Text(
+                listOfNotNull(WHEN.format(Date(recording.startAt)), recording.durationMs?.let(::durationLabel)).joinToString(" ・ "),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            // メニューが開いて狭くなっても札を潰さない (はみ出すぶんは切れる)
+            Row(Modifier.horizontalScroll(rememberScrollState(), enabled = false), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                recording.codecLabels.forEach { label ->
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
             }
         }
     }
 }
 
+/** 格子の中の位置 (頭の見出し・日の見出しも数える。下の LazyVerticalGrid の並びと同じ) */
+private fun gridIndex(recordings: List<Recording>, id: Long): Int? {
+    var index = 1
+    recordings.groupBy { DAY.format(Date(it.startAt)) }.values.forEach { items ->
+        index++
+        val at = items.indexOfFirst { it.id == id }
+        if (at >= 0) return index + at
+        index += items.size
+    }
+    return null
+}
+
 private val DAY = SimpleDateFormat("M月d日(E)", Locale.JAPAN)
-private val TIME = SimpleDateFormat("HH:mm", Locale.JAPAN)
+private val WHEN = SimpleDateFormat("M/d(E) HH:mm", Locale.JAPAN)

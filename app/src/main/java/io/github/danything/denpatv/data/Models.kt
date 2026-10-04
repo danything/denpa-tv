@@ -59,10 +59,41 @@ data class Recording(
     val title: String,
     val serviceName: String? = null,
     val startAt: Long,
+    val durationMs: Long? = null,
     val poster: String? = null,
     val files: List<RecordingFile> = emptyList(),
     /** 続きの位置 (ミリ秒)。denpa 1.30.0 から。無い・null なら頭から */
     val resumeMs: Long? = null,
+)
+
+/** 観た割合 (0..1)。続きの位置か長さが分からなければ null */
+val Recording.watched: Float?
+    get() {
+        val at = resumeMs ?: return null
+        val length = durationMs?.takeIf { it > 0 } ?: return null
+        return (at.toFloat() / length).coerceIn(0f, 1f)
+    }
+
+/** 札にする形の名前 (AV1 / H.264 / 生TS)。並びは軽いものから */
+val Recording.codecLabels: List<String>
+    get() = listOf("av1" to "AV1", "h264" to "H.264", "mpeg2" to "生TS")
+        .filter { (codec, _) -> files.any { it.codec == codec } }
+        .map { it.second }
+
+/** 長さ (30分、1時間30分) */
+fun durationLabel(ms: Long): String {
+    val minutes = (ms + 30_000) / 60_000
+    return if (minutes < 60) "${minutes}分" else "${minutes / 60}時間" + if (minutes % 60 == 0L) "" else "${minutes % 60}分"
+}
+
+/**
+ * 番組の中身 (`GET api/recordings/<id>/detail`、1.32.0 より後の denpa (danything/denpa#400) から)。説明と、放送の詳細 (見出し → 本文)。
+ * 古い denpa には無い (404) ので、呼ぶ側は出さないだけ
+ */
+@Serializable
+data class RecordingDetail(
+    val description: String = "",
+    val extended: Map<String, String> = emptyMap(),
 )
 
 /** 録画の出せるファイル。`source` は encoded / alt / ts、`codec` は av1 / h264 / mpeg2 */

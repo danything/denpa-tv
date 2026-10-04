@@ -40,7 +40,7 @@ class DenpaApiTest {
 
         val recordings = api.recordings(base)
         assertEquals("av1", recordings.single().files.single().codec)
-        assertEquals("/denpa/api/recordings?limit=60&offset=0", denpa.requests.take().target)
+        assertEquals("/denpa/api/recordings", denpa.requests.take().target)
         // 古い denpa は now も resumeMs も返さない。無ければ null
         assertNull(services.single().now)
         assertNull(recordings.single().resumeMs)
@@ -84,5 +84,18 @@ class DenpaApiTest {
         assertTrue(api.health(BaseUrl.normalize(denpa.url())!!))
         assertEquals("/api/health", denpa.requests.take().target)
         assertFalse(api.health(BaseUrl.normalize("http://127.0.0.1:1")!!))
+    }
+
+    /** 番組の中身は別の口。古い denpa (口が無い = 404) では null で、画面は出さないだけ */
+    @Test
+    fun 番組の中身を読み_無ければ_null() = runTest {
+        val base = BaseUrl.normalize(denpa.url())!!
+        denpa.enqueue("""{"id":12,"title":"t","name":"n","description":"概要","extended":{"出演者":"だれか"}}""")
+        val detail = api.recordingDetail(base, 12)!!
+        assertEquals("概要", detail.description)
+        assertEquals(mapOf("出演者" to "だれか"), detail.extended)
+        assertEquals("/api/recordings/12/detail", denpa.requests.take().target)
+        denpa.enqueue("", code = 404)
+        assertEquals(null, api.recordingDetail(base, 13))
     }
 }

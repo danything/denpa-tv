@@ -46,7 +46,7 @@ fun BoxScope.ControlBar(title: String, groups: List<Pair<String, List<Control>>>
         Row(horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
             groups.forEach { (name, controls) ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(name, style = MaterialTheme.typography.labelLarge, color = Color.LightGray)
+                    if (name.isNotEmpty()) Text(name, style = MaterialTheme.typography.labelLarge, color = Color.LightGray)
                     controls.forEach { control ->
                         // 入っているものの1つ目に合わせる (無ければいちばん最初)
                         val take = !focused && (control.on || controls.none { it.on })
