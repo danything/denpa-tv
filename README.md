@@ -12,8 +12,10 @@ Jetpack Compose for TV で書いています。
 | <img src="docs/images/recordings.webp" alt="録画の一覧。放送日ごとの見出しと、ポスターつきのカードの格子" width="420"> | <img src="docs/images/live-channels.webp" alt="ライブの左に局の一覧。種別の切り替え、番号・ロゴ・局名・いま放送中の番組、視聴中の印" width="420"> |
 | **ライブ** | **録画を消す** (長押し) |
 | <img src="docs/images/live.webp" alt="ライブ。下に局と番組名と残り時間" width="420"> | <img src="docs/images/delete.webp" alt="録画を消すか確かめる画面。最初はキャンセルに合っている" width="420"> |
-| **繋ぐ** | **設定** |
-| <img src="docs/images/setup.webp" alt="繋ぐ画面。スマホで読む QR と手順" width="420"> | <img src="docs/images/settings.webp" alt="設定。ライブの画質・CM を飛ばす・繋ぐ先" width="420"> |
+| **録画の速さ** (メニュー) | **繋ぐ** |
+| <img src="docs/images/speed.webp" alt="録画の再生。下に速さ 1.25×" width="420"> | <img src="docs/images/setup.webp" alt="繋ぐ画面。スマホで読む QR と手順" width="420"> |
+| **設定** | |
+| <img src="docs/images/settings.webp" alt="設定。左のメニューが開いていて、ライブの画質・CM を飛ばす・繋ぐ先" width="420"> | |
 
 映像とポスターはぼかしてあります (放送の絵のため)。絵は Android TV のエミュレータ (API 36、1080p) で撮りました。
 
