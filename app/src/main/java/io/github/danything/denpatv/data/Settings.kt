@@ -3,6 +3,7 @@ package io.github.danything.denpatv.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -28,6 +29,7 @@ class Settings(private val context: Context) {
     private val liveQualityKey = stringPreferencesKey("live_quality")
     private val skipCmKey = booleanPreferencesKey("skip_cm")
     private val lastServiceKey = longPreferencesKey("last_service")
+    private val speedKey = floatPreferencesKey("playback_speed")
 
     /** 繋ぐ先。まだ無ければ null */
     val connection: Flow<Connection?> = context.dataStore.data.map { prefs ->
@@ -57,6 +59,16 @@ class Settings(private val context: Context) {
             it.remove(serverKey)
             it.remove(tokenKey)
         }
+    }
+
+    /**
+     * 録画の速さ。**端末ごとに覚える** (denpa のブラウザの再生と同じ)。好みは端末で違うので、
+     * サーバに置く続きの位置とは分ける
+     */
+    val playbackSpeed: Flow<Float> = context.dataStore.data.map { knownSpeed(it[speedKey]) }
+
+    suspend fun setPlaybackSpeed(speed: Float) {
+        context.dataStore.edit { it[speedKey] = speed }
     }
 
     /** 最後に観ていた局。ライブを開くとまずそこが映る (denpa の画面のライブと同じ) */

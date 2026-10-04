@@ -41,3 +41,17 @@ class ChaptersTest {
         assertEquals(60_000L, previousChapter(chapters, 151_000)?.startMs)
     }
 }
+
+class SpeedTest {
+    @org.junit.Test
+    fun 速さは段を巡り_段に無い値は等速() {
+        assertEquals(1.25f, io.github.danything.denpatv.data.nextSpeed(1f))
+        assertEquals(1f, io.github.danything.denpatv.data.nextSpeed(2f))
+        assertEquals(1.25f, io.github.danything.denpatv.data.nextSpeed(3f))
+        assertEquals(1f, io.github.danything.denpatv.data.knownSpeed(null))
+        assertEquals(1f, io.github.danything.denpatv.data.knownSpeed(0.75f))
+        assertEquals(1.5f, io.github.danything.denpatv.data.knownSpeed(1.5f))
+        assertEquals("1.25×", io.github.danything.denpatv.data.speedLabel(1.25f))
+        assertEquals("2×", io.github.danything.denpatv.data.speedLabel(2f))
+    }
+}
