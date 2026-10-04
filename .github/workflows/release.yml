@@ -22,8 +22,6 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.DENPA_TV_KEYSTORE_BASE64 }}
           DENPA_TV_KEYSTORE_PASSWORD: ${{ secrets.DENPA_TV_KEYSTORE_PASSWORD }}
-          DENPA_TV_KEY_ALIAS: ${{ secrets.DENPA_TV_KEY_ALIAS }}
-          DENPA_TV_KEY_PASSWORD: ${{ secrets.DENPA_TV_KEY_PASSWORD }}
         run: |
           version="${GITHUB_REF_NAME#v}"
           export DENPA_TV_VERSION="$version"
