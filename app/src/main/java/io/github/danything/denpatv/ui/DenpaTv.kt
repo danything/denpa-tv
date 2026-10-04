@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -55,6 +56,11 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?) {
     val repo = remember(base, token) { Repository(app, base, token) }
     /** トークンが効かなくなった (外された・期限切れ)、または家の外と見なされた。忘れて繋ぐ画面へ */
     val unauthorized: () -> Unit = { scope.launch { app.settings.disconnect() } }
+    // denpa の知らせ (SSE) は、アプリが前に出ている間だけ1本繋ぐ。ここはどの画面より外なので Activity の生き死にに沿う
+    LifecycleStartEffect(repo) {
+        val job = scope.launch { repo.listen(unauthorized) }
+        onStopOrDispose { job.cancel() }
+    }
     NavDisplay(
         backStack = backStack,
         onBack = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) },
