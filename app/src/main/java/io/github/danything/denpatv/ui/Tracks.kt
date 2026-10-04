@@ -44,8 +44,12 @@ class TrackControls(
     }
 }
 
+/**
+ * @param rawCaptions 生の TS の字幕 (Media3 のトラックには出てこない。`rememberRawCaptions`)。選べる字幕があると
+ *   言われたら、焼いた映像の字幕と同じ札を出す (入れ切りの設定も同じもの)
+ */
 @Composable
-fun rememberTracks(repo: Repository, player: ExoPlayer, onChange: (String) -> Unit = {}): TrackControls {
+fun rememberTracks(repo: Repository, player: ExoPlayer, onChange: (String) -> Unit = {}, rawCaptions: RawCaptionState? = null): TrackControls {
     val subtitles by repo.app.settings.subtitles.collectAsState(initial = true)
     val remembered by repo.app.settings.audioLabel.collectAsState(initial = null)
     var tracks by remember { mutableStateOf(player.currentTracks) }
@@ -87,7 +91,7 @@ fun rememberTracks(repo: Repository, player: ExoPlayer, onChange: (String) -> Un
 
     return TrackControls(
         subtitles = subtitles,
-        hasText = textGroups.isNotEmpty(),
+        hasText = textGroups.isNotEmpty() || rawCaptions?.available == true,
         audio = audio,
         selectedAudio = selectedAudio,
         toggleSubtitles = {

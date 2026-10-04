@@ -109,10 +109,14 @@ private const val CONNECT_TIMEOUT_MS = 10_000
 // ライブは流しっぱなしなので読みの時間切れは長めに (止まったら ExoPlayer が言う)
 private const val READ_TIMEOUT_MS = 30_000
 
+/**
+ * `clock` は TS の読み手が 0 に寄せた幅を覚える (生の TS の字幕を放送の PTS で突き合わせるため。RawCaptions.kt)。
+ * 読み手の作り方は Media3 の既定と同じ
+ */
 @OptIn(UnstableApi::class)
-fun buildPlayer(context: Context, engine: HttpEngine?, executor: Executor, token: String?, buffering: Buffering): ExoPlayer =
+fun buildPlayer(context: Context, engine: HttpEngine?, executor: Executor, token: String?, buffering: Buffering, clock: TsClock): ExoPlayer =
     ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory(context, engine, executor, token)))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory(context, engine, executor, token), clock))
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(buffering.minMs, buffering.maxMs, buffering.startMs, buffering.afterRebufferMs)
@@ -179,6 +183,8 @@ fun PlayerFrame(
     onCenter: (CenterPress.Action) -> Unit = {},
     /** 知らせの下に出す進み (ライブの番組の進み)。null なら出さない */
     progress: Pair<Long, Long>? = null,
+    /** 生の TS の字幕 (`rememberRawCaptions`)。焼いた映像の字幕の上、知らせの下に重ねる */
+    captions: RawCaptionState? = null,
     above: @Composable BoxScope.() -> Unit = {},
 ) {
     val focus = remember { FocusRequester() }
@@ -229,6 +235,7 @@ fun PlayerFrame(
             },
             modifier = Modifier.fillMaxSize(),
         )
+        captions?.let { RawCaptionLayer(it) }
         val text = error ?: overlay
         if (text != null) {
             // 操作の帯と同じく、下の端に小さく (下から薄く暗くするだけ)
@@ -273,11 +280,14 @@ fun rememberFlash(): Pair<String?, (String) -> Unit> {
     }
 }
 
-/** ExoPlayer を画面の寿命に合わせる。エラーは文にして返す */
+/**
+ * ExoPlayer を画面の寿命に合わせる。エラーは文にして返す。
+ * `clock` は生の TS の字幕を出す画面だけが渡す (`rememberRawCaptions` と同じものを)
+ */
 @Composable
-fun rememberPlayer(repo: Repository, buffering: Buffering, onUnauthorized: () -> Unit = {}): Pair<ExoPlayer, String?> {
+fun rememberPlayer(repo: Repository, buffering: Buffering, onUnauthorized: () -> Unit = {}, clock: TsClock = remember { TsClock() }): Pair<ExoPlayer, String?> {
     val context = LocalContext.current
-    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, repo.app.httpExecutor, repo.token, buffering) }
+    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, repo.app.httpExecutor, repo.token, buffering, clock) }
     var error by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {

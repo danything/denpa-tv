@@ -30,6 +30,12 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
   (`S_HDMV/PGS`) にも対応している** ([MatroskaExtractor のソース](https://github.com/androidx/media/blob/release/libraries/extractor/src/main/java/androidx/media3/extractor/mkv/MatroskaExtractor.java))。
   絵の字幕なので、出すのは Media3 の `SubtitleView` (View)。Compose の部品はまだ絵の字幕を描けない
 - **MPEG-TS (MPEG-2)** — 焼く前の録画と、ライブの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
+- **ARIB の字幕は Media3 では解かない。** Media3 に ARIB の字幕の読み手は無く、libaribcaption を NDK で抱えるのは重い。
+  denpa が描いた絵 (放送の PTS 付き) を受け取って、Compose の Canvas で重ねる (`ui/RawCaptions.kt`)。
+  時計は **TsExtractor に自分の `TimestampAdjuster` を渡して**控え、寄せ幅 (`getTimestampOffsetUs`) で再生位置を放送の
+  PTS に戻す。読み手は `DefaultExtractorsFactory` と同じ作りで、ほかの形はそのまま (`TsClock`)。
+  PES を自分で覗いて最初の PTS を拾う手もあるが、Media3 がどの PES の PTS を 0 にしたかと食い違いうる (映像と音声で数百 ms 違う)。
+  寄せ幅そのものを読めばシーク (寄せ直し) も一周 (Media3 は伸ばし続ける) もそのまま合う
 - **チャプター** — Matroska の Chapters を `Chapter` として track の `Metadata` に出す (1.11.0 から。
   [リリースノート](https://github.com/androidx/media/blob/release/RELEASENOTES.md))。CM 飛ばしはこれを読むので、
   自前の EBML 読みも denpa の API も要らない

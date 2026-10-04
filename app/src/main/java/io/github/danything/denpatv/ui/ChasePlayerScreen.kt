@@ -21,6 +21,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import io.github.danything.denpatv.R
+import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.Chase
 import io.github.danything.denpatv.data.LiveQuality
@@ -56,9 +57,9 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     if (saved == LOADING_QUALITY) return
     val quality = remember(saved) { LiveQuality.choose(saved, repo.app.decoders) }
     val buffering = if (quality == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
-    val (player, error) = rememberPlayer(repo, buffering, onUnauthorized)
+    val clock = remember { TsClock() }
+    val (player, error) = rememberPlayer(repo, buffering, onUnauthorized, clock)
     val (overlay, flash) = rememberFlash()
-    val tracks = rememberTracks(repo, player, flash)
     val scope = rememberCoroutineScope()
     // 一覧の「録画中」は古くなる (録り終える・焼き上がる)。戻ったら読み直してもらう
     DisposableEffect(Unit) { onDispose { repo.recordingsStale = true } }
@@ -71,6 +72,17 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     /** 左右で動かしている途中の行き先 (まとめて頼む) */
     var pending by remember { mutableStateOf<Long?>(null) }
     fun position() = pending ?: (from + player.currentPosition)
+    // 生の TS の字幕。映像を頼み直したら、字幕もいまの位置から頼み直す
+    val captions = rememberRawCaptions(
+        repo,
+        player,
+        clock,
+        path = CaptionPaths.recording(recording.id).takeIf { quality == LiveQuality.Raw },
+        generation = from to attempt,
+        fromMs = { from + player.currentPosition },
+        onUnauthorized = onUnauthorized,
+    )
+    val tracks = rememberTracks(repo, player, flash, captions)
 
     var bar by remember { mutableStateOf<ChaseBar?>(null) }
     BackHandler(enabled = bar != null) { bar = null }
@@ -231,7 +243,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     }
     val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, if (refused) REFUSED else error, active = bar == null && !ended && !leaving, above = {
+    PlayerFrame(player, overlay, if (refused) REFUSED else error, active = bar == null && !ended && !leaving, captions = captions, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました (録り終えました)",

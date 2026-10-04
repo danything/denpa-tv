@@ -12,6 +12,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.media3.common.MediaItem
 import io.github.danything.denpatv.R
+import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
@@ -68,9 +69,19 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     /** 長押しでメニューが開くと知らせたか (開いて最初の1回だけ) */
     var hinted by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val (player, error) = rememberPlayer(repo, buffering, onUnauthorized)
+    val clock = remember { TsClock() }
+    val (player, error) = rememberPlayer(repo, buffering, onUnauthorized, clock)
     val (overlay, flash) = rememberFlash()
-    val tracks = rememberTracks(repo, player, flash)
+    // 生の TS の字幕は denpa が描いた絵を別の口で受け取る (焼いたものは映像に入っている)
+    val captions = rememberRawCaptions(
+        repo,
+        player,
+        clock,
+        path = playing?.takeIf { quality == LiveQuality.Raw }?.let { CaptionPaths.live(it.live) },
+        generation = playing?.id,
+        onUnauthorized = onUnauthorized,
+    )
+    val tracks = rememberTracks(repo, player, flash, captions)
     CatchUp(player, buffering)
 
     LaunchedEffect(Unit) {
@@ -161,6 +172,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             }
         },
         progress = current.now?.let { System.currentTimeMillis() - it.startAt to it.endAt - it.startAt },
+        captions = captions,
     ) {
         if (controls) {
             val now = current.now
