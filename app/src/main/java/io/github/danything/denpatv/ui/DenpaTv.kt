@@ -136,11 +136,15 @@ private suspend fun open(
             is DeepLink.Live -> {
                 val channel = link.channel
                 if (channel != null) {
-                    if (repo.services.isEmpty() || repo.servicesStale) refreshQuietly { repo.refreshServices() }
+                    val fetched = if (repo.services.isEmpty() || repo.servicesStale) refreshQuietly { repo.refreshServices() } else true
                     // ライブは最後に観ていた局から映す。そこを替えて開く
                     val service = findService(repo.services, channel)
-                    if (service != null) repo.app.settings.setLastService(service.id)
-                    else notice("$channel という局が見つかりませんでした")
+                    when {
+                        service != null -> repo.app.settings.setLastService(service.id)
+                        // 取れなかったのに「見つからない」とは言わない
+                        repo.services.isEmpty() && !fetched -> notice("局の一覧を取れませんでした")
+                        else -> notice("${channel.take(NOTICE_MAX)} という局が見つかりませんでした")
+                    }
                 }
                 backStack.subList(1, backStack.size).clear()
                 backStack.add(Live(stamp))
@@ -148,12 +152,10 @@ private suspend fun open(
             DeepLink.Recordings -> backStack.replaceAll(Main(stamp))
             is DeepLink.Watch -> {
                 val id = link.id.toLongOrNull()
-                if (id != null && repo.recordings.none { it.id == id }) {
-                    refreshQuietly { repo.refreshRecordings() }
-                }
+                val fetched = if (id != null && repo.recordings.none { it.id == id }) refreshQuietly { repo.refreshRecordings() } else true
                 if (id != null && repo.recordings.any { it.id == id }) backStack.replaceAll(Main(stamp), Watch(id))
                 else {
-                    notice("録画 ${link.id} が見つかりませんでした")
+                    notice(if (fetched) "録画 ${link.id.take(NOTICE_MAX)} が見つかりませんでした" else "録画の一覧を取れませんでした")
                     backStack.replaceAll(Main(stamp))
                 }
             }
@@ -163,17 +165,21 @@ private suspend fun open(
     }
 }
 
-/** 取り直す。取れなくても続ける (手元の一覧で探す)。401 と取り消し (次のリンクが来た) は上へ */
-private suspend fun refreshQuietly(block: suspend () -> Unit) {
+/** 取り直す。取れなくても続ける (手元の一覧で探す) — 取れたかを返す。401 と取り消し (次のリンクが来た) は上へ */
+private suspend fun refreshQuietly(block: suspend () -> Unit): Boolean =
     try {
         block()
+        true
     } catch (e: Unauthorized) {
         throw e
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
+        false
     }
-}
+
+/** 知らせに入れるリンクの文字の長さ (ほかのアプリから長いものを投げられても1行に収める) */
+private const val NOTICE_MAX = 40
 
 private fun NavBackStack<NavKey>.replaceAll(vararg keys: NavKey) {
     // 先に足してから消す (空になる瞬間を作らない)
