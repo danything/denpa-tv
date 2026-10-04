@@ -5,6 +5,30 @@ Play ストアにはまだ出していないので、パソコンから **adb** 
 
 確かめた日: 2026-10-04。メニューの名前は端末と OS の版で違うことがあります。
 
+## まとめて1行で
+
+テレビの準備 (下の 3.) が済んでいれば、パソコンから1行で、APK の取得 (ハッシュの確認つき)・接続・インストール・起動まで済みます。
+adb が無ければ Google の platform-tools を作業用の場所に取ってきて使います (パソコンには入れません)。
+
+```sh
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/danything/denpa-tv/main/scripts/install.sh | bash -s -- <テレビの IP>
+```
+
+```powershell
+# Windows (PowerShell)
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/danything/denpa-tv/main/scripts/install.ps1))) <テレビの IP>
+```
+
+- 入れるのは最新のリリース (試し版も含む)。版を決めるなら `--version v0.2.1` (Windows は `-Version v0.2.1`)
+- Android 11 以降の「ワイヤレス デバッグ」は、先にペア設定が要ります。テレビの「ペア設定コードでデバイスをペア設定」に出る
+  IP・ポート・コードを `--pair <IP>:<ポート> <コード>` (Windows は `-Pair <IP>:<ポート> -Code <コード>`) で渡します。
+  そのあとの接続先は、ワイヤレス デバッグの画面に出ている IP とポートです
+- テレビに「USB デバッグを許可しますか」が出たら許可を押してください (スクリプトは 60 秒待ちます)
+- 署名の違うものが入っていて上書きできないときは、消すコマンドを出して止まります (下の「署名について」)
+
+手で1つずつやるなら、以下の 1.〜5. の手順です。
+
 ## 1. APK を手に入れる
 
 - **リリース** — [Releases](https://github.com/danything/denpa-tv/releases) の最新から `denpa-tv-<版>.apk` を落とす。
