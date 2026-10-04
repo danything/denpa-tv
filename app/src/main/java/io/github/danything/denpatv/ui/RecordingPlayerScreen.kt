@@ -7,6 +7,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,6 +21,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import io.github.danything.denpatv.R
+import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.recordingCommand
@@ -69,10 +71,32 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
         Centered("この端末で再生できる形のファイルがありません")
         return
     }
-    val (player, error) = rememberPlayer(repo, Buffering.Recording, onUnauthorized)
+    val clock = remember { TsClock() }
+    val (player, error) = rememberPlayer(repo, Buffering.Recording, onUnauthorized, clock)
     val (overlay, flash) = rememberFlash()
     val scope = rememberCoroutineScope()
-    val tracks = rememberTracks(repo, player, flash)
+    /** 飛んだ回数。生の TS の字幕を、飛んだ先から頼み直す */
+    var seeks by remember { mutableIntStateOf(0) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) seeks++
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+    // 生の TS の字幕は denpa が描いた絵を別の口で受け取る (焼いた録画の字幕は動画に入っている)
+    val captions = rememberRawCaptions(
+        repo,
+        player,
+        clock,
+        path = CaptionPaths.recording(recording.id).takeIf { file.source == "ts" },
+        generation = seeks,
+        fromMs = { player.currentPosition },
+        onUnauthorized = onUnauthorized,
+    )
+    val tracks = rememberTracks(repo, player, flash, captions)
     /**
      * CM 飛ばし。観はじめはブラウザと同じく、覚えている設定に従うが、ロゴで CM を判定できなかった録画は切って始める
      * (`skipCmAtStart`)。切り替えは、判定できた録画なら覚え、できなかった録画ではこの録画だけ
@@ -245,7 +269,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     val deleteControl = Control(deleteLabel(delete.armed), icon = R.drawable.ic_delete) { if (delete.press()) deleteNow() }
     val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, error, active = bar == null && !ended && !leaving, above = {
+    PlayerFrame(player, overlay, error, active = bar == null && !ended && !leaving, captions = captions, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
