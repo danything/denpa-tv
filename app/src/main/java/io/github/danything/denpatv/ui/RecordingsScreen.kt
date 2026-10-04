@@ -146,6 +146,8 @@ fun RecordingsScreen(
             }
             recordings = repo.recordings
             error = null
+            // 詳しくを開いていれば新しい中身に替える (録り終えた・焼き上がったなど)
+            opened = opened?.let { old -> recordings.firstOrNull { it.id == old.id } ?: old }
             // 合わせていた録画が消えたら (ブラウザで消したなど)、詳しくを閉じて残っている隣へ
             val alive = recordings.map { it.id }.toSet()
             if (had != null && had !in alive) {
