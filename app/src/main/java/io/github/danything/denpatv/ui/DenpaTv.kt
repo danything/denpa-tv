@@ -20,6 +20,7 @@ import androidx.tv.material3.Text
 import androidx.tv.material3.darkColorScheme
 import io.github.danything.denpatv.DenpaApp
 import io.github.danything.denpatv.data.BaseUrl
+import io.github.danything.denpatv.data.chasing
 import io.github.danything.denpatv.data.Connection
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -68,7 +69,11 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?) {
             }
             entry<Live> { LivePlayerScreen(repo, onLeave = { backStack.removeAt(backStack.lastIndex) }, onUnauthorized = unauthorized) }
             entry<Watch> { key ->
-                RecordingPlayerScreen(repo, key.recordingId, onLeave = { backStack.removeAt(backStack.lastIndex) }, onUnauthorized = unauthorized)
+                val leave = { backStack.removeAt(backStack.lastIndex); Unit }
+                // 録画中は追っかけ (伸びている生TSを denpa に流してもらう)、録り終えたものはファイルで
+                val recording = remember(key) { repo.recordings.firstOrNull { it.id == key.recordingId } }
+                if (recording?.chasing == true) ChasePlayerScreen(repo, recording, leave, unauthorized)
+                else RecordingPlayerScreen(repo, key.recordingId, onLeave = leave, onUnauthorized = unauthorized)
             }
         },
     )

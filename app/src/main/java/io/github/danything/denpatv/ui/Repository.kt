@@ -24,6 +24,9 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     /** 録画を読み直す (全部) */
     suspend fun refreshRecordings() = list.refresh()
 
+    /** 一覧が古くなった (追っかけで観た録画が録り終えた・焼き上がったかもしれない)。一覧に戻ったら読み直す */
+    var recordingsStale = false
+
     /** 録画の一覧に戻ったとき合わせる先 (再生の画面で消したときの隣) */
     var focusOnReturn: Long? = null
 

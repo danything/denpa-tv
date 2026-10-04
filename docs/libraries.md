@@ -62,7 +62,7 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 アプリで1つを使い回す (`DenpaApp.httpEngine`)。
 
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
-読み 30 秒と書いてある)。叩くのは局と録画の一覧・観た位置・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
+読み 30 秒と書いてある)。叩くのは局と録画の一覧・番組の中身 (`detail`)・観た位置・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
 
 OkHttp (と Retrofit / Ktor) を採らない理由:
 

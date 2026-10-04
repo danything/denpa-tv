@@ -99,7 +99,10 @@ fun RecordingDetailDialog(
                             ).joinToString(" ・ "),
                             style = MaterialTheme.typography.bodyLarge,
                         )
-                        Text(recording.codecLabels.joinToString(" / "), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            if (recording.recording) "● 録画中 (追っかけ再生で観ます)" else recording.codecLabels.joinToString(" / "),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
                 }
                 val info = detail

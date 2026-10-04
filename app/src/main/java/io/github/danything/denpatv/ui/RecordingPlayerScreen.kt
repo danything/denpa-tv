@@ -24,6 +24,7 @@ import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
+import io.github.danything.denpatv.data.skipCmAtStart
 import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.nextSpeed
@@ -44,7 +45,7 @@ import kotlinx.coroutines.launch
  * - 左右で 10 秒戻す・送る、決定で止める・動かす (キーの割り当ては data/Remote.kt と README の「操作」)
  * - **下でシークバー** (左右で 10 秒ずつ。CM は色を変えて出す)、下でその下の操作の列へ
  * - **上 (か決定の長押し・Menu) で操作の列**: 再生 / 一時停止、前・次のチャプター、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
- *   **CM 飛ばし** (既定で入)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
+ *   **CM 飛ばし** (既定で入。ロゴで CM を判定できなかった録画は切で始まる)、**字幕**・**音声** (あれば)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
  *   動いている間は 5 秒触らなければ閉じる。戻るでも閉じる。緑のボタンは速さを1段送る
  * - リモコンの次へ・前へでチャプター送り
  * - CM 飛ばしが入っていれば CM に入ったら終わりまで飛ぶ。区切りは動画に入っているチャプター (`CM` / `本編`)
@@ -70,7 +71,19 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     }
     val (player, error) = rememberPlayer(repo, Buffering.Recording, onUnauthorized)
     val (overlay, flash) = rememberFlash()
-    val skipCm by repo.app.settings.skipCm.collectAsState(initial = true)
+    val scope = rememberCoroutineScope()
+    val tracks = rememberTracks(repo, player, flash)
+    /**
+     * CM 飛ばし。観はじめはブラウザと同じく、覚えている設定に従うが、ロゴで CM を判定できなかった録画は切って始める
+     * (`skipCmAtStart`)。切り替えは、判定できた録画なら覚え、できなかった録画ではこの録画だけ
+     */
+    var skipCm by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { skipCm = skipCmAtStart(recording.cmReliable, repo.app.settings.skipCm.first()) }
+    fun toggleCm() {
+        skipCm = !skipCm
+        if (recording.cmReliable) scope.launch { repo.app.settings.setSkipCm(skipCm) }
+        flash(if (skipCm) "CM 飛ばし 入" else "CM 飛ばし 切")
+    }
     /** 開いている帯 (null なら何も出していない) */
     var bar by remember { mutableStateOf<Bar?>(null) }
     BackHandler(enabled = bar != null) { bar = null }
@@ -108,7 +121,6 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     var deleted by remember { mutableStateOf(false) }
     val delete = rememberTwoPress()
     val speed by repo.app.settings.playbackSpeed.collectAsState(initial = 1f)
-    val scope = rememberCoroutineScope()
     // 速さは録画だけ (ライブは追いつくための 1.05 倍を自分で回す)。CM 飛ばしと観た位置は再生位置で見るので速さに関わらない
     // 観ている途中で変えたら、今の位置に飛び直して音と映像を新しい速さで流し直す (`resyncAfterSpeedChange`)
     LaunchedEffect(player, speed) {
@@ -268,9 +280,10 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
                     ),
                     "" to listOf(
                         Control(if (skipCm) "CM 飛ばし 入" else "CM 飛ばし 切", on = skipCm, icon = R.drawable.ic_skip_cm) {
-                            scope.launch { repo.app.settings.setSkipCm(!skipCm) }
+                            toggleCm()
                         },
                     ),
+                    "" to tracks.controls(),
                     "" to listOf(deleteControl),
                 ),
                 header = { actions ->
