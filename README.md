@@ -73,8 +73,13 @@ Menu キーやチャンネル送りがあれば、近道として効きます。
 
 ## 入れ方
 
-Play ストアにはまだ出していないので、パソコンから adb で入れます。手順は [docs/install.md](docs/install.md)
-(APK の手に入れ方、テレビの開発者向けオプション、ワイヤレス デバッグ、困ったとき)。
+Play ストアにはまだ出していないので、パソコンから adb で入れます。テレビの開発者向けオプションでデバッグを入れたら、1行で入ります:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/danything/denpa-tv/main/scripts/install.sh | bash -s -- <テレビの IP>
+```
+
+Windows や、テレビの準備・ワイヤレス デバッグのペア設定・困ったときは [docs/install.md](docs/install.md)。
 
 ## denpa に繋ぐ
 
