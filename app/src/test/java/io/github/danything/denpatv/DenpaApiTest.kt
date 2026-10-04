@@ -30,6 +30,13 @@ class DenpaApiTest {
                "files":[{"source":"encoded","codec":"av1","url":"api/recordings/12/file?source=encoded"}],
                "audio":"api/recordings/12/file?audio=only"}]""",
         ).build())
+        server.enqueue(MockResponse.Builder().body(
+            """[{"id":1,"type":"BS","name":"BS11","live":"api/services/1/live","now":{"title":"アニメ","startAt":1000,"endAt":181000}},
+               {"id":2,"type":"BS","name":"BS12","live":"api/services/2/live","now":null}]""",
+        ).build())
+        server.enqueue(MockResponse.Builder().body(
+            """[{"id":13,"title":"続き","name":"続き","startAt":1,"endAt":2,"resumeMs":754000,"files":[]}]""",
+        ).build())
         val api = DenpaApi(OkHttpClient())
         val base = BaseUrl.normalize(server.url("/denpa").toString())!!
 
@@ -41,5 +48,26 @@ class DenpaApiTest {
         val recordings = api.recordings(base)
         assertEquals("av1", recordings.single().files.single().codec)
         assertEquals("/denpa/api/recordings?limit=50", server.takeRequest().target)
+        // 古い denpa は now も resumeMs も返さない。無ければ null
+        assertNull(services.single().now)
+        assertNull(recordings.single().resumeMs)
+
+        val withNow = api.services(base)
+        assertEquals("アニメ", withNow[0].now?.title)
+        assertEquals(3L, withNow[0].now?.remainingMinutes(1000))
+        assertEquals(0.5f, withNow[0].now!!.progress(91_000))
+        assertNull(withNow[1].now)
+        assertEquals(754_000L, api.recordings(base).single().resumeMs)
+    }
+
+    /** 観た位置は秒で預ける (denpa の POST api/recordings/<id>/resume は {at, length} を秒で受ける) */
+    @Test
+    fun 観た位置を秒で預ける() = runTest {
+        server.enqueue(MockResponse.Builder().body("{}").build())
+        DenpaApi(OkHttpClient()).saveResume(BaseUrl.normalize(server.url("/").toString())!!, 12, 754.5, 1800.0)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/recordings/12/resume", request.target)
+        assertEquals("""{"at":754.5,"length":1800.0}""", request.body?.utf8())
     }
 }

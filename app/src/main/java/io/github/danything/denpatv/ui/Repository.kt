@@ -20,5 +20,10 @@ class Repository(val app: DenpaApp, val base: HttpUrl) {
         recordings = app.api.recordings(base)
     }
 
+    /** 局だけ取り直す (いま放送中の番組が変わるので) */
+    suspend fun refreshServices() {
+        services = app.api.services(base)
+    }
+
     fun url(relative: String?): String? = relative?.let { BaseUrl.resolve(base, it)?.toString() }
 }

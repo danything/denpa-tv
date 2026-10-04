@@ -25,6 +25,7 @@ import kotlinx.serialization.Serializable
 /** 画面の行き先。Navigation 3 は戻る履歴をただのリストとして持つ */
 @Serializable data object Home : NavKey
 @Serializable data object Setup : NavKey
+@Serializable data object Prefs : NavKey
 @Serializable data class Live(val serviceId: Long) : NavKey
 @Serializable data class Watch(val recordingId: Long) : NavKey
 
@@ -64,9 +65,10 @@ private fun Navigation(app: DenpaApp, base: okhttp3.HttpUrl) {
                     repo = repo,
                     onLive = { backStack.add(Live(it.id)) },
                     onWatch = { backStack.add(Watch(it.id)) },
-                    onSettings = { backStack.add(Setup) },
+                    onSettings = { backStack.add(Prefs) },
                 )
             }
+            entry<Prefs> { SettingsScreen(app, base.toString(), onChangeServer = { backStack.add(Setup) }) }
             entry<Setup> {
                 SetupScreen(app, onDone = { scope.launch { backStack.removeAt(backStack.lastIndex) } })
             }

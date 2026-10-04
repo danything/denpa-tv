@@ -29,7 +29,10 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 - **Matroska (.mkv)** — denpa の焼いた録画。`MatroskaExtractor` が読む。**字幕の PGS
   (`S_HDMV/PGS`) にも対応している** ([MatroskaExtractor のソース](https://github.com/androidx/media/blob/release/libraries/extractor/src/main/java/androidx/media3/extractor/mkv/MatroskaExtractor.java))。
   絵の字幕なので、出すのは Media3 の `SubtitleView` (View)。Compose の部品はまだ絵の字幕を描けない
-- **MPEG-TS (MPEG-2)** — 焼く前の録画。端末に MPEG-2 のデコーダがあれば (多くのテレビにはある)
+- **MPEG-TS (MPEG-2)** — 焼く前の録画と、低遅延のライブ (`?codec=raw`)。端末に MPEG-2 のデコーダがあれば
+- **チャプター** — Matroska の Chapters を `Chapter` として track の `Metadata` に出す (1.11.0 から。
+  [リリースノート](https://github.com/androidx/media/blob/release/RELEASENOTES.md))。CM 飛ばしはこれを読むので、
+  自前の EBML 読みも denpa の API も要らない
 - **AV1 のソフトデコードは入れない。** Media3 1.9 から dav1d ベースの `decoder_av1` があるが、
   **Maven には出ておらず、NDK でソースから焼く決まり** ([decoder_av1 の README](https://github.com/androidx/media/tree/release/libraries/decoder_av1)、
   [Media3 1.9.0 の紹介](https://android-developers.googleblog.com/2025/12/media3-190-whats-new.html))。

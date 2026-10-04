@@ -33,25 +33,87 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.ui.SubtitleView
+import io.github.danything.denpatv.data.ChapterMark
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
 
+/**
+ * 溜め方。**ライブは少なく溜めて、放送に近いところで観る。**
+ *
+ * ExoPlayer の既定は 50 秒まで溜めて 1 秒溜まったら動き出す。録画にはそれでよいが、ライブでは
+ * 溜めたぶんだけ放送から遅れる。denpa のライブは流しっぱなしの1本 (区切られた HLS ではない) なので、
+ * Media3 の LiveConfiguration (目標の遅れ) は効かない。溜める量で決め、遅れたら追いつく (`catchUp`)
+ */
+enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val afterRebufferMs: Int) {
+    /** 録画。ExoPlayer の既定 */
+    Recording(50_000, 50_000, 1_000, 2_000),
+    /** ライブ (denpa が焼く H.264 / AV1)。焼き上がりが塊で届くので少しは溜める */
+    Live(2_000, 8_000, 1_000, 1_500),
+    /** 低遅延 (生の TS)。届いたそばから出す */
+    LowLatency(500, 2_000, 250, 500),
+}
+
 /** API と同じ OkHttp で流す (接続の溜めを分け合う) */
 @OptIn(UnstableApi::class)
-fun buildPlayer(context: Context, http: OkHttpClient): ExoPlayer =
+fun buildPlayer(context: Context, http: OkHttpClient, buffering: Buffering): ExoPlayer =
     ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(OkHttpDataSource.Factory(http)))
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(buffering.minMs, buffering.maxMs, buffering.startMs, buffering.afterRebufferMs)
+                .build(),
+        )
         .build()
+
+/**
+ * ライブで放送から遅れたら追いつく。溜まりすぎたら少し速く回し、もっと溜まったら飛ぶ。
+ * 止まっている (一時停止) 間は触らない
+ */
+@Composable
+fun CatchUp(player: ExoPlayer, buffering: Buffering) {
+    val (speedUpMs, jumpMs) = if (buffering == Buffering.LowLatency) 1_500L to 4_000L else 4_000L to 10_000L
+    LaunchedEffect(player) {
+        while (true) {
+            delay(500)
+            if (!player.playWhenReady || player.playbackState != Player.STATE_READY) continue
+            val ahead = player.bufferedPosition - player.currentPosition
+            when {
+                ahead > jumpMs -> player.seekTo(player.bufferedPosition - buffering.startMs)
+                ahead > speedUpMs -> if (player.playbackParameters.speed == 1f) player.setPlaybackSpeed(1.05f)
+                ahead < speedUpMs / 3 -> if (player.playbackParameters.speed != 1f) player.setPlaybackSpeed(1f)
+            }
+        }
+    }
+}
+
+/** 動画に入っているチャプター (Media3 が Matroska の Chapters を `Chapter` として出す) */
+@OptIn(UnstableApi::class)
+fun chaptersOf(tracks: Tracks): List<ChapterMark> =
+    tracks.groups.asSequence()
+        .flatMap { group -> (0 until group.length).asSequence().map { group.getTrackFormat(it) } }
+        .mapNotNull { it.metadata }
+        .flatMap { metadata -> (0 until metadata.length()).asSequence().map { metadata[it] } }
+        .filterIsInstance<Chapter>()
+        .filterNot { it.isHidden }
+        .filter { it.startTimeMs != C.TIME_UNSET }
+        .map { ChapterMark(it.startTimeMs, if (it.endTimeMs == C.TIME_UNSET) Long.MAX_VALUE else it.endTimeMs, it.title?.value ?: "") }
+        .distinctBy { it.startMs }
+        .sortedBy { it.startMs }
+        .toList()
 
 /**
  * 映像と字幕と、上に重ねる文字。キーは呼ぶ側が受ける (ライブは局送り、録画は送り戻し)。
@@ -96,7 +158,13 @@ fun PlayerFrame(
                     .background(Color(0xB3000000))
                     .padding(horizontal = 48.dp, vertical = 24.dp),
             ) {
-                Text(text, style = MaterialTheme.typography.titleLarge, color = Color.White)
+                text.lines().forEachIndexed { index, line ->
+                    Text(
+                        line,
+                        style = if (index == 0) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
+                        color = Color.White,
+                    )
+                }
             }
         }
     }
@@ -120,9 +188,9 @@ fun rememberFlash(): Pair<String?, (String) -> Unit> {
 
 /** ExoPlayer を画面の寿命に合わせる。エラーは文にして返す */
 @Composable
-fun rememberPlayer(repo: Repository): Pair<ExoPlayer, String?> {
+fun rememberPlayer(repo: Repository, buffering: Buffering): Pair<ExoPlayer, String?> {
     val context = LocalContext.current
-    val player = remember { buildPlayer(context, repo.app.http) }
+    val player = remember(buffering) { buildPlayer(context, repo.app.http, buffering) }
     var error by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {

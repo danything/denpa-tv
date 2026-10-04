@@ -1,5 +1,6 @@
 package io.github.danything.denpatv.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -100,7 +101,7 @@ fun HomeScreen(
         }
         item {
             Row(Modifier.padding(horizontal = 48.dp)) {
-                Button(onClick = onSettings) { Text("繋ぐ先を変える") }
+                Button(onClick = onSettings) { Text("設定") }
             }
         }
     }
@@ -123,12 +124,21 @@ private fun ServiceCard(repo: Repository, service: Service, onClick: () -> Unit)
                 AsyncImage(model = logo, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
             }
         }
-        Text(
-            listOfNotNull(service.remoteControlKey?.toString(), service.name).joinToString(" "),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-        )
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+            Text(
+                listOfNotNull(service.remoteControlKey?.toString(), service.name).joinToString(" "),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // いま放送中の番組 (古い denpa は返さないので出さない)
+            service.now?.let { now ->
+                val at = System.currentTimeMillis()
+                Text(now.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                Box(Modifier.padding(top = 6.dp).fillMaxWidth().height(3.dp).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                    Box(Modifier.fillMaxWidth(now.progress(at)).height(3.dp).background(MaterialTheme.colorScheme.primary))
+                }
+            }
+        }
     }
 }
 

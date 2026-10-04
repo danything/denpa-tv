@@ -2,7 +2,7 @@ package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.Decoders
 import io.github.danything.denpatv.data.RecordingFile
-import io.github.danything.denpatv.data.liveCodec
+import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.pickFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -28,8 +28,20 @@ class CodecsTest {
     }
 
     @Test
-    fun ライブは_AV1_を解ければ_AV1() {
-        assertEquals("av1", liveCodec(Decoders(av1 = true, h264 = true, mpeg2 = false)))
-        assertEquals("h264", liveCodec(Decoders(av1 = false, h264 = true, mpeg2 = false)))
+    fun ライブの既定は_MPEG2_をハードで解ければ低遅延_そうでなければ_H264() {
+        val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
+        assertEquals(LiveQuality.Raw, LiveQuality.choose(null, tv))
+        val stick = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = false, mpeg2Hardware = false)
+        assertEquals(LiveQuality.H264, LiveQuality.choose(null, stick))
+        assertEquals(listOf(LiveQuality.H264), LiveQuality.available(stick))
+    }
+
+    @Test
+    fun 覚えた画質が選べなくなっていたら既定に戻す() {
+        val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
+        assertEquals(LiveQuality.Av1, LiveQuality.choose("Av1", tv))
+        val noAv1 = tv.copy(av1Hardware = false)
+        assertEquals(LiveQuality.Raw, LiveQuality.choose("Av1", noAv1))
+        assertEquals(LiveQuality.Raw, LiveQuality.choose("壊れた値", tv))
     }
 }
