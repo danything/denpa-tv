@@ -70,7 +70,9 @@ fun LivePlayerScreen(repo: Repository, serviceId: Long) {
 private fun describe(service: Service, quality: LiveQuality): String {
     val head = listOfNotNull(service.remoteControlKey?.toString(), service.name, quality.label).joinToString("  ")
     val now = service.now ?: return head
-    return "$head\n${now.title}  あと${now.remainingMinutes(System.currentTimeMillis())}分"
+    val left = "あと${now.remainingMinutes(System.currentTimeMillis())}分"
+    // サブチャンネルは番組名が空で来る
+    return if (now.title.isBlank()) "$head\n$left" else "$head\n${now.title}  $left"
 }
 
 private const val LOADING_QUALITY = "\u0000loading"

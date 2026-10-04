@@ -16,6 +16,7 @@ class BaseUrlTest {
     fun 読めないものは_null() {
         assertNull(BaseUrl.normalize(""))
         assertNull(BaseUrl.normalize("ftp://example.jp/"))
+        assertNull(BaseUrl.normalize("http://"))
     }
 
     /** denpa は根からの相対 (`api/…`) で返す。前段の接頭辞の下でも、その下に足す */

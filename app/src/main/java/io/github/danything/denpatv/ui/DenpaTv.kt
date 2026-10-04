@@ -52,7 +52,7 @@ fun DenpaTv(app: DenpaApp) {
 }
 
 @Composable
-private fun Navigation(app: DenpaApp, base: okhttp3.HttpUrl) {
+private fun Navigation(app: DenpaApp, base: java.net.URI) {
     val backStack = rememberNavBackStack(Home)
     val scope = rememberCoroutineScope()
     val repo = remember(base) { Repository(app, base) }

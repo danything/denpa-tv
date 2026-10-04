@@ -41,15 +41,38 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 
 ## AndroidX 以外に入れたもの
 
-### HTTP: OkHttp 5.5.0 (Retrofit も Ktor も入れない)
+### HTTP: 入れない (映像は Media3 の HttpEngine / DefaultHttpDataSource、API は HttpURLConnection)
 
-| 候補 | 版 (日付) | 見たところ |
-| --- | --- | --- |
-| **OkHttp** | 5.5.0 (2026-08) | Media3 (`media3-datasource-okhttp`) と Coil (`coil-network-okhttp`) が**同じ OkHttp を差して使える**。API・画像・映像の接続の溜めが1つになる |
-| Retrofit | 3.0.0 (2025-05) | OkHttp の上に載る。叩く口が `services` / `recordings` / `resume` / `health` の4つしかなく、インターフェースを宣言する手間のほうが大きい |
-| Ktor Client | 3.6.0 (2026-09) | Kotlin らしく書けるが、Android ではエンジンに結局 OkHttp を使う。Media3 と Coil に OkHttp が要るので、Ktor を足すと二重になる |
+**2026-10-04 に OkHttp を外した。** 「ライブラリはできるだけ少なく、最新のドキュメントの勧めどおりに」
+という方針で見直した。
 
-→ **OkHttp だけ**。4つの口は `DenpaApi` に手で書いた (50 行ほど)。
+Media3 の [ネットワーク スタックの頁](https://developer.android.com/media/media3/exoplayer/network-stacks?hl=ja)
+(2026-10-04 に確認) の勧めは次の順:
+
+| 候補 | 見たところ |
+| --- | --- |
+| **HttpEngine** | いちばんの勧め。Android 14 (S 拡張 7) から OS に入っていて APK が増えない。HTTP/2・HTTP/3 (QUIC)。Media3 の `HttpEngineDataSource` は `media3-datasource` (ExoPlayer が既に引いている) にあり、**依存が増えない** |
+| Cronet (Google Play 開発者サービス経由) | 2番目。HTTP/3 を話し APK は 100 KB 未満だが、**Play 開発者サービスが要る** (Fire TV には無い)。`media3-datasource-cronet` と Play 開発者サービスの依存が増える |
+| Cronet (同梱) | Play 開発者サービスが無くても動くが APK が約 8 MB 増える |
+| OkHttp | HTTP/2 まで。APK 1 MB 未満。`media3-datasource-okhttp` と OkHttp が増える |
+| **DefaultHttpDataSource** | OS の HttpURLConnection。APK が増えない |
+
+→ **映像は Android 14 からは HttpEngine、それより前は DefaultHttpDataSource** (どちらも Media3 の中の
+もので依存は増えない)。どちらも頁の勧めどおり `DefaultDataSource.Factory` で包み、HttpEngine は
+アプリで1つを使い回す (`DenpaApp.httpEngine`)。
+
+→ **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
+読み 30 秒と書いてある)。叩くのは `services` / `recordings` / `resume` / 録画の削除 / `health` の5つだけ。
+
+OkHttp (と Retrofit / Ktor) を採らない理由:
+
+- **denpa は家の LAN の素の HTTP/1.1。** HTTP/2・HTTP/3 が効くのは CDN 越しの適応配信で
+  (同じ頁もそう書いている)、LAN の1本の流れでは OkHttp でも OS の HTTP でも同じ
+- 前は「API・画像・映像で同じ OkHttp を分け合える」のが理由だったが、画像のライブラリも外したので
+  (下記) その理由が無くなった。Media3 の勧め (HttpEngine) に乗るほうが依存が少ない
+
+**キャッシュ (`CacheDataSource`) は使わない。** ライブは流しっぱなしの1本で、溜めても二度と読まない。
+録画は LAN の denpa から読むので、端末に溜めても速くならず、テレビの少ない容量を食うだけ。
 
 ### JSON: kotlinx.serialization 1.11.0
 
@@ -60,14 +83,13 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 
 → **kotlinx.serialization**。知らない鍵は無視する設定にしてある (denpa は JSON に鍵を足すことがある)。
 
-### 画像: Coil 3.6.3
+### 画像: 入れない (HttpURLConnection + BitmapFactory + LruCache)
 
-| 候補 | 版 (日付) | 見たところ |
-| --- | --- | --- |
-| **Coil 3** | 3.6.3 (2026-09) | Compose が第一。`AsyncImage` で済み、OkHttp を差せる (`coil-network-okhttp`) |
-| Glide | 5.0.9 / Compose 統合 1.0.0-beta10 (2026-07) | Compose との繋ぎがまだ beta |
-
-→ **Coil 3**。局ロゴと録画のポスターを出すだけ。
+**2026-10-04 に Coil を外した。** ホームに出すのは局ロゴと録画のポスターだけ (数十枚の小さい絵) で、
+要るのは「出す大きさに縮めて読む」と「読んだものを覚えておく」の2つ。どちらも Android の
+[大きな画像を効率よく読み込む](https://developer.android.com/topic/performance/graphics/load-bitmap) の
+やり方 (`inSampleSize` で 2 の冪に縮める) と `LruCache` で 60 行ほどに収まる (`data/Images.kt`、
+`ui/RemoteImage.kt`)。Coil 3.6.3 / Glide 5 の持つディスクキャッシュ・変換・GIF などは使わない。
 
 ### DI: 入れない (手で渡す)
 
@@ -75,16 +97,21 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 | --- | --- | --- |
 | Hilt | 2.60.1 | KSP とアノテーション処理が要り、ビルドが重くなる。画面が4つのアプリには大きすぎる |
 | Koin | 4.2.2 (2026-06) | 軽いが、実行時に解決するので間違いがビルドで見つからない |
-| **手で渡す** | — | `DenpaApp` (Application) が OkHttp・API・設定・デコーダの情報を1つずつ持ち、画面に渡す |
+| **手で渡す** | — | `DenpaApp` (Application) が HttpEngine・API・設定・デコーダの情報を1つずつ持ち、画面に渡す |
 
-→ **入れない**。持つものが5つしかなく、追いやすさを取った。
+→ **入れない**。持つものが数個しかなく、追いやすさを取った。
 
 ### コルーチン: kotlinx-coroutines-android 1.11.0
 
 DataStore と通信の待ちに使う。AndroidX が既に依存しているので、版を明示しているだけ。
 
+## まとめ: AndroidX / Kotlin の外から入れているもの
+
+なし。kotlinx.serialization と kotlinx.coroutines は Kotlin 公式 (JetBrains) のライブラリで、
+Navigation 3 と DataStore が既に使っている。
+
 ## テストだけで使うもの
 
 - JUnit 4.13.2 — Android のローカルテストの標準
 - kotlinx-coroutines-test — `runTest`
-- OkHttp の `mockwebserver3` — denpa の JSON を返す偽のサーバ (OkHttp と同じ版)
+- 偽の denpa は JDK の `com.sun.net.httpserver.HttpServer` (依存を足さない)

@@ -3,11 +3,24 @@
 [denpa](https://github.com/danything/denpa) を Android TV / Google TV で観るアプリです。
 Jetpack Compose for TV で書いています。
 
+<p align="center">
+  <img src="docs/images/navigation.webp" alt="ホームからライブを開き、番組名を出す" width="720">
+</p>
+
+| ホーム | ライブ |
+| --- | --- |
+| <img src="docs/images/home.webp" alt="ホーム。局のカードにいま放送中の番組と進み具合、録画のカード" width="420"> | <img src="docs/images/live.webp" alt="ライブ。下に局と番組名と残り時間" width="420"> |
+| **録画を消す** (長押し) | **設定** |
+| <img src="docs/images/delete.webp" alt="録画を消すか確かめる画面。最初はキャンセルに合っている" width="420"> | <img src="docs/images/settings.webp" alt="設定。ライブの画質・CM を飛ばす・繋ぐ先" width="420"> |
+
+映像とポスターはぼかしてあります (放送の絵のため)。絵は Android TV のエミュレータ (API 36、1080p) で撮りました。
+
 - **ライブ** — 局の一覧に、いま放送中の番組と進み具合が出ます。選ぶとそのまま観られます。
   上下キー (リモコンのチャンネル送り) で隣の局へ、決定で番組名と残り時間
 - **録画** — 新しい順に並び、選ぶと**続きから**再生します。左で 10 秒戻し、右で 30 秒送り、
   決定で止める・動かす、上下 (次へ・前へ) でチャプター送り。**CM は自動で飛ばします** (設定で切れる)。
-  観た位置は denpa に預けるので、ブラウザとも続きを分け合えます
+  観た位置は denpa に預けるので、ブラウザとも続きを分け合えます。録画のカードを**長押しすると消せます**
+  (確かめる画面が出て、最初はキャンセルに合っています)
 
 続きの位置といま放送中の番組は、それを返す denpa (danything/denpa#390 を含む版から) で出ます。古い denpa でも、
 出ないだけでほかは動きます。

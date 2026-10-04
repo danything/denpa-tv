@@ -1,6 +1,8 @@
 package io.github.danything.denpatv.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.net.http.HttpEngine
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -38,7 +40,11 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.HttpEngineDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -49,7 +55,7 @@ import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
-import okhttp3.OkHttpClient
+import java.util.concurrent.Executors
 
 /**
  * 溜め方。**ライブは少なく溜めて、放送に近いところで観る。**
@@ -67,11 +73,34 @@ enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val after
     LowLatency(500, 2_000, 250, 500),
 }
 
-/** API と同じ OkHttp で流す (接続の溜めを分け合う) */
+/**
+ * 映像を取る道。**Media3 のネットワーク スタックの頁の勧めどおり**: Android 14 からは OS の
+ * HttpEngine (アプリで1つ)、それより前は DefaultHttpDataSource (OS の HttpURLConnection)。
+ * どちらも `DefaultDataSource.Factory` で包む (http(s) 以外も同じ口で開けるように)。docs/libraries.md
+ */
 @OptIn(UnstableApi::class)
-fun buildPlayer(context: Context, http: OkHttpClient, buffering: Buffering): ExoPlayer =
+@SuppressLint("NewApi") // HttpEngine は hasHttpEngine() で確かめてから作る (DenpaApp.httpEngine)
+fun dataSourceFactory(context: Context, engine: HttpEngine?): DataSource.Factory {
+    val http: HttpDataSource.Factory = if (engine != null) {
+        HttpEngineDataSource.Factory(engine, Executors.newSingleThreadExecutor())
+            .setConnectionTimeoutMs(CONNECT_TIMEOUT_MS)
+            .setReadTimeoutMs(READ_TIMEOUT_MS)
+    } else {
+        DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(CONNECT_TIMEOUT_MS)
+            .setReadTimeoutMs(READ_TIMEOUT_MS)
+    }
+    return DefaultDataSource.Factory(context, http)
+}
+
+private const val CONNECT_TIMEOUT_MS = 10_000
+// ライブは流しっぱなしなので読みの時間切れは長めに (止まったら ExoPlayer が言う)
+private const val READ_TIMEOUT_MS = 30_000
+
+@OptIn(UnstableApi::class)
+fun buildPlayer(context: Context, engine: HttpEngine?, buffering: Buffering): ExoPlayer =
     ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(OkHttpDataSource.Factory(http)))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory(context, engine)))
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(buffering.minMs, buffering.maxMs, buffering.startMs, buffering.afterRebufferMs)
@@ -155,7 +184,7 @@ fun PlayerFrame(
                 Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .background(Color(0xB3000000))
+                    .background(Color(0xE6000000)) // 映像の上でも読めるように濃いめに
                     .padding(horizontal = 48.dp, vertical = 24.dp),
             ) {
                 text.lines().forEachIndexed { index, line ->
@@ -190,7 +219,7 @@ fun rememberFlash(): Pair<String?, (String) -> Unit> {
 @Composable
 fun rememberPlayer(repo: Repository, buffering: Buffering): Pair<ExoPlayer, String?> {
     val context = LocalContext.current
-    val player = remember(buffering) { buildPlayer(context, repo.app.http, buffering) }
+    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, buffering) }
     var error by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {

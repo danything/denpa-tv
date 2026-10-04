@@ -114,13 +114,14 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long) {
                 player.seekTo(player.currentPosition + 30_000); flash(position(player.currentPosition)); true
             }
             Key.DirectionUp, Key.MediaNext, Key.MediaSkipForward -> {
-                val next = nextChapter(chapters, player.currentPosition)
+                // CM を飛ばしているなら、送り先も本編だけ (CM の頭に止まっても、すぐ飛ばされるだけ)
+                val next = nextChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, player.currentPosition)
                 if (next == null) flash(if (chapters.isEmpty()) "チャプターがありません" else "最後のチャプターです")
                 else { player.seekTo(next.startMs); flash("${next.title}  ${position(next.startMs)}") }
                 true
             }
             Key.DirectionDown, Key.MediaPrevious, Key.MediaSkipBackward -> {
-                val previous = previousChapter(chapters, player.currentPosition)
+                val previous = previousChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, player.currentPosition)
                 if (previous == null) flash("チャプターがありません")
                 else {
                     if (previous.isCm) skipped += previous.startMs
