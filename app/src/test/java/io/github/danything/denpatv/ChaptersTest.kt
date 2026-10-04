@@ -58,4 +58,13 @@ class SpeedTest {
         assertEquals("1.25×", io.github.danything.denpatv.data.speedLabel(1.25f))
         assertEquals("2×", io.github.danything.denpatv.data.speedLabel(2f))
     }
+
+    @org.junit.Test
+    fun 流れている最中に速さを変えたときだけ飛び直す() {
+        assertEquals(true, io.github.danything.denpatv.data.resyncAfterSpeedChange(1f, 1.25f, playing = true))
+        // 始まる前 (開いたときに覚えていた速さを入れる) は飛ばない
+        assertEquals(false, io.github.danything.denpatv.data.resyncAfterSpeedChange(1f, 1.25f, playing = false))
+        // 同じ速さ (画面を作り直しただけ) なら飛ばない
+        assertEquals(false, io.github.danything.denpatv.data.resyncAfterSpeedChange(1.25f, 1.25f, playing = true))
+    }
 }

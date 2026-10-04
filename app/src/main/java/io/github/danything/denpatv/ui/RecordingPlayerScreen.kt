@@ -27,6 +27,7 @@ import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.nextSpeed
+import io.github.danything.denpatv.data.resyncAfterSpeedChange
 import io.github.danything.denpatv.data.speedLabel
 import io.github.danything.denpatv.data.cmSkipTarget
 import io.github.danything.denpatv.data.nextChapter
@@ -86,6 +87,15 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
         delay(5_000)
         bar = null
     }
+    /**
+     * 一度でも流れ始めたか。速さを変えたときに飛び直すかの判定に使う (`resyncAfterSpeedChange`)。
+     * 流れ始めたあとの読み込み中 (飛び直した直後の約1秒など) に続けて変えたときも飛び直す
+     */
+    var started by remember { mutableStateOf(false) }
+    LaunchedEffect(player) {
+        while (player.playbackState != Player.STATE_READY) delay(250)
+        started = true
+    }
     /** 最後まで観た (終わりの帯を出す)。勝手に一覧へは戻らない */
     var ended by remember { mutableStateOf(false) }
     /** 消した (閉じるときに観た位置を預けない) */
@@ -94,7 +104,13 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     val speed by repo.app.settings.playbackSpeed.collectAsState(initial = 1f)
     val scope = rememberCoroutineScope()
     // 速さは録画だけ (ライブは追いつくための 1.05 倍を自分で回す)。CM 飛ばしと観た位置は再生位置で見るので速さに関わらない
-    LaunchedEffect(player, speed) { player.setPlaybackSpeed(speed) }
+    // 観ている途中で変えたら、今の位置に飛び直して音と映像を新しい速さで流し直す (`resyncAfterSpeedChange`)
+    LaunchedEffect(player, speed) {
+        val from = player.playbackParameters.speed
+        player.setPlaybackSpeed(speed)
+        val flowing = started && player.playbackState != Player.STATE_ENDED
+        if (resyncAfterSpeedChange(from, speed, flowing)) player.seekTo(player.currentPosition)
+    }
     fun length() = player.duration.takeIf { it != C.TIME_UNSET }?.div(1000.0) ?: 0.0
     var chapters by remember { mutableStateOf(emptyList<ChapterMark>()) }
     val skipped = remember { mutableSetOf<Long>() }
