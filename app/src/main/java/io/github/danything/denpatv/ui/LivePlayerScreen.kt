@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.media3.common.MediaItem
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CenterPress
+import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
 import io.github.danything.denpatv.data.liveCommand
 import io.github.danything.denpatv.data.LiveQuality
@@ -21,6 +22,8 @@ import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.neighbor
 import io.github.danything.denpatv.data.number
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -71,7 +74,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     CatchUp(player, buffering)
 
     LaunchedEffect(Unit) {
-        if (services.isEmpty()) {
+        if (services.isEmpty() || repo.servicesStale) {
             try {
                 repo.refreshServices()
             } catch (_: Unauthorized) {
@@ -94,23 +97,35 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         hinted = true
         repo.app.settings.setLastService(service.id)
     }
+    /** 局を取り直して、映している局を新しいものに替える (取れなければそのまま) */
+    suspend fun refresh() {
+        runCatching { repo.refreshServices() }.onSuccess {
+            services = repo.services
+            val current = playing ?: return@onSuccess
+            val fresh = services.firstOrNull { it.id == current.id }
+            when {
+                fresh != null -> { playing = fresh; gone = false }
+                // 知らせは消えたときに1度だけ (取り直しのたびに出さない)
+                !gone -> {
+                    gone = true
+                    flash("${current.name} は局の一覧から無くなりました (スキャンし直した?)。上下で別の局へ")
+                }
+            }
+        }
+    }
     // いま放送中の番組は変わっていく。1分ごとに取り直す (古い denpa では now が来ないだけ)
     LaunchedEffect(Unit) {
         while (true) {
             delay(60_000)
-            runCatching { repo.refreshServices() }.onSuccess {
-                services = repo.services
-                val current = playing ?: return@onSuccess
-                val fresh = services.firstOrNull { it.id == current.id }
-                when {
-                    fresh != null -> { playing = fresh; gone = false }
-                    // 知らせは消えたときに1度だけ (取り直しのたびに出さない)
-                    !gone -> {
-                        gone = true
-                        flash("${current.name} は局の一覧から無くなりました (スキャンし直した?)。上下で別の局へ")
-                    }
-                }
-            }
+            refresh()
+        }
+    }
+    // denpa の知らせ (局・番組表が変わった、繋ぎ直した) でも取り直す。番組表は1局集めるたびに来るので、まとめて1回 (1 秒待つ)
+    LaunchedEffect(Unit) {
+        val changed = setOf(DenpaEvent.Opened, DenpaEvent.Changed("services"), DenpaEvent.Changed("programs"))
+        repo.events.filter { it in changed }.collectLatest {
+            delay(1_000)
+            if (ready) refresh()
         }
     }
     BackHandler(enabled = panel || controls) { panel = false; controls = false }

@@ -42,12 +42,16 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.Card
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.codecLabels
 import io.github.danything.denpatv.data.durationLabel
 import io.github.danything.denpatv.data.watched
 import io.github.danything.denpatv.data.Unauthorized
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -85,9 +89,19 @@ fun RecordingsScreen(
     var opened by remember { mutableStateOf<Recording?>(null) }
     /** 最後に合わせていた録画。観て戻ってきたらここに合わせ直す (画面を作り直しても残る) */
     var lastFocused by rememberSaveable { mutableStateOf<Long?>(null) }
+    /** いまカードに合いがあれば、その録画 (メニューや詳しくに合いがあるときは null) */
+    var focusedCard by remember { mutableStateOf<Long?>(null) }
     val requesters = remember { mutableMapOf<Long, FocusRequester>() }
     val grid = rememberLazyGridState()
     val scope = rememberCoroutineScope()
+
+    /** その録画のカードに合わせる (見えていなければそこまで送ってから) */
+    suspend fun focus(id: Long) {
+        withFrameNanos { }
+        if (grid.layoutInfo.visibleItemsInfo.none { it.key == id }) gridIndex(recordings, id)?.let { grid.scrollToItem(it) }
+        withFrameNanos { }
+        runCatching { requesters[id]?.requestFocus() }
+    }
 
     suspend fun guarded(block: suspend () -> Unit) {
         try {
@@ -108,6 +122,41 @@ fun RecordingsScreen(
         if (repo.recordings.isEmpty() || retry > 0 || repo.recordingsStale) {
             repo.recordingsStale = false
             guarded { repo.refreshRecordings() }
+        }
+    }
+    // denpa の知らせ (録画が増えた・焼き上がった・消えた、繋ぎ直した) で読み直す。続けて来たらまとめて1回 (1 秒待つ)。
+    // 読めなくてもいまの一覧を出したまま (次の知らせか、戻ったときに読み直す)
+    LaunchedEffect(Unit) {
+        repo.events.filter { it == DenpaEvent.Opened || it == DenpaEvent.Changed("recordings") }.collectLatest {
+            delay(1_000)
+            if (!loaded) return@collectLatest
+            val before = recordings
+            // 詳しくを開いていれば、その録画に合っているものと見なす
+            val had = focusedCard ?: opened?.id
+            repo.recordingsStale = false
+            try {
+                repo.refreshRecordings()
+            } catch (_: Unauthorized) {
+                return@collectLatest onUnauthorized()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                repo.recordingsStale = true
+                return@collectLatest
+            }
+            recordings = repo.recordings
+            error = null
+            // 詳しくを開いていれば新しい中身に替える (録り終えた・焼き上がったなど)
+            opened = opened?.let { old -> recordings.firstOrNull { it.id == old.id } ?: old }
+            // 合わせていた録画が消えたら (ブラウザで消したなど)、詳しくを閉じて残っている隣へ
+            val alive = recordings.map { it.id }.toSet()
+            if (had != null && had !in alive) {
+                if (opened?.id == had) opened = null
+                val at = before.indexOfFirst { it.id == had }
+                val next = (before.drop(at + 1) + before.take(at).reversed()).firstOrNull { it.id in alive } ?: return@collectLatest
+                lastFocused = next.id
+                focus(next.id)
+            }
         }
     }
     LaunchedEffect(loaded) {
@@ -165,7 +214,12 @@ fun RecordingsScreen(
                             repo,
                             recording,
                             modifier = Modifier.focusRequester(requester).onFocusChanged {
-                                if (it.isFocused) lastFocused = recording.id
+                                if (it.isFocused) {
+                                    lastFocused = recording.id
+                                    focusedCard = recording.id
+                                } else if (focusedCard == recording.id) {
+                                    focusedCard = null
+                                }
                             },
                             onClick = { onWatch(recording) },
                             onLongClick = { opened = recording },
@@ -205,12 +259,7 @@ fun RecordingsScreen(
                             notify("消せませんでした (録画中は消せません)")
                         }
                     }
-                    withFrameNanos { }
-                    lastFocused?.let { id ->
-                        if (grid.layoutInfo.visibleItemsInfo.none { it.key == id }) gridIndex(recordings, id)?.let { grid.scrollToItem(it) }
-                        withFrameNanos { }
-                        runCatching { requesters[id]?.requestFocus() }
-                    }
+                    lastFocused?.let { focus(it) }
                 }
             },
             onDismiss = {
@@ -258,8 +307,9 @@ private fun RecordingCard(
             )
             // メニューが開いて狭くなっても札を潰さない (はみ出すぶんは切れる)
             Row(Modifier.horizontalScroll(rememberScrollState(), enabled = false), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // 録画中は形の代わりに「録画中」(観ると追っかけ)
-                val labels = if (recording.recording) listOf(RECORDING_BADGE) else recording.codecLabels
+                // 録画中は形の代わりに「録画中」(観ると追っかけ)。焼いている間は頭に進み (denpa の知らせで動く)
+                val encoding = repo.encoding[recording.id]?.let { "エンコード中 ${(it * 100).toInt()}%" }
+                val labels = listOfNotNull(encoding) + if (recording.recording) listOf(RECORDING_BADGE) else recording.codecLabels
                 labels.forEach { label ->
                     Text(
                         label,
