@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
       # Android SDK はランナーに入っている。足りない platform は AGP が取ってくる
       - name: Lint / unit tests / debug APK
