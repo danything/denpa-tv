@@ -27,12 +27,8 @@ Jetpack Compose for TV で書いています。
 
 ## 入れ方
 
-リリース前なので、CI が焼いた APK を手で入れます (サイドロード)。
-
-1. [Actions](https://github.com/danything/denpa-tv/actions) の最新の成功した実行から、
-   `denpa-tv-debug` を落として展開する (`app-debug.apk`)
-2. テレビの「開発者向けオプション」で USB デバッグ (またはネットワーク デバッグ) を有効にする
-3. `adb connect <テレビの IP>` → `adb install app-debug.apk`
+Play ストアにはまだ出していないので、パソコンから adb で入れます。手順は [docs/install.md](docs/install.md)
+(APK の手に入れ方、テレビの開発者向けオプション、ワイヤレス デバッグ、困ったとき)。
 
 ## denpa に繋ぐ
 
@@ -83,3 +79,4 @@ denpa に焼かせず、放送そのもの (1局に絞った TS) を流します
 - JDK 17 以上 (CI は 21)、Android SDK (compileSdk 37)
 - `./gradlew assembleDebug` / `./gradlew testDebugUnitTest` / `./gradlew lintDebug`
 - 使っているライブラリと選んだ理由は [docs/libraries.md](docs/libraries.md)
+- リリースの出し方 (署名の鍵) は [docs/release.md](docs/release.md)
