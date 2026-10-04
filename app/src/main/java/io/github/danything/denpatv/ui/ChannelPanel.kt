@@ -38,6 +38,7 @@ import androidx.tv.material3.ListItem
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import io.github.danything.denpatv.data.SERVICE_TYPES
+import io.github.danything.denpatv.data.airing
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.number
 
@@ -45,7 +46,10 @@ import io.github.danything.denpatv.data.number
  * ライブの中の局の一覧。**denpa の画面のライブと同じく、種別 (地上波 / BS / CS) で切り替え、
  * 番号・ロゴ・局名・いま放送中の番組を並べ、いま映している局に印を付ける。**
  *
- * 開いたときは、いま映している局の種別で、その局に合わせる (局が 100 を超えても探させない)
+ * 開いたときは、いま映している局の種別で、その局に合わせる (局が 100 を超えても探させない)。
+ *
+ * ブラウザのライブと同じく、**放送している局だけ並べる** (本放送と同じものを流しているサブチャンネルは出さない。
+ * 別の番組を流せば名前が付くので出てくる)。いま映している局は放送していなくても残す
  */
 @Composable
 fun ChannelPanel(
@@ -54,9 +58,11 @@ fun ChannelPanel(
     current: Service?,
     onSelect: (Service) -> Unit,
 ) {
-    val types = SERVICE_TYPES.filter { (type, _) -> services.any { it.type == type } }
+    val onAir = airing(services).map { it.id }.toSet()
+    val shownServices = services.filter { it.id in onAir || it.id == current?.id }
+    val types = SERVICE_TYPES.filter { (type, _) -> shownServices.any { it.type == type } }
     var shown by remember { mutableStateOf(current?.type ?: types.firstOrNull()?.first ?: "GR") }
-    val listed = services.filter { it.type == shown }
+    val listed = shownServices.filter { it.type == shown }
     val list = rememberLazyListState()
     val currentRow = remember { FocusRequester() }
     val firstRow = remember { FocusRequester() }

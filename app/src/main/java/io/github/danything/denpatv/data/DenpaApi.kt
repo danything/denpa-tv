@@ -30,9 +30,8 @@ class DenpaApi(private val token: () -> String? = { null }) {
 
     suspend fun services(base: URI): List<Service> = get(base, "api/services")
 
-    /** 録画を新しい順に。`offset` から `limit` 件 (多いので少しずつ読む) */
-    suspend fun recordings(base: URI, limit: Int = 60, offset: Int = 0): List<Recording> =
-        get(base, "api/recordings?limit=$limit&offset=$offset")
+    /** 録画を新しい順に、全部 (画面は一番古い録画から開くので) */
+    suspend fun recordings(base: URI): List<Recording> = get(base, "api/recordings")
 
     /**
      * どこまで観たかを預ける (`POST /api/recordings/<id>/resume`)。秒で渡す。
@@ -47,6 +46,19 @@ class DenpaApi(private val token: () -> String? = { null }) {
                 // 覚えられなくても観るのは止めない
             }
         }
+
+    /** 番組の中身。古い denpa (口が無い) や読めないときは null */
+    suspend fun recordingDetail(base: URI, id: Long): RecordingDetail? = withContext(Dispatchers.IO) {
+        val url = BaseUrl.resolve(base, "api/recordings/$id/detail") ?: return@withContext null
+        val res = try {
+            Http.request(url, token = token())
+        } catch (_: IOException) {
+            return@withContext null
+        }
+        if (res.code == 401) throw Unauthorized(url)
+        if (!res.ok) return@withContext null
+        runCatching { json.decodeFromString(RecordingDetail.serializer(), res.text()) }.getOrNull()
+    }
 
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。消せたら true */
     suspend fun deleteRecording(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
