@@ -2,7 +2,6 @@ package io.github.danything.denpatv.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +32,5 @@ fun RemoteImage(url: String?, contentScale: ContentScale, modifier: Modifier = M
             }
         }
         image?.let { Image(it, contentDescription = null, contentScale = contentScale, modifier = Modifier.matchParentSize()) }
-        if (image == null) Box(Modifier.matchParentSize())
     }
 }

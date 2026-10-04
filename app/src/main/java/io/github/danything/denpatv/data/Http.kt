@@ -18,7 +18,7 @@ object Http {
     }
 
     /**
-     * `token` があれば `Authorization: Bearer` を付ける (denpa の外から繋ぐとき。docs/pairing は README)
+     * `token` があれば `Authorization: Bearer` を付ける (家の外の denpa に登録したとき。README の「denpa に繋ぐ」)
      */
     fun request(url: URI, method: String = "GET", json: String? = null, token: String? = null): Response {
         val connection = url.toURL().openConnection() as HttpURLConnection

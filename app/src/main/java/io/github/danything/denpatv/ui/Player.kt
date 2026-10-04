@@ -57,14 +57,14 @@ import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
-import java.util.concurrent.Executors
+import java.util.concurrent.Executor
 
 /**
  * 溜め方。**ライブは少なく溜めて、放送に近いところで観る。**
  *
  * ExoPlayer の既定は 50 秒まで溜めて 1 秒溜まったら動き出す。録画にはそれでよいが、ライブでは
  * 溜めたぶんだけ放送から遅れる。denpa のライブは流しっぱなしの1本 (区切られた HLS ではない) なので、
- * Media3 の LiveConfiguration (目標の遅れ) は効かない。溜める量で決め、遅れたら追いつく (`catchUp`)
+ * Media3 の LiveConfiguration (目標の遅れ) は効かない。溜める量で決め、遅れたら追いつく (`CatchUp`)
  */
 enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val afterRebufferMs: Int) {
     /** 録画。ExoPlayer の既定 */
@@ -82,9 +82,9 @@ enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val after
  */
 @OptIn(UnstableApi::class)
 @SuppressLint("NewApi") // HttpEngine は hasHttpEngine() で確かめてから作る (DenpaApp.httpEngine)
-fun dataSourceFactory(context: Context, engine: HttpEngine?, token: String?): DataSource.Factory {
+fun dataSourceFactory(context: Context, engine: HttpEngine?, executor: Executor, token: String?): DataSource.Factory {
     val http: HttpDataSource.Factory = if (engine != null) {
-        HttpEngineDataSource.Factory(engine, Executors.newSingleThreadExecutor())
+        HttpEngineDataSource.Factory(engine, executor)
             .setConnectionTimeoutMs(CONNECT_TIMEOUT_MS)
             .setReadTimeoutMs(READ_TIMEOUT_MS)
     } else {
@@ -106,9 +106,9 @@ private const val CONNECT_TIMEOUT_MS = 10_000
 private const val READ_TIMEOUT_MS = 30_000
 
 @OptIn(UnstableApi::class)
-fun buildPlayer(context: Context, engine: HttpEngine?, token: String?, buffering: Buffering): ExoPlayer =
+fun buildPlayer(context: Context, engine: HttpEngine?, executor: Executor, token: String?, buffering: Buffering): ExoPlayer =
     ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory(context, engine, token)))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory(context, engine, executor, token)))
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(buffering.minMs, buffering.maxMs, buffering.startMs, buffering.afterRebufferMs)
@@ -232,7 +232,7 @@ fun rememberFlash(): Pair<String?, (String) -> Unit> {
 @Composable
 fun rememberPlayer(repo: Repository, buffering: Buffering, onUnauthorized: () -> Unit = {}): Pair<ExoPlayer, String?> {
     val context = LocalContext.current
-    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, repo.token, buffering) }
+    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, repo.app.httpExecutor, repo.token, buffering) }
     var error by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {

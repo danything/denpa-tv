@@ -13,7 +13,7 @@ data class Service(
     val remoteControlKey: Int? = null,
     val logo: String? = null,
     val live: String,
-    /** いま放送中の番組。denpa#390 を含む版から。古い denpa には無いので null として扱う */
+    /** いま放送中の番組。denpa 1.30.0 から。古い denpa には無いので null として扱う */
     val now: NowProgram? = null,
 )
 
@@ -42,21 +42,16 @@ data class NowProgram(
     fun remainingMinutes(at: Long): Long = ((endAt - at).coerceAtLeast(0) + 59_999) / 60_000
 }
 
-/** `GET /api/recordings` の1件 */
+/** `GET /api/recordings` の1件。使う鍵だけ (ほかは読み捨てる) */
 @Serializable
 data class Recording(
     val id: Long,
     val title: String,
-    val name: String,
-    val serviceId: Long? = null,
     val serviceName: String? = null,
     val startAt: Long,
-    val endAt: Long,
-    val durationMs: Long? = null,
     val poster: String? = null,
     val files: List<RecordingFile> = emptyList(),
-    val audio: String? = null,
-    /** 続きの位置 (ミリ秒)。denpa#390 を含む版から。無い・null なら頭から */
+    /** 続きの位置 (ミリ秒)。denpa 1.30.0 から。無い・null なら頭から */
     val resumeMs: Long? = null,
 )
 

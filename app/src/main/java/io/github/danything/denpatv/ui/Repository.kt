@@ -24,11 +24,6 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     /** まだ読める録画があるか (少しずつ読むので) */
     val hasMoreRecordings: Boolean get() = pager.hasMore
 
-    suspend fun refresh() {
-        services = api.services(base)
-        refreshRecordings()
-    }
-
     /** 録画を頭から読み直す */
     suspend fun refreshRecordings() = pager.refresh()
 

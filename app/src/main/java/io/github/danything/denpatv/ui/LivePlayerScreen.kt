@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -36,8 +35,11 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
     val buffering = if (quality == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
 
     var services by remember { mutableStateOf(repo.services) }
-    /** -1 は、まだ決めていない (覚えている局を読むまで) */
-    var index by remember { mutableIntStateOf(-1) }
+    /**
+     * 映している局。**番号ではなく局で持つ** — 1 分ごとの取り直しで一覧の並びや顔ぶれが変わると、
+     * 番号だと隣の局を指してしまう。一覧から消えても、映しているものは止めない (知らせだけ出す)
+     */
+    var playing by remember { mutableStateOf<Service?>(null) }
     var panel by remember { mutableStateOf(false) }
     val (player, error) = rememberPlayer(repo, buffering, onUnauthorized)
     val (overlay, flash) = rememberFlash()
@@ -54,10 +56,10 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
             services = repo.services
         }
         val last = repo.app.settings.lastService.first()
-        index = services.indexOfFirst { it.id == last }.takeIf { it >= 0 } ?: 0
+        playing = services.firstOrNull { it.id == last } ?: services.firstOrNull()
     }
-    LaunchedEffect(index, quality) {
-        val service = services.getOrNull(index) ?: return@LaunchedEffect
+    LaunchedEffect(playing?.id, quality) {
+        val service = playing ?: return@LaunchedEffect
         val url = repo.url("${service.live}?codec=${quality.codec}") ?: return@LaunchedEffect
         player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
         player.prepare()
@@ -69,14 +71,24 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
     LaunchedEffect(Unit) {
         while (true) {
             delay(60_000)
-            runCatching { repo.refreshServices() }.onSuccess { services = repo.services }
+            runCatching { repo.refreshServices() }.onSuccess {
+                services = repo.services
+                val current = playing ?: return@onSuccess
+                val fresh = services.firstOrNull { it.id == current.id }
+                if (fresh == null) flash("${current.name} は局の一覧から無くなりました (スキャンし直した?)。上下で別の局へ")
+                else playing = fresh
+            }
         }
     }
     BackHandler(enabled = panel) { panel = false }
 
-    if (index < 0) return Centered("読み込んでいます…")
-    if (services.isEmpty()) return Centered("局がありません")
-    val current = services.getOrNull(index)
+    if (services.isEmpty()) return Centered(if (playing == null) "読み込んでいます…" else "局がありません")
+    val current = playing ?: return Centered("読み込んでいます…")
+    /** 隣の局。いまの局が一覧から消えていたら、頭から */
+    fun zap(step: Int) {
+        val at = services.indexOfFirst { it.id == current.id }
+        playing = services[if (at < 0) 0 else (at + step + services.size) % services.size]
+    }
     PlayerFrame(
         player,
         overlay,
@@ -84,18 +96,17 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
         active = !panel,
         onKey = { event ->
             when (event.key) {
-                Key.DirectionUp, Key.ChannelUp -> { index = (index - 1 + services.size) % services.size; true }
-                Key.DirectionDown, Key.ChannelDown -> { index = (index + 1) % services.size; true }
+                Key.DirectionUp, Key.ChannelUp -> { zap(-1); true }
+                Key.DirectionDown, Key.ChannelDown -> { zap(1); true }
                 Key.DirectionLeft, Key.DirectionCenter, Key.Enter, Key.Menu -> { panel = true; true }
-                Key.Info -> { current?.let { flash(describe(it, quality)) }; true }
+                Key.Info -> { flash(describe(current, quality)); true }
                 else -> false
             }
         },
     ) {
         if (panel) {
             ChannelPanel(repo, services, current) { picked ->
-                // 1 分ごとの取り直しで中身が差し替わるので、値ではなく局で引く
-                index = services.indexOfFirst { it.id == picked.id }.coerceAtLeast(0)
+                playing = picked
                 panel = false
             }
         }

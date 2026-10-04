@@ -9,6 +9,8 @@ import io.github.danything.denpatv.data.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 
 /**
  * アプリ全体で1つずつ持つもの。**DI の仕組みは入れない** (docs/libraries.md)。
@@ -26,6 +28,9 @@ class DenpaApp : Application() {
     val httpEngine: HttpEngine? by lazy {
         if (hasHttpEngine()) HttpEngine.Builder(this).build() else null
     }
+
+    /** HttpEngine が答えを返す先。映像を開くたびに作ると、そのたびにスレッドが残る */
+    val httpExecutor: Executor by lazy { Executors.newSingleThreadExecutor() }
 
     /** 画面より長く生きる仕事 (閉じたときに観た位置を預けるなど) */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

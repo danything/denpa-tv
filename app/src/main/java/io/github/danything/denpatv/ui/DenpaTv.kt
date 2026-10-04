@@ -36,12 +36,12 @@ fun DenpaTv(app: DenpaApp) {
             // 未設定 (null) と読み込み中を分ける。読み込み中は何も出さない
             val connection by app.settings.connection.collectAsState(initial = LOADING)
             val saved = connection
-            val base = (saved as? Connection)?.let { BaseUrl.normalize(it.server) }
+            val base = saved?.let { BaseUrl.normalize(it.server) }
             when {
                 saved === LOADING -> Box(Modifier.fillMaxSize())
                 saved == null || base == null -> SetupScreen(app)
                 // 繋ぐ先が変わったら画面の履歴ごと作り直す
-                else -> key(saved) { Navigation(app, base, (saved as Connection).token) }
+                else -> key(saved) { Navigation(app, base, saved.token) }
             }
         }
     }

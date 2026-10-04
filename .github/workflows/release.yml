@@ -1,6 +1,6 @@
 name: Release
 
-# v0.2.0 のようなタグを押すと、APK を焼いて GitHub Release に付ける (docs/install.md)
+# v0.2.0 のようなタグを押すと、APK を焼いて GitHub Release に付ける (docs/release.md)
 on:
   push:
     tags: ['v*']

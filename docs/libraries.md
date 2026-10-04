@@ -14,7 +14,7 @@
 | Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンの帯) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューのアイコンは Material Symbols (Apache License 2.0) の3つを vector drawable として置いた (アイコンのライブラリは入れない) |
 | `androidx.tv:tv-foundation` | **使わない** | TV 用の Lazy レイアウトは alpha11 で非推奨、alpha12 で削除済み。普通の Compose の `LazyRow` / `LazyColumn` で足りる (同ノート) |
 | Navigation 3 (`androidx.navigation3`) | 1.2.0 | 戻る履歴をただのリストとして持つ Compose 向けの新しい Navigation。行き先は `@Serializable` のクラス。**minSdk 24 を求める** ので、アプリの minSdk もこれに合わせた |
-| DataStore Preferences | 1.2.1 | 覚えるのは繋ぐ先の URL だけ。SharedPreferences の後継 |
+| DataStore Preferences | 1.2.1 | 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さを覚える。SharedPreferences の後継 |
 | Media3 (ExoPlayer) | 1.11.1 | 2026-09-10 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/media3))。minSdk 23 |
 
 ### minSdk 24 (Android 7.0)
@@ -62,7 +62,7 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 アプリで1つを使い回す (`DenpaApp.httpEngine`)。
 
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
-読み 30 秒と書いてある)。叩くのは `services` / `recordings` / `resume` / 録画の削除 / `health` の5つだけ。
+読み 30 秒と書いてある)。叩くのは局と録画の一覧・観た位置・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
 
 OkHttp (と Retrofit / Ktor) を採らない理由:
 
@@ -85,7 +85,7 @@ OkHttp (と Retrofit / Ktor) を採らない理由:
 
 ### 画像: 入れない (HttpURLConnection + BitmapFactory + LruCache)
 
-**2026-10-04 に Coil を外した。** ホームに出すのは局ロゴと録画のポスターだけ (数十枚の小さい絵) で、
+**2026-10-04 に Coil を外した。** 出すのは局ロゴと録画のポスターだけ (小さい絵) で、
 要るのは「出す大きさに縮めて読む」と「読んだものを覚えておく」の2つ。どちらも Android の
 [大きな画像を効率よく読み込む](https://developer.android.com/topic/performance/graphics/load-bitmap) の
 やり方 (`inSampleSize` で 2 の冪に縮める) と `LruCache` で 60 行ほどに収まる (`data/Images.kt`、
@@ -117,9 +117,9 @@ EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta0
 
 | 候補 | 版 | 見たところ |
 | --- | --- | --- |
-| Hilt | 2.60.1 | KSP とアノテーション処理が要り、ビルドが重くなる。画面が4つのアプリには大きすぎる |
+| Hilt | 2.60.1 | KSP とアノテーション処理が要り、ビルドが重くなる。画面が数枚のアプリには大きすぎる |
 | Koin | 4.2.2 (2026-06) | 軽いが、実行時に解決するので間違いがビルドで見つからない |
-| **手で渡す** | — | `DenpaApp` (Application) が HttpEngine・API・設定・デコーダの情報を1つずつ持ち、画面に渡す |
+| **手で渡す** | — | `DenpaApp` (Application) が HttpEngine・設定・デコーダの情報を、`Repository` が繋ぐ先ごとの API を持ち、画面に渡す |
 
 → **入れない**。持つものが数個しかなく、追いやすさを取った。
 
