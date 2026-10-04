@@ -10,7 +10,6 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -147,6 +146,7 @@ class CaptionsTest {
     fun 字幕の口の場所() {
         assertEquals("api/services/3227310008/captions", CaptionPaths.live("api/services/3227310008/live"))
         assertEquals("api/recordings/12/captions", CaptionPaths.recording(12))
-        assertTrue(CaptionPaths.live("api/services/1/live?codec=raw").endsWith("/1/captions"))
+        assertEquals("api/services/1/captions", CaptionPaths.live("api/services/1/live?codec=raw"))
+        assertNull(CaptionPaths.live("api/services/1/stream"))
     }
 }

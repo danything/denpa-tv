@@ -165,8 +165,9 @@ class CueTimeline {
 
 /** 字幕の口の場所 (denpa の根からの相対) */
 object CaptionPaths {
-    /** ライブ。局の一覧の `live` (`api/services/<id>/live`) の隣 */
-    fun live(live: String): String = live.substringBefore('?').removeSuffix("/live") + "/captions"
+    /** ライブ。局の一覧の `live` (`api/services/<id>/live`) の隣。形が違えば null (字幕は出さない) */
+    fun live(live: String): String? =
+        live.substringBefore('?').takeIf { it.endsWith("/live") }?.let { it.removeSuffix("/live") + "/captions" }
 
     /** 追っかけ・録画 (生TS)。`?from=<秒>` は頼むときに付ける */
     fun recording(id: Long): String = "api/recordings/$id/captions"

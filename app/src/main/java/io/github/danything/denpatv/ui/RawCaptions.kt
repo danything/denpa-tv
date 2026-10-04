@@ -183,8 +183,12 @@ fun rememberRawCaptions(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: CaptionFeed.Refused) {
-                // 404 (映像の口がまだ開いていない・繋ぎ直しの間・古い denpa)。少し待って頼み直すが、続くならやめる
-                if (++refused >= MAX_REFUSED) return@LaunchedEffect
+                // 404 (映像の口がまだ開いていない・繋ぎ直しの間・古い denpa)。少し待って頼み直す。
+                // 続くなら、録画はやめる (生TSが無い・古い denpa)。ライブは間を空けて頼み続ける (チューナーの立ち上がりが遅いこともある)
+                if (++refused >= MAX_REFUSED) {
+                    if (fromMs != null) return@LaunchedEffect
+                    delay(SLOW_RETRY_MS)
+                }
                 false
             } catch (_: Exception) {
                 // 読みの途切れ。少し待って頼み直す
@@ -248,7 +252,14 @@ private suspend fun follow(url: URI, token: String?, state: RawCaptionState, kee
                     ensureActive()
                     when (val frame = CaptionFeed.read(input)) {
                         null -> finished = true
-                        is CaptionFrame.Cue -> state.timeline.add(frame.cue)
+                        is CaptionFrame.Cue -> {
+                            state.timeline.add(frame.cue)
+                            // 先読みしすぎない (録画は denpa が倍速で先へ読む)。読まずに待てば denpa も録画を読むのを止める
+                            while (state.timeline.size() > MAX_AHEAD) {
+                                ensureActive()
+                                Thread.sleep(WAIT_MS)
+                            }
+                        }
                         is CaptionFrame.Tracks -> {
                             state.available = frame.count > 0
                             if (!keepGoing()) finished = false
@@ -295,8 +306,14 @@ private const val TICK_MS = 33L
 /** 映像が流れはじめるのを待つ刻み (ミリ秒) */
 private const val WAIT_MS = 200L
 
-/** 続けて断られたらやめる回数 (頼み直しの間と掛けて 15 秒ほど) */
+/** 続けて断られたらやめる (ライブは間を空ける) 回数 (頼み直しの間と掛けて 15 秒ほど) */
 private const val MAX_REFUSED = 5
+
+/** ライブで断られ続けたときの頼み直しの間 (ミリ秒) */
+private const val SLOW_RETRY_MS = 30_000L
+
+/** 先読みして持っておく字幕の枚数の上限。1枚 数十 KB (PNG のまま持つ) */
+private const val MAX_AHEAD = 200
 
 /** 頼み直すまでの間 (ミリ秒) */
 private const val RETRY_MS = 3_000L
