@@ -1,5 +1,6 @@
 package io.github.danything.denpatv.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -19,6 +20,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import io.github.danything.denpatv.data.ChapterMark
+import io.github.danything.denpatv.data.SPEEDS
 import io.github.danything.denpatv.data.nextSpeed
 import io.github.danything.denpatv.data.speedLabel
 import io.github.danything.denpatv.data.cmSkipTarget
@@ -35,8 +37,9 @@ import kotlinx.coroutines.launch
  *
  * - 左右で 10 秒戻す / 30 秒送る、決定で止める・動かす
  * - 上下 (リモコンの次へ・前へ) でチャプター送り
- * - メニュー (緑のボタン) で速さを変える (1 → 1.25 → 1.5 → 2 倍。端末ごとに覚える)
- * - **CM は飛ばす** (設定で切れる)。区切りは動画に入っているチャプター (`CM` / `本編`)
+ * - メニューで操作の帯を開く: **速さ** (1 / 1.25 / 1.5 / 2 倍) と **CM 飛ばし** (既定で入)。
+ *   ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。緑のボタンは速さを1段送る
+ * - CM 飛ばしが入っていれば CM に入ったら終わりまで飛ぶ。区切りは動画に入っているチャプター (`CM` / `本編`)
  *
  * 観た位置は denpa に預ける (15 秒ごとと、閉じるとき)。ブラウザで続きから観られる
  */
@@ -56,6 +59,8 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
     val (player, error) = rememberPlayer(repo, Buffering.Recording, onUnauthorized)
     val (overlay, flash) = rememberFlash()
     val skipCm by repo.app.settings.skipCm.collectAsState(initial = true)
+    var controls by remember { mutableStateOf(false) }
+    BackHandler(enabled = controls) { controls = false }
     val speed by repo.app.settings.playbackSpeed.collectAsState(initial = 1f)
     val scope = rememberCoroutineScope()
     // 速さは録画だけ (ライブは追いつくための 1.05 倍を自分で回す)。CM 飛ばしと観た位置は再生位置で見るので速さに関わらない
@@ -112,7 +117,25 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
         }
     }
 
-    PlayerFrame(player, overlay, error, onKey = { event ->
+    PlayerFrame(player, overlay, error, active = !controls, above = {
+        if (controls) {
+            ControlBar(
+                recording.title,
+                listOf(
+                    "速さ" to SPEEDS.map { pace ->
+                        Control(speedLabel(pace), on = pace == speed) {
+                            scope.launch { repo.app.settings.setPlaybackSpeed(pace) }
+                        }
+                    },
+                    "CM" to listOf(
+                        Control(if (skipCm) "CMを自動で飛ばす: 入" else "CMを自動で飛ばす: 切", on = skipCm) {
+                            scope.launch { repo.app.settings.setSkipCm(!skipCm) }
+                        },
+                    ),
+                ),
+            )
+        }
+    }, onKey = { event ->
         when (event.key) {
             Key.DirectionLeft, Key.MediaRewind -> {
                 val to = (player.currentPosition - 10_000).coerceAtLeast(0)
@@ -139,8 +162,9 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
                 }
                 true
             }
-            // 速さを変える (1 → 1.25 → 1.5 → 2 → 1)。メニューか緑のボタン
-            Key.Menu, Key.ProgramGreen -> {
+            Key.Menu -> { controls = true; true }
+            // 速さを1段送る (1 → 1.25 → 1.5 → 2 → 1)
+            Key.ProgramGreen -> {
                 val next = nextSpeed(speed)
                 scope.launch { repo.app.settings.setPlaybackSpeed(next) }
                 flash("速さ ${speedLabel(next)}")
@@ -150,7 +174,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
                 player.playWhenReady = !player.playWhenReady
                 flash(
                     (if (player.playWhenReady) "再生" else "一時停止  ${position(player.currentPosition)}") +
-                        "\n速さ ${speedLabel(speed)} (メニューで変える)",
+                        "\n速さ ${speedLabel(speed)}・CM 飛ばし ${if (skipCm) "入" else "切"} (メニューで変える)",
                 )
                 true
             }

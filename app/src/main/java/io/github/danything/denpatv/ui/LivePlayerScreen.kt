@@ -7,6 +7,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
@@ -17,15 +18,17 @@ import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.number
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * ライブ。**開いたらすぐ、最後に観ていた局を映す** (初めてなら局の一覧の先頭)。denpa の画面のライブと同じ。
  *
  * - 上下 / チャンネル送りで隣の局へ
- * - 左・決定・メニューで局の一覧を開く (種別で切り替え、いま放送中の番組つき)。戻るで閉じる
+ * - 左・決定で局の一覧を開く (種別で切り替え、いま放送中の番組つき)。戻るで閉じる
+ * - メニューで操作の帯を開き、**画質**を変える (低遅延 MPEG-2 / H.264 / AV1 のうち、この端末で解けるもの)。
+ *   ブラウザの denpa のライブと同じく、すぐ切り替わってこの端末で覚える。既定は端末がハードで MPEG-2 を
+ *   解ければ低遅延の生の TS
  * - 情報キーで、いまの局と番組を出す
- *
- * 画質は設定で選んだもの (既定は端末がハードで MPEG-2 を解ければ低遅延の生の TS)
  */
 @Composable
 fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
@@ -40,7 +43,11 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
      * 番号だと隣の局を指してしまう。一覧から消えても、映しているものは止めない (知らせだけ出す)
      */
     var playing by remember { mutableStateOf<Service?>(null) }
+    /** 局の一覧を読み終えたか (「読み込み中」と「局が無い」を分ける) */
+    var ready by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf(false) }
+    var controls by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val (player, error) = rememberPlayer(repo, buffering, onUnauthorized)
     val (overlay, flash) = rememberFlash()
     CatchUp(player, buffering)
@@ -57,6 +64,7 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
         }
         val last = repo.app.settings.lastService.first()
         playing = services.firstOrNull { it.id == last } ?: services.firstOrNull()
+        ready = true
     }
     LaunchedEffect(playing?.id, quality) {
         val service = playing ?: return@LaunchedEffect
@@ -80,10 +88,10 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
             }
         }
     }
-    BackHandler(enabled = panel) { panel = false }
+    BackHandler(enabled = panel || controls) { panel = false; controls = false }
 
-    if (services.isEmpty()) return Centered(if (playing == null) "読み込んでいます…" else "局がありません")
-    val current = playing ?: return Centered("読み込んでいます…")
+    if (!ready) return Centered("読み込んでいます…")
+    val current = playing ?: return Centered("局がありません")
     /** 隣の局。いまの局が一覧から消えていたら、頭から */
     fun zap(step: Int) {
         val at = services.indexOfFirst { it.id == current.id }
@@ -93,17 +101,31 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
         player,
         overlay,
         error,
-        active = !panel,
+        active = !panel && !controls,
         onKey = { event ->
             when (event.key) {
                 Key.DirectionUp, Key.ChannelUp -> { zap(-1); true }
                 Key.DirectionDown, Key.ChannelDown -> { zap(1); true }
-                Key.DirectionLeft, Key.DirectionCenter, Key.Enter, Key.Menu -> { panel = true; true }
+                Key.DirectionLeft, Key.DirectionCenter, Key.Enter -> { panel = true; true }
+                Key.Menu -> { controls = true; true }
                 Key.Info -> { flash(describe(current, quality)); true }
                 else -> false
             }
         },
     ) {
+        if (controls) {
+            ControlBar(
+                describe(current, quality).lines().first(),
+                listOf(
+                    "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
+                        Control(choice.label, on = choice == quality) {
+                            controls = false
+                            scope.launch { repo.app.settings.setLiveQuality(choice) }
+                        }
+                    },
+                ),
+            )
+        }
         if (panel) {
             ChannelPanel(repo, services, current) { picked ->
                 playing = picked

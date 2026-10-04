@@ -108,4 +108,20 @@ class RecordingPagerTest {
         // 飛ばしも重なりも無い
         assertEquals((25 downTo 1).map { it.toLong() }.filter { it != 18L }.take(19), pager.items.map { it.id })
     }
+
+    @Test
+    fun 読み直している最中に消したものは戻さない() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val pager = RecordingPager(10) { limit, offset ->
+            gate.await()
+            (25 downTo 1).drop(offset).take(limit).map { rec(it.toLong()) }
+        }
+        val refreshing = async { pager.refresh() }
+        yield()
+        pager.remove(25)
+        gate.complete(Unit)
+        refreshing.await()
+        assertFalse(pager.items.any { it.id == 25L })
+        assertEquals(9, pager.items.size)
+    }
 }
