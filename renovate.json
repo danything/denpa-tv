@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>5ym/renovate"
+  ],
+  "packageRules": [
+    {
+      "description": "Kotlin のコンパイラプラグイン (Compose / serialization) は Kotlin 本体と同じ版でないと動かない。1本の PR で揃って上げる",
+      "matchPackageNames": ["org.jetbrains.kotlin**"],
+      "groupName": "Kotlin"
+    },
+    {
+      "description": "Media3 は同じ版の部品どうしでしか組めない",
+      "matchPackageNames": ["androidx.media3:**"],
+      "groupName": "Media3"
+    },
+    {
+      "description": "OkHttp と mockwebserver も同じ版で",
+      "matchPackageNames": ["com.squareup.okhttp3:**"],
+      "groupName": "OkHttp"
+    }
+  ]
+}

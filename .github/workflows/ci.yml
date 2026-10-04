@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # AGP 9.4 は JDK 17 以上。手元と同じ 21 で焼く
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      # Android SDK はランナーに入っている。足りない platform は AGP が取ってくる
+      - name: Lint / unit tests / debug APK
+        run: ./gradlew lintDebug testDebugUnitTest assembleDebug --console=plain
+      - uses: actions/upload-artifact@v7
+        with:
+          name: denpa-tv-debug
+          path: app/build/outputs/apk/debug/*.apk
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports
+          path: app/build/reports/
