@@ -10,8 +10,7 @@ data class AudioTrack(val label: String, val named: Boolean)
  */
 fun audioTrack(index: Int, label: String?, language: String?): AudioTrack {
     if (!label.isNullOrBlank()) return AudioTrack(label, true)
-    val lang = language?.takeIf { it.isNotBlank() && it != "und" }
-        ?.let { Locale.forLanguageTag(it).getDisplayLanguage(Locale.JAPANESE).takeIf { name -> name.isNotBlank() } }
+    val lang = language?.takeIf { it.isNotBlank() && it != "und" }?.let(::languageName)
     return AudioTrack(listOfNotNull("音声 ${index + 1}", lang?.let { "($it)" }).joinToString(" "), false)
 }
 
@@ -22,4 +21,10 @@ fun audioTrack(index: Int, label: String?, language: String?): AudioTrack {
 fun rememberedAudio(tracks: List<AudioTrack>, remembered: String?): Int? {
     if (remembered == null) return null
     return tracks.indexOfFirst { it.named && it.label == remembered }.takeIf { it >= 0 }
+}
+
+/** 言語の名前 (日本語など)。TS は3文字 (jpn) で来るので2文字に直してから引く。引けなければ null */
+private fun languageName(tag: String): String? {
+    val code = if (tag.length == 3) Locale.getISOLanguages().firstOrNull { Locale.Builder().setLanguage(it).build().isO3Language == tag } ?: tag else tag
+    return Locale.Builder().setLanguage(code).build().getDisplayLanguage(Locale.JAPANESE).takeIf { it.isNotBlank() && it != code && it != tag }
 }

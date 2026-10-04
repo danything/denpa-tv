@@ -142,6 +142,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         val target = pending ?: return@LaunchedEffect
         delay(700)
         from = target
+        attempt++
         pending = null
     }
 
@@ -203,6 +204,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     fun toEdge() {
         pending = null
         from = Chase.clamp(recorded(), recorded())
+        attempt++
         flash("最新へ")
     }
     fun togglePause() {
