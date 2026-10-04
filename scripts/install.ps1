@@ -24,6 +24,7 @@ function Install-DenpaTv([string]$Target, [string]$Pair, [string]$Code, [string]
 
     if (-not $Target) { throw 'テレビの IP を渡してください (例: ... ))) 192.168.1.20)' }
     if ($Target -notmatch ':') { $Target = "${Target}:5555" }
+    if ($Pair -and -not $Code) { throw '-Pair には -Code (ペア設定の画面に出るコード) も渡してください' }
 
     # --- adb (無ければ platform-tools を取ってくる) ---
     $adb = (Get-Command adb -ErrorAction SilentlyContinue).Source
@@ -54,14 +55,16 @@ function Install-DenpaTv([string]$Target, [string]$Pair, [string]$Code, [string]
         $apk = Join-Path $work $asset.name
         Say "$($asset.name) を取ってきます"
         Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $apk
+        # ハッシュの無いリリースは入れない (壊れた APK を黙って入れない)
         $sums = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
-        if ($sums) {
-            $line = (Invoke-WebRequest -UseBasicParsing -Uri $sums.browser_download_url).Content -split "`n" |
-                Where-Object { ($_ -split '\s+')[1] -in $asset.name, "*$($asset.name)" }
-            $expected = ($line -split '\s+')[0]
-            if (-not $expected -or (Get-FileHash -Algorithm SHA256 -LiteralPath $apk).Hash -ne $expected.ToUpperInvariant()) {
-                throw 'APK のハッシュが合いません (取り直してください)'
-            }
+        if (-not $sums) { throw 'リリースに SHA256SUMS がありません' }
+        # 5.1 の Invoke-WebRequest は octet-stream を byte[] で返すので、ファイルに落としてから読む
+        $sumsFile = Join-Path $work 'SHA256SUMS'
+        Invoke-WebRequest -UseBasicParsing -Uri $sums.browser_download_url -OutFile $sumsFile
+        $line = Get-Content -LiteralPath $sumsFile | Where-Object { ($_ -split '\s+')[1] -in $asset.name, "*$($asset.name)" }
+        $expected = ($line -split '\s+')[0]
+        if (-not $expected -or (Get-FileHash -Algorithm SHA256 -LiteralPath $apk).Hash -ne $expected.ToUpperInvariant()) {
+            throw 'APK のハッシュが合いません (取り直してください)'
         }
 
         # --- テレビに繋ぐ ---
@@ -72,19 +75,28 @@ function Install-DenpaTv([string]$Target, [string]$Pair, [string]$Code, [string]
             if ($LASTEXITCODE -ne 0) { throw 'ペア設定できませんでした (コードとポートはペア設定の画面に出ているものです)' }
         }
         Say "$Target に繋ぎます"
-        & $adb connect $Target | Out-Null
+        # 届かない宛先への adb connect はなかなか返らないので、10秒で見切る
+        function Connect-Tv {
+            $p = Start-Process -FilePath $adb -ArgumentList 'connect', $Target -NoNewWindow -PassThru `
+                -RedirectStandardOutput (Join-Path $work 'connect.out') -RedirectStandardError (Join-Path $work 'connect.err')
+            if (-not $p.WaitForExit(10000)) { $p.Kill() }
+        }
+        function Get-TvState { (& $adb -s $Target get-state 2>&1 | Out-String).Trim() }
+        for ($i = 0; $i -lt 3; $i++) {
+            Connect-Tv
+            $state = Get-TvState
+            if ($state -eq 'device' -or $state -match 'unauthorized') { break }
+        }
+        # テレビに「USB デバッグを許可しますか」が出ていれば、許可を押すまで待つ (60秒)
         $asked = $false
         for ($i = 0; $i -lt 30; $i++) {
-            $state = (& $adb -s $Target get-state 2>&1 | Out-String).Trim()
+            $state = Get-TvState
             if ($state -eq 'device') { break }
-            if ($state -match 'unauthorized') {
-                if (-not $asked) { Say 'テレビに出ている「USB デバッグを許可」を押してください'; $asked = $true }
-            } else {
-                & $adb connect $Target 2>&1 | Out-Null
-            }
+            if ($state -notmatch 'unauthorized') { break }
+            if (-not $asked) { Say 'テレビに出ている「USB デバッグを許可」を押してください'; $asked = $true }
             Start-Sleep -Seconds 2
         }
-        if ((& $adb -s $Target get-state 2>$null | Out-String).Trim() -ne 'device') {
+        if ((Get-TvState) -ne 'device') {
             throw "$Target に繋がりません。テレビの開発者向けオプションでデバッグが入っているか、同じネットワークかを確かめてください (docs/install.md)"
         }
 

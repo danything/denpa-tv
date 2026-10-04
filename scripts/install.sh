@@ -21,6 +21,13 @@ PACKAGE=io.github.danything.denpatv
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/denpa-tv"
 
 say() { printf '==> %s\n' "$*" >&2; }
+usage() {
+    cat >&2 <<'EOF'
+使い方: install.sh <テレビの IP>[:ポート] [--pair <IP>:<ポート> <コード>] [--version v0.2.1]
+  --pair     Android 11 以降の「ワイヤレス デバッグ」で、先にペア設定する
+  --version  入れる版 (既定は最新のリリース。試し版も含む)
+EOF
+}
 die() { printf 'エラー: %s\n' "$*" >&2; exit 1; }
 
 target='' pair='' code='' version=''
@@ -30,7 +37,7 @@ while [ $# -gt 0 ]; do
             pair=$2 code=$3; shift 3 ;;
         --version) [ $# -ge 2 ] || die '--version には版 (v0.2.0 など) を渡してください'
             version=$2; shift 2 ;;
-        -h | --help) sed -n '2,18p' "$0" 2>/dev/null || true; exit 0 ;;
+        -h | --help) usage; exit 0 ;;
         -*) die "知らない引数です: $1" ;;
         *) target=$1; shift ;;
     esac
@@ -69,9 +76,10 @@ fi
 release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api") ||
     die "リリースが見つかりません ($api)"
 urls=$(printf '%s\n' "$release" |
-    grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)"/\1/')
-apk_url=$(printf '%s\n' "$urls" | grep '\.apk$' | head -n1)
-sums_url=$(printf '%s\n' "$urls" | grep '/SHA256SUMS$' | head -n1)
+    grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)"/\1/' || true)
+# 一致しない grep は pipefail で止まるので、無いことは下で言う
+apk_url=$(printf '%s\n' "$urls" | grep '\.apk$' | head -n1 || true)
+sums_url=$(printf '%s\n' "$urls" | grep '/SHA256SUMS$' | head -n1 || true)
 [ -n "$apk_url" ] || die "リリースに APK が見つかりません ($api)"
 
 work=$(mktemp -d)
@@ -79,15 +87,17 @@ trap 'rm -rf "$work"' EXIT
 apk="$work/$(basename "$apk_url")"
 say "$(basename "$apk_url") を取ってきます"
 curl -fsSL --retry 3 -o "$apk" "$apk_url"
-if [ -n "$sums_url" ]; then
-    expected=$(curl -fsSL --retry 3 "$sums_url" | grep " \*\{0,1\}$(basename "$apk")\$" | cut -d' ' -f1)
+# ハッシュの無いリリースは入れない (壊れた APK を黙って入れない)
+[ -n "$sums_url" ] || die 'リリースに SHA256SUMS がありません'
+{
+    expected=$(curl -fsSL --retry 3 "$sums_url" | grep " \*\{0,1\}$(basename "$apk")\$" | cut -d' ' -f1 || true)
     if command -v sha256sum >/dev/null 2>&1; then
         actual=$(sha256sum "$apk" | cut -d' ' -f1)
     else
         actual=$(shasum -a 256 "$apk" | cut -d' ' -f1)
     fi
     [ -n "$expected" ] && [ "$expected" = "$actual" ] || die 'APK のハッシュが合いません (取り直してください)'
-fi
+}
 
 # --- テレビに繋ぐ ---
 if [ -n "$pair" ]; then
