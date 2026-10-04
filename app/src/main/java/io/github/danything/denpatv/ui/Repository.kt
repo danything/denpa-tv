@@ -19,14 +19,37 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     var recordings: List<Recording> = emptyList()
         private set
 
+    /** まだ読める録画があるか (少しずつ読むので) */
+    var hasMoreRecordings = true
+        private set
+
     suspend fun refresh() {
         services = api.services(base)
-        recordings = api.recordings(base)
+        refreshRecordings()
+    }
+
+    /** 録画を頭から読み直す */
+    suspend fun refreshRecordings() {
+        val first = api.recordings(base, PAGE)
+        recordings = first
+        hasMoreRecordings = first.size == PAGE
+    }
+
+    /** 録画の続きを読む (一覧の終わりに近づいたら) */
+    suspend fun loadMoreRecordings() {
+        if (!hasMoreRecordings) return
+        val next = api.recordings(base, PAGE, recordings.size)
+        recordings = (recordings + next).distinctBy { it.id }
+        hasMoreRecordings = next.size == PAGE
     }
 
     /** 局だけ取り直す (いま放送中の番組が変わるので) */
     suspend fun refreshServices() {
         services = api.services(base)
+    }
+
+    companion object {
+        const val PAGE = 60
     }
 
     fun url(relative: String?): String? = relative?.let { BaseUrl.resolve(base, it)?.toString() }

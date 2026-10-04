@@ -25,9 +25,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 /** 画面の行き先。Navigation 3 は戻る履歴をただのリストとして持つ */
-@Serializable data object Home : NavKey
-@Serializable data object Prefs : NavKey
-@Serializable data class Live(val serviceId: Long) : NavKey
+@Serializable data object Main : NavKey
+@Serializable data object Live : NavKey
 @Serializable data class Watch(val recordingId: Long) : NavKey
 
 @Composable
@@ -50,7 +49,7 @@ fun DenpaTv(app: DenpaApp) {
 
 @Composable
 private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?) {
-    val backStack = rememberNavBackStack(Home)
+    val backStack = rememberNavBackStack(Main)
     val scope = rememberCoroutineScope()
     val repo = remember(base, token) { Repository(app, base, token) }
     /** トークンが効かなくなった (外された・期限切れ)、または家の外と見なされた。忘れて繋ぐ画面へ */
@@ -59,17 +58,15 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?) {
         backStack = backStack,
         onBack = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) },
         entryProvider = entryProvider {
-            entry<Home> {
-                HomeScreen(
+            entry<Main> {
+                MainScreen(
                     repo = repo,
-                    onLive = { backStack.add(Live(it.id)) },
+                    onLive = { backStack.add(Live) },
                     onWatch = { backStack.add(Watch(it.id)) },
-                    onSettings = { backStack.add(Prefs) },
                     onUnauthorized = unauthorized,
                 )
             }
-            entry<Prefs> { SettingsScreen(repo) }
-            entry<Live> { key -> LivePlayerScreen(repo, key.serviceId, unauthorized) }
+            entry<Live> { LivePlayerScreen(repo, unauthorized) }
             entry<Watch> { key -> RecordingPlayerScreen(repo, key.recordingId, unauthorized) }
         },
     )

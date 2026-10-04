@@ -11,7 +11,7 @@
 | Gradle | 9.8.0 | 2026-10 時点の最新 ([services.gradle.org](https://services.gradle.org/versions/current)) |
 | Kotlin (Compose / serialization のコンパイラプラグイン) | 2.4.20 | Maven Central の最新の安定版 |
 | Compose BOM | 2026.09.00 | |
-| Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / Surface を使う |
+| Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンの帯) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューのアイコンは Material Symbols (Apache License 2.0) の3つを vector drawable として置いた (アイコンのライブラリは入れない) |
 | `androidx.tv:tv-foundation` | **使わない** | TV 用の Lazy レイアウトは alpha11 で非推奨、alpha12 で削除済み。普通の Compose の `LazyRow` / `LazyColumn` で足りる (同ノート) |
 | Navigation 3 (`androidx.navigation3`) | 1.2.0 | 戻る履歴をただのリストとして持つ Compose 向けの新しい Navigation。行き先は `@Serializable` のクラス。**minSdk 24 を求める** ので、アプリの minSdk もこれに合わせた |
 | DataStore Preferences | 1.2.1 | 覚えるのは繋ぐ先の URL だけ。SharedPreferences の後継 |

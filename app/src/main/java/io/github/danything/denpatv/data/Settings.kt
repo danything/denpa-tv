@@ -3,6 +3,7 @@ package io.github.danything.denpatv.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -26,6 +27,7 @@ class Settings(private val context: Context) {
     private val lastServerKey = stringPreferencesKey("last_server")
     private val liveQualityKey = stringPreferencesKey("live_quality")
     private val skipCmKey = booleanPreferencesKey("skip_cm")
+    private val lastServiceKey = longPreferencesKey("last_service")
 
     /** 繋ぐ先。まだ無ければ null */
     val connection: Flow<Connection?> = context.dataStore.data.map { prefs ->
@@ -55,6 +57,13 @@ class Settings(private val context: Context) {
             it.remove(serverKey)
             it.remove(tokenKey)
         }
+    }
+
+    /** 最後に観ていた局。ライブを開くとまずそこが映る (denpa の画面のライブと同じ) */
+    val lastService: Flow<Long?> = context.dataStore.data.map { it[lastServiceKey] }
+
+    suspend fun setLastService(id: Long) {
+        context.dataStore.edit { it[lastServiceKey] = id }
     }
 
     suspend fun setLiveQuality(quality: LiveQuality) {

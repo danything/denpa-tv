@@ -3,6 +3,7 @@ package io.github.danything.denpatv
 import io.github.danything.denpatv.data.Decoders
 import io.github.danything.denpatv.data.RecordingFile
 import io.github.danything.denpatv.data.LiveQuality
+import io.github.danything.denpatv.data.number
 import io.github.danything.denpatv.data.pickFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -43,5 +44,18 @@ class CodecsTest {
         val noAv1 = tv.copy(av1Hardware = false)
         assertEquals(LiveQuality.Raw, LiveQuality.choose("Av1", noAv1))
         assertEquals(LiveQuality.Raw, LiveQuality.choose("壊れた値", tv))
+    }
+}
+
+class ChannelNumberTest {
+    private fun service(type: String, id: Long, key: Int?) =
+        io.github.danything.denpatv.data.Service(id = id, type = type, name = "", remoteControlKey = key, live = "")
+
+    /** denpa の画面と同じ: リモコン番号、無ければ BS/CS はサービス ID (3桁)、地上波は無し */
+    @Test
+    fun テレビに出ている番号() {
+        assertEquals(9, service("GR", 3227310008, 9).number)
+        assertEquals(151, service("BS", 400151, null).number)
+        assertNull(service("GR", 3227310008, null).number)
     }
 }

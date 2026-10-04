@@ -102,7 +102,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
         }
     }
 
-    PlayerFrame(player, overlay, error) { event ->
+    PlayerFrame(player, overlay, error, onKey = { event ->
         when (event.key) {
             Key.DirectionLeft, Key.MediaRewind -> {
                 val to = (player.currentPosition - 10_000).coerceAtLeast(0)
@@ -136,7 +136,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onUnauthorized: (
             }
             else -> false
         }
-    }
+    })
 }
 
 private fun position(ms: Long): String {

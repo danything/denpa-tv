@@ -40,7 +40,7 @@ class DenpaApiTest {
 
         val recordings = api.recordings(base)
         assertEquals("av1", recordings.single().files.single().codec)
-        assertEquals("/denpa/api/recordings?limit=50", denpa.requests.take().target)
+        assertEquals("/denpa/api/recordings?limit=60&offset=0", denpa.requests.take().target)
         // 古い denpa は now も resumeMs も返さない。無ければ null
         assertNull(services.single().now)
         assertNull(recordings.single().resumeMs)

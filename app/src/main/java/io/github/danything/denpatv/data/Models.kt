@@ -17,6 +17,16 @@ data class Service(
     val now: NowProgram? = null,
 )
 
+/**
+ * テレビに出ている番号。地上波はリモコン番号、BS/CS は3桁の番号 (BS朝日1 = 151)。
+ * denpa の画面と同じ決め方 (`format.ts` の `channelNumber`)。`id` は `ネットワーク × 100000 + サービス ID`
+ */
+val Service.number: Int?
+    get() = remoteControlKey ?: if (type == "GR") null else (id % 100_000).toInt()
+
+/** 種別の並びと名前 (denpa の番組表・ライブと同じ) */
+val SERVICE_TYPES = listOf("GR" to "地上波", "BS" to "BS", "CS" to "CS")
+
 /** 局のいま放送中の番組 (`now`)。時刻は UNIX ミリ秒 */
 @Serializable
 data class NowProgram(
