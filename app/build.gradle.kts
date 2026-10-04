@@ -21,7 +21,8 @@ android {
     /*
      * リリースの署名。鍵は CI のシークレットから渡す (.github/workflows/release.yml、docs/release.md)。
      * **鍵が同じでないと上書きで入れられない** ので、一度決めた鍵を使い続ける。
-     * 鍵が無ければ署名の設定を作らない (release は署名なしになり、CI は debug の APK を出す)
+     * 鍵が無ければ署名の設定を作らない (release は署名なしになり、CI は debug の APK を出す)。
+     * keystore は PKCS12 で、鍵のパスワードは keystore と同じ (PKCS12 は分けられない)。別名は秘密ではないのでここに書く
      */
     val keystore = System.getenv("DENPA_TV_KEYSTORE")
     if (keystore != null) {
@@ -29,8 +30,8 @@ android {
             create("release") {
                 storeFile = file(keystore)
                 storePassword = System.getenv("DENPA_TV_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("DENPA_TV_KEY_ALIAS")
-                keyPassword = System.getenv("DENPA_TV_KEY_PASSWORD")
+                keyAlias = "denpa-tv"
+                keyPassword = storePassword
             }
         }
     }

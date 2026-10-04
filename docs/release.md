@@ -15,14 +15,12 @@ keytool -genkeypair -v -keystore denpa-tv-release.jks -alias denpa-tv \
 base64 -w0 denpa-tv-release.jks > denpa-tv-release.jks.b64
 ```
 
-リポジトリの Settings → Secrets and variables → Actions に4つ入れます:
+リポジトリの Settings → Secrets and variables → Actions に2つ入れます (別名は `denpa-tv` 固定、鍵のパスワードは keystore と同じ。keytool の既定の PKCS12 では分けられません):
 
 | 名前 | 中身 |
 | --- | --- |
 | `DENPA_TV_KEYSTORE_BASE64` | `denpa-tv-release.jks.b64` の中身 |
 | `DENPA_TV_KEYSTORE_PASSWORD` | keystore のパスワード |
-| `DENPA_TV_KEY_ALIAS` | `denpa-tv` |
-| `DENPA_TV_KEY_PASSWORD` | 鍵のパスワード |
 
 鍵がまだ入っていない間は、debug の署名の APK (`denpa-tv-<版>-debug.apk`) を出します。鍵を入れたあとの
 リリースへ移るときは、使っている人に入れ直してもらう必要があります (docs/install.md の「署名について」)。
