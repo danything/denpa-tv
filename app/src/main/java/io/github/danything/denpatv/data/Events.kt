@@ -50,7 +50,7 @@ fun denpaEvent(event: SseEvent, warn: (String) -> Unit = {}): DenpaEvent? = when
 
 /**
  * `api/events` に繋ぎっぱなしにする。切れたら (60 秒何も届かないのも) 待って繋ぎ直す。待ちは 1 秒から倍々で 30 秒まで、
- * 何か届いたら 1 秒に戻す。**401 (トークンが効かない) なら Unauthorized で戻る** (繋ぎ直さない。呼ぶ側が繋ぐ画面へ戻す)。
+ * 10 秒以上保った繋ぎの後は 1 秒に戻す (繋いですぐ切られるのを 1 秒おきに繰り返さない)。**401 (トークンが効かない) なら Unauthorized で戻る** (繋ぎ直さない。呼ぶ側が繋ぐ画面へ戻す)。
  * 呼ぶ側のコルーチンを止めるまで戻らない
  */
 suspend fun followEvents(
@@ -62,13 +62,14 @@ suspend fun followEvents(
 ): Nothing {
     var backoff = FIRST_BACKOFF_MS
     while (true) {
+        var openedAt: Long? = null
         try {
-            Sse.listen(url, token, onOpen = { onEvent(DenpaEvent.Opened) }) { event ->
-                backoff = FIRST_BACKOFF_MS
+            Sse.listen(url, token, onOpen = { openedAt = System.nanoTime(); onEvent(DenpaEvent.Opened) }) { event ->
                 denpaEvent(event, warn)?.let(onEvent)
             }
         } catch (e: IOException) {
             if (e is Unauthorized) throw e
+            openedAt?.let { if (System.nanoTime() - it >= HELD_NS) backoff = FIRST_BACKOFF_MS }
             warn("知らせが切れました。${backoff / 1000} 秒後に繋ぎ直します: ${e.message}")
         }
         wait(backoff)
@@ -78,3 +79,4 @@ suspend fun followEvents(
 
 private const val FIRST_BACKOFF_MS = 1_000L
 private const val MAX_BACKOFF_MS = 30_000L
+private const val HELD_NS = 10_000_000_000L

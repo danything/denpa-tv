@@ -131,7 +131,8 @@ fun RecordingsScreen(
             delay(1_000)
             if (!loaded) return@collectLatest
             val before = recordings
-            val had = focusedCard
+            // 詳しくを開いていれば、その録画に合っているものと見なす
+            val had = focusedCard ?: opened?.id
             repo.recordingsStale = false
             try {
                 repo.refreshRecordings()
@@ -145,9 +146,10 @@ fun RecordingsScreen(
             }
             recordings = repo.recordings
             error = null
-            // 合わせていた録画が消えたら (ブラウザで消したなど)、残っている隣へ
+            // 合わせていた録画が消えたら (ブラウザで消したなど)、詳しくを閉じて残っている隣へ
             val alive = recordings.map { it.id }.toSet()
             if (had != null && had !in alive) {
+                if (opened?.id == had) opened = null
                 val at = before.indexOfFirst { it.id == had }
                 val next = (before.drop(at + 1) + before.take(at).reversed()).firstOrNull { it.id in alive } ?: return@collectLatest
                 lastFocused = next.id

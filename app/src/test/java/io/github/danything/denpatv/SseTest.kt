@@ -72,6 +72,7 @@ class SseTest {
         FakeDenpa().use { denpa ->
             denpa.enqueue(": connected\n\nevent: recordings\ndata: 1\n\nevent: ping\ndata: 1\n\n")
             denpa.enqueue("", code = 500)
+            denpa.enqueue(": connected\n\n")
             denpa.enqueue("", code = 401)
             val events = mutableListOf<DenpaEvent>()
             val waits = mutableListOf<Long>()
@@ -79,9 +80,10 @@ class SseTest {
                 followEvents(URI(denpa.url("/api/events")), "denpa_x", onEvent = { events += it }, wait = { waits += it })
             }.exceptionOrNull()
             assertTrue(thrown is Unauthorized)
-            assertEquals(listOf(DenpaEvent.Opened, DenpaEvent.Changed("recordings")), events)
-            // 届いたら 1 秒に戻り、続けて切れたら倍
-            assertEquals(listOf(1_000L, 2_000L), waits)
+            // 繋ぐたびに Opened (読み直しの合図)
+            assertEquals(listOf(DenpaEvent.Opened, DenpaEvent.Changed("recordings"), DenpaEvent.Opened), events)
+            // すぐ切れるあいだは倍々 (10 秒保つまで 1 秒に戻さない)
+            assertEquals(listOf(1_000L, 2_000L, 4_000L), waits)
             assertEquals("Bearer denpa_x", denpa.requests.take().authorization)
         }
     }
