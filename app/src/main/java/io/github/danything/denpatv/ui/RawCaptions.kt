@@ -205,11 +205,20 @@ fun rememberRawCaptions(
             return@LaunchedEffect
         }
         var shown: CaptionCue? = null
+        var candidate: CaptionCue? = null
         while (true) {
             delay(TICK_MS)
             val offset = clock.offsetUs() ?: continue
             val cue = state.timeline.at(Pts.broadcast(player.currentPosition, offset))
             if (cue === shown) continue
+            /*
+             * **1こま続いてから出す。** 頼み直した直後は頼んだ位置の手前のぶんがまとめて届き、そのままだと
+             * 過ぎた字幕が1つずつ一瞬ずつ映る (届いた順に「いまの1枚」が入れ替わる)
+             */
+            if (cue !== candidate) {
+                candidate = cue
+                continue
+            }
             shown = cue
             state.picture = cue?.let { decode(it) }
         }
