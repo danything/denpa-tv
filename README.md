@@ -93,7 +93,14 @@ denpa に焼かせず、放送そのもの (1局に絞った TS) を流します
 
 ## 開発
 
-- JDK 17 以上 (CI は 21)、Android SDK (compileSdk 37)
+- JDK 17 以上 (CI は 25)、Android SDK (compileSdk 37)
 - `./gradlew assembleDebug` / `./gradlew testDebugUnitTest` / `./gradlew lintDebug`
 - 使っているライブラリと選んだ理由は [docs/libraries.md](docs/libraries.md)
 - リリースの出し方 (署名の鍵) は [docs/release.md](docs/release.md)
+
+## ライセンス
+
+[GNU Affero General Public License v3.0](LICENSE) (denpa と同じ)。
+
+`app/src/main/java/io/nayuki/qrcodegen/` は [Project Nayuki の QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) を
+取り込んだもので、**MIT License** です (各ファイルの頭の表示のまま)。
