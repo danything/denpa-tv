@@ -25,13 +25,27 @@ val Service.number: Int?
     get() = remoteControlKey ?: if (type == "GR") null else (id % 100_000).toInt()
 
 /**
- * 隣の局 (`step` は -1 で前、1 で次。端は反対の端へ回る)。いまの局が一覧から消えていたら頭から。
+ * いま放送しているか。**ブラウザの denpa (`airing`) と同じく、名前のある番組をいま放送している局だけ。**
+ * 本放送と同じものを流しているサブチャンネル (NHK総合2、Eテレ2・3 など) は番組名が空で来る
+ */
+val Service.airing: Boolean get() = now?.title?.isNotBlank() == true
+
+/** 放送している局だけ。番組表がまだ空などで1つも無ければ、全部 (何も選べなくならないように) */
+fun airing(services: List<Service>): List<Service> = services.filter { it.airing }.ifEmpty { services }
+
+/**
+ * 隣の局 (`step` は -1 で前、1 で次。端は反対の端へ回る)。**放送していない局 (同じものを流しているサブチャンネル) は飛ばす。**
+ * いまの局が放送していなくても、その位置から隣の放送している局へ。いまの局が一覧から消えていたら頭から。
  * 一覧が空 (スキャンし直している最中など) なら null — 呼ぶ側は映しているものを続ける
  */
 fun neighbor(services: List<Service>, currentId: Long, step: Int): Service? {
     if (services.isEmpty()) return null
+    val candidates = airing(services).map { it.id }.toSet()
     val at = services.indexOfFirst { it.id == currentId }
-    return services[if (at < 0) 0 else Math.floorMod(at + step, services.size)]
+    if (at < 0) return services.first { it.id in candidates }
+    return (1..services.size).asSequence()
+        .map { services[Math.floorMod(at + step * it, services.size)] }
+        .first { it.id in candidates }
 }
 
 /** 種別の並びと名前 (denpa の番組表・ライブと同じ) */
