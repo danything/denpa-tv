@@ -94,7 +94,8 @@ fun LivePlayerScreen(repo: Repository, onUnauthorized: () -> Unit) {
     ) {
         if (panel) {
             ChannelPanel(repo, services, current) { picked ->
-                index = services.indexOf(picked)
+                // 1 分ごとの取り直しで中身が差し替わるので、値ではなく局で引く
+                index = services.indexOfFirst { it.id == picked.id }.coerceAtLeast(0)
                 panel = false
             }
         }

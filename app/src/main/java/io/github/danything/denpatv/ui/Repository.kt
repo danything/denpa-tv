@@ -4,6 +4,7 @@ import io.github.danything.denpatv.DenpaApp
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.Recording
+import io.github.danything.denpatv.data.RecordingPager
 import io.github.danything.denpatv.data.Service
 import java.net.URI
 
@@ -16,12 +17,12 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     var services: List<Service> = emptyList()
         private set
-    var recordings: List<Recording> = emptyList()
-        private set
+    private val pager = RecordingPager(PAGE) { limit, offset -> api.recordings(base, limit, offset) }
+
+    val recordings: List<Recording> get() = pager.items
 
     /** まだ読める録画があるか (少しずつ読むので) */
-    var hasMoreRecordings = true
-        private set
+    val hasMoreRecordings: Boolean get() = pager.hasMore
 
     suspend fun refresh() {
         services = api.services(base)
@@ -29,19 +30,13 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     }
 
     /** 録画を頭から読み直す */
-    suspend fun refreshRecordings() {
-        val first = api.recordings(base, PAGE)
-        recordings = first
-        hasMoreRecordings = first.size == PAGE
-    }
+    suspend fun refreshRecordings() = pager.refresh()
 
-    /** 録画の続きを読む (一覧の終わりに近づいたら) */
-    suspend fun loadMoreRecordings() {
-        if (!hasMoreRecordings) return
-        val next = api.recordings(base, PAGE, recordings.size)
-        recordings = (recordings + next).distinctBy { it.id }
-        hasMoreRecordings = next.size == PAGE
-    }
+    /** 録画の続きを読む (一覧の終わりに近づいたら)。読み込み中なら何もしない */
+    suspend fun loadMoreRecordings() = pager.loadMore()
+
+    /** 消した録画を手元の一覧から抜く */
+    fun forgetRecording(id: Long) = pager.remove(id)
 
     /** 局だけ取り直す (いま放送中の番組が変わるので) */
     suspend fun refreshServices() {

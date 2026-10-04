@@ -65,6 +65,8 @@ fun RecordingsScreen(
     var loaded by remember { mutableStateOf(recordings.isNotEmpty()) }
     var retry by remember { mutableIntStateOf(0) }
     var deleting by remember { mutableStateOf<Recording?>(null) }
+    /** 続きを読めなかった (一覧は残し、終わりに小さく出してやり直せるようにする) */
+    var moreError by remember { mutableStateOf<String?>(null) }
     /** 最後に合わせていた録画。観て戻ってきたらここに合わせ直す (画面を作り直しても残る) */
     var lastFocused by rememberSaveable { mutableStateOf<Long?>(null) }
     val requesters = remember { mutableMapOf<Long, FocusRequester>() }
@@ -82,6 +84,18 @@ fun RecordingsScreen(
         }
         recordings = repo.recordings
         loaded = true
+    }
+
+    suspend fun loadMore() {
+        try {
+            repo.loadMoreRecordings()
+            moreError = null
+        } catch (_: Unauthorized) {
+            onUnauthorized()
+        } catch (e: Exception) {
+            moreError = "続きを読めませんでした: ${e.message}"
+        }
+        recordings = repo.recordings
     }
 
     LaunchedEffect(retry) {
@@ -139,13 +153,21 @@ fun RecordingsScreen(
                             lastFocused = recording.id
                             // 終わりに近づいたら続きを読む
                             val index = recordings.indexOfFirst { r -> r.id == recording.id }
-                            if (repo.hasMoreRecordings && index >= recordings.size - 12) {
-                                scope.launch { guarded { repo.loadMoreRecordings() } }
+                            if (repo.hasMoreRecordings && moreError == null && index >= recordings.size - 12) {
+                                scope.launch { loadMore() }
                             }
                         },
                         onClick = { onWatch(recording) },
                         onLongClick = { deleting = recording },
                     )
+                }
+            }
+        }
+        moreError?.let { message ->
+            item(span = { GridItemSpan(maxLineSpan) }, key = "more-error") {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(message, style = MaterialTheme.typography.bodyMedium)
+                    Button(onClick = { moreError = null; scope.launch { loadMore() } }) { Text("やり直す") }
                 }
             }
         }
@@ -160,10 +182,10 @@ fun RecordingsScreen(
                 scope.launch {
                     guarded {
                         if (repo.api.deleteRecording(repo.base, recording.id)) {
-                            // 消したものの隣に合わせ直す
+                            // 消したものの隣に合わせ直す。読み直さず手元から抜く (続きまで読んだぶんを残す)
                             val index = recordings.indexOfFirst { it.id == recording.id }
                             lastFocused = (recordings.getOrNull(index + 1) ?: recordings.getOrNull(index - 1))?.id
-                            repo.refreshRecordings()
+                            repo.forgetRecording(recording.id)
                         }
                     }
                     withFrameNanos { }

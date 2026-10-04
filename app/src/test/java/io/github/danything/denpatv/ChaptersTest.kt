@@ -48,6 +48,10 @@ class SpeedTest {
         assertEquals(1.25f, io.github.danything.denpatv.data.nextSpeed(1f))
         assertEquals(1f, io.github.danything.denpatv.data.nextSpeed(2f))
         assertEquals(1.25f, io.github.danything.denpatv.data.nextSpeed(3f))
+        // 段に無い値 (前の版の 1.1 など) は等速として扱い、その次へ
+        assertEquals(1f, io.github.danything.denpatv.data.knownSpeed(1.1f))
+        assertEquals(1.25f, io.github.danything.denpatv.data.nextSpeed(1.1f))
+        assertEquals(1.5f, io.github.danything.denpatv.data.nextSpeed(1.25f))
         assertEquals(1f, io.github.danything.denpatv.data.knownSpeed(null))
         assertEquals(1f, io.github.danything.denpatv.data.knownSpeed(0.75f))
         assertEquals(1.5f, io.github.danything.denpatv.data.knownSpeed(1.5f))

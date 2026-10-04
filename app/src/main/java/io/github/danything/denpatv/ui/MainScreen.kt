@@ -1,6 +1,7 @@
 package io.github.danything.denpatv.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
@@ -14,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.DrawerValue
@@ -83,9 +85,12 @@ fun MainScreen(
             }
         },
     ) {
-        when (selected) {
-            Destination.Settings -> SettingsScreen(repo)
-            else -> RecordingsScreen(repo, onWatch, onUnauthorized, takeFocus = !returnToLive)
+        // 右の画面に入ったら、ライブに戻す印は外す (録画を観て戻ったときは、開いた録画に合わせる)
+        Box(Modifier.onFocusChanged { if (it.hasFocus) returnToLive = false }) {
+            when (selected) {
+                Destination.Settings -> SettingsScreen(repo)
+                else -> RecordingsScreen(repo, onWatch, onUnauthorized, takeFocus = !returnToLive)
+            }
         }
     }
 }
