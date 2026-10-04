@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ランチャーのバナー (320x180dp の比)。絵を用意するまでは色と文字で済ませる -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#13171F" />
+            <size android:width="320dp" android:height="180dp" />
+        </shape>
+    </item>
+    <item android:gravity="center" android:width="160dp" android:height="40dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="8dp" />
+            <solid android:color="#0172AD" />
+        </shape>
+    </item>
+</layer-list>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- denpa は家の LAN で http のまま動かすことが多い。平文を許す (ユーザーが入れた宛先にしか繋がない) -->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>
