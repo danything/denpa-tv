@@ -19,7 +19,7 @@ android {
     }
 
     /*
-     * リリースの署名。鍵は CI のシークレットから渡す (.github/workflows/release.yml、docs/install.md)。
+     * リリースの署名。鍵は CI のシークレットから渡す (.github/workflows/release.yml、docs/release.md)。
      * **鍵が同じでないと上書きで入れられない** ので、一度決めた鍵を使い続ける。
      * 鍵が無ければ署名の設定を作らない (release は署名なしになり、CI は debug の APK を出す)
      */
@@ -63,12 +63,8 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
-    implementation(libs.compose.ui.tooling.preview)
-    debugImplementation(libs.compose.ui.tooling)
     implementation(libs.tv.material)
     implementation(libs.activity.compose)
-    implementation(libs.lifecycle.runtime.compose)
-    implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.navigation3.runtime)
     implementation(libs.navigation3.ui)
     implementation(libs.datastore.preferences)

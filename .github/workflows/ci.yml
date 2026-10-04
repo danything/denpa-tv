@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # AGP 9.4 は JDK 17 以上。手元と同じ 21 で焼く
+      # AGP 9.4 は JDK 17 以上。CI は 25 で焼く
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

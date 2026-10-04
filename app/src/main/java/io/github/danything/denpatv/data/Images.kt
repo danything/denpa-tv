@@ -6,11 +6,11 @@ import android.util.LruCache
 import java.net.URI
 
 /**
- * 局ロゴと録画のポスターを読む。**画像のライブラリは入れない** — ホームに出すのは数十枚の小さい絵で、
+ * 局ロゴと録画のポスターを読む。**画像のライブラリは入れない** — 出すのは局ロゴと録画のポスター (小さい絵) だけで、
  * 要るのは「縮めて読む」と「読んだものを覚えておく」だけ (docs/libraries.md)
  */
 object Images {
-    /** 覚えておく量 (バイト)。ホームのロゴとポスターが余裕で収まる */
+    /** 覚えておく量 (バイト)。ロゴと、録画の一覧の数ページぶんのポスターが収まる */
     private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 取り込んだ QR の符号化 (Project Nayuki、MIT) は上流のまま置くので、手を入れずに済むよう警告を外す -->
+<lint>
+    <issue id="DefaultLocale">
+        <ignore path="src/main/java/io/nayuki/**" />
+    </issue>
+</lint>

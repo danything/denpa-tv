@@ -13,7 +13,7 @@ data class Service(
     val remoteControlKey: Int? = null,
     val logo: String? = null,
     val live: String,
-    /** いま放送中の番組。denpa#390 を含む版から。古い denpa には無いので null として扱う */
+    /** いま放送中の番組。denpa 1.30.0 から。古い denpa には無いので null として扱う */
     val now: NowProgram? = null,
 )
 
@@ -23,6 +23,16 @@ data class Service(
  */
 val Service.number: Int?
     get() = remoteControlKey ?: if (type == "GR") null else (id % 100_000).toInt()
+
+/**
+ * 隣の局 (`step` は -1 で前、1 で次。端は反対の端へ回る)。いまの局が一覧から消えていたら頭から。
+ * 一覧が空 (スキャンし直している最中など) なら null — 呼ぶ側は映しているものを続ける
+ */
+fun neighbor(services: List<Service>, currentId: Long, step: Int): Service? {
+    if (services.isEmpty()) return null
+    val at = services.indexOfFirst { it.id == currentId }
+    return services[if (at < 0) 0 else Math.floorMod(at + step, services.size)]
+}
 
 /** 種別の並びと名前 (denpa の番組表・ライブと同じ) */
 val SERVICE_TYPES = listOf("GR" to "地上波", "BS" to "BS", "CS" to "CS")
@@ -42,21 +52,16 @@ data class NowProgram(
     fun remainingMinutes(at: Long): Long = ((endAt - at).coerceAtLeast(0) + 59_999) / 60_000
 }
 
-/** `GET /api/recordings` の1件 */
+/** `GET /api/recordings` の1件。使う鍵だけ (ほかは読み捨てる) */
 @Serializable
 data class Recording(
     val id: Long,
     val title: String,
-    val name: String,
-    val serviceId: Long? = null,
     val serviceName: String? = null,
     val startAt: Long,
-    val endAt: Long,
-    val durationMs: Long? = null,
     val poster: String? = null,
     val files: List<RecordingFile> = emptyList(),
-    val audio: String? = null,
-    /** 続きの位置 (ミリ秒)。denpa#390 を含む版から。無い・null なら頭から */
+    /** 続きの位置 (ミリ秒)。denpa 1.30.0 から。無い・null なら頭から */
     val resumeMs: Long? = null,
 )
 
