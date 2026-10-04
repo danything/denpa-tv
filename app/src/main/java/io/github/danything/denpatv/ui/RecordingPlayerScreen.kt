@@ -56,7 +56,8 @@ import kotlinx.coroutines.launch
 fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
     /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
     var leaving by remember { mutableStateOf(false) }
-    val leave = { leaving = true; onLeave() }
+    // 戻るを続けて押しても、1つだけ戻る (2回目は受けない)
+    val leave = { if (!leaving) { leaving = true; onLeave() } }
     val recording = remember { repo.recordings.firstOrNull { it.id == recordingId } }
     if (recording == null) {
         Centered("録画が見つかりません")

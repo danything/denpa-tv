@@ -115,7 +115,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     BackHandler(enabled = panel || controls) { panel = false; controls = false }
     /** メニューの画面へ戻るところ (映像に合いを取り返させない。戻った先が合いを取るので) */
     var leaving by remember { mutableStateOf(false) }
-    BackHandler(enabled = !panel && !controls) { leaving = true; onLeave() }
+    // 戻るを続けて押しても、1つだけ戻る (2回目は受けない)
+    BackHandler(enabled = !panel && !controls && !leaving) { leaving = true; onLeave() }
 
     if (!ready) return Centered("読み込んでいます…")
     val current = playing ?: return Centered("局がありません")
