@@ -30,8 +30,8 @@ import kotlinx.coroutines.launch
  * - 上下 (チャンネル送りも) で前・次の局 (同じものを流しているサブチャンネルは飛ばす)。替えたら局・番組・番組の進みを
  *   数秒だけ下に出す。いちばん押すのは局替えなので十字キーの上下に (キーの割り当ては data/Remote.kt)
  * - 決定 (と左) で局の一覧を開く (種別で切り替え、いま放送中の番組つき)。戻るで閉じる
- * - **決定の長押し** (か Menu キー) で操作の列: **画質 (コーデック)** (H.264 / AV1 / MPEG-2 のうち、この端末で解けるもの) と
- *   情報。ブラウザの denpa のライブと同じく、すぐ切り替わってこの端末で覚える。既定は端末がハードで MPEG-2 を
+ * - **決定の長押し** (か Menu キー) で操作の列: **画質 (コーデック)** (H.264 / AV1 / MPEG-2 のうち、この端末で解けるもの)、
+ *   字幕・音声 (あれば)、情報。ブラウザの denpa のライブと同じく、すぐ切り替わってこの端末で覚える。既定は端末がハードで MPEG-2 を
  *   解ければ生の TS (いちばん遅れが少ない)。5 秒触らなければ閉じる
  * - 情報キーで、いまの局と番組を出す
  * - 何も開いていないときの戻るは、メニューの画面へ
@@ -67,6 +67,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     val scope = rememberCoroutineScope()
     val (player, error) = rememberPlayer(repo, buffering, onUnauthorized)
     val (overlay, flash) = rememberFlash()
+    val tracks = rememberTracks(repo, player, flash)
     CatchUp(player, buffering)
 
     LaunchedEffect(Unit) {
@@ -157,7 +158,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                             scope.launch { repo.app.settings.setLiveQuality(choice) }
                         }
                     },
-                    "" to listOf(
+                    "" to tracks.controls() + listOf(
                         Control("情報", icon = R.drawable.ic_info) {
                             controls = false
                             flash(describe(current, quality) + "\n$LIVE_HINT")

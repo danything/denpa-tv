@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,6 +47,7 @@ import io.github.danything.denpatv.data.codecLabels
 import io.github.danything.denpatv.data.durationLabel
 import io.github.danything.denpatv.data.watched
 import io.github.danything.denpatv.data.Unauthorized
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -67,6 +69,18 @@ fun RecordingsScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var loaded by remember { mutableStateOf(recordings.isNotEmpty()) }
     var retry by remember { mutableIntStateOf(0) }
+    /** 下に数秒出す知らせ (消せなかったときなど) */
+    var notice by remember { mutableStateOf<String?>(null) }
+    var noticedAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(noticedAt) {
+        if (noticedAt == 0L) return@LaunchedEffect
+        delay(4_000)
+        notice = null
+    }
+    fun notify(text: String) {
+        notice = text
+        noticedAt = System.nanoTime()
+    }
     /** 詳しいところを開いている録画 (長押し) */
     var opened by remember { mutableStateOf<Recording?>(null) }
     /** 最後に合わせていた録画。観て戻ってきたらここに合わせ直す (画面を作り直しても残る) */
@@ -89,8 +103,12 @@ fun RecordingsScreen(
     }
 
     LaunchedEffect(retry) {
-        // 戻ってきたときは読み直さない (並びが変わると合わせ直す先がずれる)
-        if (repo.recordings.isEmpty() || retry > 0) guarded { repo.refreshRecordings() }
+        // 戻ってきたときは読み直さない (並びが変わると合わせ直す先がずれる)。追っかけで観て戻ったときだけ読み直す
+        // (録り終えた・焼き上がったかもしれない)。合わせ直す先は id で探すので、並びが変わっても戻れる
+        if (repo.recordings.isEmpty() || retry > 0 || repo.recordingsStale) {
+            repo.recordingsStale = false
+            guarded { repo.refreshRecordings() }
+        }
     }
     LaunchedEffect(loaded) {
         // 再生の画面で消して戻ってきたら、その隣に合わせる
@@ -121,38 +139,52 @@ fun RecordingsScreen(
     if (recordings.isEmpty()) return Centered("観られる録画はまだありません")
 
     val groups = recordings.groupBy { DAY.format(Date(it.startAt)) }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(4),
-        state = grid,
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 32.dp, end = 48.dp, top = 32.dp, bottom = 48.dp),
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Text("録画", style = MaterialTheme.typography.headlineMedium)
-                Text("長押しで詳しく (説明・削除)", style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-        groups.forEach { (day, items) ->
-            item(span = { GridItemSpan(maxLineSpan) }, key = "day:$day", contentType = "day") {
-                Text(day, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
-            }
-            items.forEach { recording ->
-                item(key = recording.id, contentType = "recording") {
-                    val requester = remember(recording.id) { requesters.getOrPut(recording.id) { FocusRequester() } }
-                    RecordingCard(
-                        repo,
-                        recording,
-                        modifier = Modifier.focusRequester(requester).onFocusChanged {
-                            if (it.isFocused) lastFocused = recording.id
-                        },
-                        onClick = { onWatch(recording) },
-                        onLongClick = { opened = recording },
-                    )
+    Box(modifier.fillMaxSize()) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            state = grid,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 32.dp, end = 48.dp, top = 32.dp, bottom = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Text("録画", style = MaterialTheme.typography.headlineMedium)
+                    Text("長押しで詳しく (説明・削除)", style = MaterialTheme.typography.bodyMedium)
                 }
             }
+            groups.forEach { (day, items) ->
+                item(span = { GridItemSpan(maxLineSpan) }, key = "day:$day", contentType = "day") {
+                    Text(day, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+                }
+                items.forEach { recording ->
+                    item(key = recording.id, contentType = "recording") {
+                        val requester = remember(recording.id) { requesters.getOrPut(recording.id) { FocusRequester() } }
+                        RecordingCard(
+                            repo,
+                            recording,
+                            modifier = Modifier.focusRequester(requester).onFocusChanged {
+                                if (it.isFocused) lastFocused = recording.id
+                            },
+                            onClick = { onWatch(recording) },
+                            onLongClick = { opened = recording },
+                        )
+                    }
+                }
+            }
+        }
+        notice?.let { text ->
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 32.dp)
+                    .background(Color(0xE0202428), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+            )
         }
     }
 
@@ -168,6 +200,9 @@ fun RecordingsScreen(
                         if (repo.api.deleteRecording(repo.base, recording.id)) {
                             // 消したものの隣に合わせ直す。読み直さず手元から抜く (続きまで読んだぶんを残す)
                             lastFocused = repo.forgetRecording(recording.id)
+                        } else {
+                            // 再生の画面と同じ知らせ
+                            notify("消せませんでした (録画中は消せません)")
                         }
                     }
                     withFrameNanos { }
@@ -223,12 +258,18 @@ private fun RecordingCard(
             )
             // メニューが開いて狭くなっても札を潰さない (はみ出すぶんは切れる)
             Row(Modifier.horizontalScroll(rememberScrollState(), enabled = false), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                recording.codecLabels.forEach { label ->
+                // 録画中は形の代わりに「録画中」(観ると追っかけ)
+                val labels = if (recording.recording) listOf(RECORDING_BADGE) else recording.codecLabels
+                labels.forEach { label ->
                     Text(
                         label,
                         style = MaterialTheme.typography.labelMedium,
+                        color = if (label == RECORDING_BADGE) Color.White else Color.Unspecified,
                         modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                            .background(
+                                if (label == RECORDING_BADGE) Color(0xFFC62828) else MaterialTheme.colorScheme.surfaceVariant,
+                                RoundedCornerShape(4.dp),
+                            )
                             .padding(horizontal = 6.dp, vertical = 1.dp),
                     )
                 }
@@ -248,6 +289,8 @@ private fun gridIndex(recordings: List<Recording>, id: Long): Int? {
     }
     return null
 }
+
+private const val RECORDING_BADGE = "● 録画中"
 
 private val DAY = SimpleDateFormat("M月d日(E)", Locale.JAPAN)
 private val WHEN = SimpleDateFormat("M/d(E) HH:mm", Locale.JAPAN)

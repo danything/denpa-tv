@@ -16,7 +16,7 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 data class Connection(val server: String, val token: String?)
 
 /**
- * 覚えておくもの: 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ。
+ * 覚えておくもの: 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声。
  *
  * **トークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
  * 2025 年に全部非推奨になった。アプリの領域は他のアプリから読めず、トークンは denpa の画面からいつでも外せる
@@ -30,6 +30,8 @@ class Settings(private val context: Context) {
     private val skipCmKey = booleanPreferencesKey("skip_cm")
     private val lastServiceKey = longPreferencesKey("last_service")
     private val speedKey = floatPreferencesKey("playback_speed")
+    private val subtitlesKey = booleanPreferencesKey("subtitles")
+    private val audioKey = stringPreferencesKey("audio_label")
 
     /** 繋ぐ先。まだ無ければ null */
     val connection: Flow<Connection?> = context.dataStore.data.map { prefs ->
@@ -80,6 +82,20 @@ class Settings(private val context: Context) {
 
     suspend fun setLiveQuality(quality: LiveQuality) {
         context.dataStore.edit { it[liveQualityKey] = quality.name }
+    }
+
+    /** 字幕を出すか (焼いた録画の PGS など)。既定は出す。端末ごと (ブラウザの再生と同じく観ながら変える) */
+    val subtitles: Flow<Boolean> = context.dataStore.data.map { it[subtitlesKey] ?: true }
+
+    suspend fun setSubtitles(on: Boolean) {
+        context.dataStore.edit { it[subtitlesKey] = on }
+    }
+
+    /** 最後に選んだ音声の名前 (「解説ステレオ」など)。同じ名前の音声があればそれで始める */
+    val audioLabel: Flow<String?> = context.dataStore.data.map { it[audioKey] }
+
+    suspend fun setAudioLabel(label: String?) {
+        context.dataStore.edit { if (label == null) it.remove(audioKey) else it[audioKey] = label }
     }
 
     suspend fun setSkipCm(skip: Boolean) {

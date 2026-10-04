@@ -78,7 +78,18 @@ data class Recording(
     val files: List<RecordingFile> = emptyList(),
     /** 続きの位置 (ミリ秒)。denpa 1.30.0 から。無い・null なら頭から */
     val resumeMs: Long? = null,
+    /** 予定の終わり (UNIX ミリ秒)。追っかけで観た位置を預けるときの尺に使う */
+    val endAt: Long? = null,
+    /** いま録っている (denpa 1.33.0 から)。`files` は伸びている生TSだけなので、`chase` で観る */
+    val recording: Boolean = false,
+    /** 追っかけ再生の口 (`api/recordings/<id>/chase`)。生TSがある間だけ。denpa 1.33.0 から */
+    val chase: String? = null,
+    /** CM 飛ばしを観はじめに入れてよいか (ロゴでの判定に失敗した録画は false)。無ければ入れてよい */
+    val cmReliable: Boolean = true,
 )
+
+/** 追っかけで観るか (録画中で、追っかけの口がある) */
+val Recording.chasing: Boolean get() = recording && chase != null
 
 /** 観た割合 (0..1)。続きの位置か長さが分からなければ null */
 val Recording.watched: Float?
