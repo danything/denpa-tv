@@ -106,6 +106,37 @@ Menu キーやチャンネル送りがあれば、近道として効きます。
 続きの位置といま放送中の番組は、それを返す denpa (1.30.0 以降) で出ます。録画中の録画 (追っかけ再生) と
 CM 飛ばしの既定の判定 (`cmReliable`) は denpa 1.33.0 以降、生の TS の字幕は 1.33.0 より後。古い denpa でも、出ないだけでほかは動きます。
 
+### リンクで開く
+
+`denpa://` のリンクで、局や録画を直に開けます (Home Assistant の自動化や adb から)。
+
+| リンク | 開くもの |
+| --- | --- |
+| `denpa://live` | ライブ (最後に観ていた局。ふつうに開いたときと同じ) |
+| `denpa://live/<局>` | その局のライブ。`<局>` は局の id (`GET /api/services` の `id`)・名前・番号 |
+| `denpa://recordings` | 録画の一覧 |
+| `denpa://recording/<id>` | その録画を観る (続きから。録画中なら追っかけ再生) |
+
+- 局の名前は、そのまま → 全角・半角と大文字・小文字・空白を揃えて → 番号 (リモコン番号、BS/CS は3桁) → 名前の頭、の順に探します。
+  放送の局名は「ＮＨＫ総合１・東京」のように来ますが、`NHK総合`・`1` でも当たります。名前は % で符号化しても構いません
+- 局・録画が見つからなければ、ライブ・録画の一覧をふつうに開いて、1行知らせます
+- 観ている途中に来たら、いまの再生の画面と入れ替えます (戻るで、ライブならメニュー、録画なら録画の一覧へ)
+- まだ denpa に繋いでいなければ、リンクは捨てて繋ぐ画面のままです
+
+Home Assistant の [Android TV Remote](https://www.home-assistant.io/integrations/androidtv_remote/) から:
+
+```yaml
+action: media_player.play_media
+target: { entity_id: media_player.android_tv }
+data: { media_content_type: url, media_content_id: denpa://live/NHK総合 }
+```
+
+adb から:
+
+```sh
+adb shell am start -a android.intent.action.VIEW -d denpa://recording/12
+```
+
 ## 入れ方
 
 Play ストアにはまだ出していないので、パソコンから adb で入れます。テレビの開発者向けオプションでデバッグを入れたら、1行で入ります:
