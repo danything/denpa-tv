@@ -7,6 +7,7 @@ import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -162,16 +163,20 @@ fun PlayerFrame(
     player: ExoPlayer,
     overlay: String?,
     error: String?,
+    /** 映像がキーを受けるか。上に重ねたもの (局の一覧) が開いている間は false。閉じたら映像に戻す */
+    active: Boolean = true,
     onKey: (KeyEvent) -> Boolean,
+    above: @Composable BoxScope.() -> Unit = {},
 ) {
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(active) { if (active) runCatching { focus.requestFocus() } }
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(focus)
-            .onKeyEvent { if (it.type == KeyEventType.KeyDown) onKey(it) else false }
+            // 上に重ねたものが開いている間は受けない (そちらのキーがここまで上がってくるので)
+            .onKeyEvent { if (active && it.type == KeyEventType.KeyDown) onKey(it) else false }
             .focusable(),
     ) {
         PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
@@ -203,6 +208,7 @@ fun PlayerFrame(
                 }
             }
         }
+        above()
     }
 }
 

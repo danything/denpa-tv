@@ -30,7 +30,9 @@ class DenpaApi(private val token: () -> String? = { null }) {
 
     suspend fun services(base: URI): List<Service> = get(base, "api/services")
 
-    suspend fun recordings(base: URI, limit: Int = 50): List<Recording> = get(base, "api/recordings?limit=$limit")
+    /** 録画を新しい順に。`offset` から `limit` 件 (多いので少しずつ読む) */
+    suspend fun recordings(base: URI, limit: Int = 60, offset: Int = 0): List<Recording> =
+        get(base, "api/recordings?limit=$limit&offset=$offset")
 
     /**
      * どこまで観たかを預ける (`POST /api/recordings/<id>/resume`)。秒で渡す。
