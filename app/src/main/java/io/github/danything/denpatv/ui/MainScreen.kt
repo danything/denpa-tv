@@ -29,14 +29,15 @@ import io.github.danything.denpatv.data.Recording
 
 /** 横のメニューの行き先 */
 private enum class Destination(val label: String, val icon: Int) {
-    Live("ライブ", R.drawable.ic_live),
+    // いちばん使う録画を上に (開いたときもここ)
     Recordings("録画", R.drawable.ic_recordings),
+    Live("ライブ", R.drawable.ic_live),
     Settings("設定", R.drawable.ic_settings),
 }
 
 /**
  * いちばん上の画面。**左に Compose for TV のナビゲーション ドロワー** (畳むとアイコンだけの帯、
- * 左キーで開く) を置き、ライブ・録画・設定へ行く。
+ * 左キーで開く) を置き、録画・ライブ・設定へ行く。
  *
  * Android TV のデザインの指針は、行き先を 5〜6 までのドロワーにまとめるよう勧めている。
  * 局も録画も数が多いので、1つの画面に列で並べるより、それぞれの画面に分ける。
