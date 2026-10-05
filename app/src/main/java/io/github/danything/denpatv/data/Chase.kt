@@ -21,7 +21,9 @@ object Chase {
     /** 最新の近く (ブラウザの追っかけの「最新」と同じく 20 秒以内) */
     fun atEdge(positionMs: Long, recordedMs: Long): Boolean = recordedMs - positionMs < 20_000
 
-    fun url(chase: String, codec: String, fromMs: Long): String = "$chase?codec=$codec&from=${fromMs / 1000}"
+    /** `audio` は焼くときに頼む音声 (`bakedAudio`)。生では渡さない */
+    fun url(chase: String, codec: String, fromMs: Long, audio: DenpaAudio? = null): String =
+        "$chase?codec=$codec&from=${fromMs / 1000}${audioQuery(audio)}"
 }
 
 /**

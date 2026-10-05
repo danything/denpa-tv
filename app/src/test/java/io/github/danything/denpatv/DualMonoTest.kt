@@ -3,11 +3,14 @@ package io.github.danything.denpatv
 import io.github.danything.denpatv.data.AudioChoice
 import io.github.danything.denpatv.data.AudioSide
 import io.github.danything.denpatv.data.AudioTrack
+import io.github.danything.denpatv.data.Chase
 import io.github.danything.denpatv.data.DenpaAudio
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.audioChoices
+import io.github.danything.denpatv.data.audioQuery
 import io.github.danything.denpatv.data.audioTrack
+import io.github.danything.denpatv.data.bakedAudio
 import io.github.danything.denpatv.data.dualMonoCoefficients
 import io.github.danything.denpatv.data.dualMonoLabels
 import io.github.danything.denpatv.data.selectedChoice
@@ -104,5 +107,39 @@ class DualMonoTest {
         assertEquals("0:main", service.now?.audios?.single()?.id)
         val old = json.decodeFromString<Recording>("""{"id":1,"title":"録画","startAt":0}""")
         assertTrue(old.audios.isEmpty())
+    }
+
+    @Test
+    fun 焼くときはこの画面で選んだもの_無ければ既定の主音声の覚えている側() {
+        assertEquals("0:sub", bakedAudio(dual, "0:sub", AudioSide.Main)?.id)
+        assertEquals("0:main", bakedAudio(dual, null, AudioSide.Main)?.id)
+        assertEquals("0:sub", bakedAudio(dual, null, AudioSide.Sub)?.id)
+        assertEquals("0:both", bakedAudio(dual, null, AudioSide.Both)?.id)
+        // 番組が替わって無くなったものは忘れる
+        assertEquals("0:main", bakedAudio(dual, "1:both", AudioSide.Main)?.id)
+    }
+
+    @Test
+    fun 焼くときの既定は放送の言う主音声() {
+        val two = listOf(
+            DenpaAudio("0:both", 0, "both", "解説ステレオ (日本語)", false),
+            DenpaAudio("1:both", 1, "both", "主音声ステレオ (日本語)", true),
+        )
+        assertEquals("1:both", bakedAudio(two, null, AudioSide.Sub)?.id)
+        assertEquals("0:both", bakedAudio(two, "0:both", AudioSide.Main)?.id)
+    }
+
+    @Test
+    fun 選べるものが1つ以下なら頼まない() {
+        assertNull(bakedAudio(listOf(DenpaAudio("0:both", 0, "both", "ステレオ")), "0:both", AudioSide.Main))
+        assertNull(bakedAudio(emptyList(), null, AudioSide.Main))
+        assertEquals("", audioQuery(null))
+    }
+
+    @Test
+    fun 頼む_URL_に音声を足す() {
+        assertEquals("&audio=0%3Asub", audioQuery(dual[1]))
+        assertEquals("api/recordings/9/chase?codec=h264&from=754&audio=0%3Amain", Chase.url("api/recordings/9/chase", "h264", 754_900, dual[0]))
+        assertEquals("api/recordings/9/chase?codec=raw&from=754", Chase.url("api/recordings/9/chase", "raw", 754_900))
     }
 }

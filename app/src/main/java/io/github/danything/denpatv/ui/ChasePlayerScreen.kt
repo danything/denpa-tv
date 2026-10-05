@@ -82,8 +82,13 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         fromMs = { from + player.currentPosition },
         onUnauthorized = onUnauthorized,
     )
-    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いた追っかけは denpa が主音声だけを焼く)
+    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いた追っかけは denpa が選んだ1つだけを焼く。下の `baked`)
     val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { quality == LiveQuality.Raw }.orEmpty())
+    // 焼いた追っかけの音声は denpa に頼んで選ぶ (`?audio=<id>`)。替えたら、いまの位置から頼み直す
+    val baked = rememberBakedAudio(repo, recording.audios.takeIf { quality != LiveQuality.Raw }.orEmpty(), key = recording.id) { label ->
+        from = position()
+        flash(label)
+    }
 
     var bar by remember { mutableStateOf<ChaseBar?>(null) }
     BackHandler(enabled = bar != null) { bar = null }
@@ -119,8 +124,9 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         lastSpeed = speed
     }
 
-    LaunchedEffect(from, quality, attempt) {
-        val url = repo.url(Chase.url(chase, quality.codec, from)) ?: return@LaunchedEffect
+    LaunchedEffect(from, quality, attempt, baked.ready, baked.audio?.id) {
+        if (!baked.ready) return@LaunchedEffect
+        val url = repo.url(Chase.url(chase, quality.codec, from, baked.audio)) ?: return@LaunchedEffect
         caughtUp = false
         started = false
         refused = false
@@ -275,7 +281,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                             scope.launch { repo.app.settings.setLiveQuality(choice) }
                         }
                     },
-                    "" to tracks.controls(),
+                    "" to tracks.controls() + baked.controls(),
                 ),
                 header = { actions ->
                     ProgressLine(at, length, focus = seekFocus, down = actions) { direction -> step(direction) }

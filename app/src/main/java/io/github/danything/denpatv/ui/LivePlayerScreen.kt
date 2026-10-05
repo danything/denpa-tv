@@ -20,6 +20,7 @@ import io.github.danything.denpatv.data.liveCommand
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
+import io.github.danything.denpatv.data.audioQuery
 import io.github.danything.denpatv.data.neighbor
 import io.github.danything.denpatv.data.number
 import kotlinx.coroutines.delay
@@ -81,7 +82,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         generation = playing?.id,
         onUnauthorized = onUnauthorized,
     )
-    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いたライブは denpa が主音声だけを焼く)
+    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いたライブは denpa が選んだ1つだけを焼く。下の `baked`)
     val tracks = rememberTracks(
         repo,
         player,
@@ -89,6 +90,13 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         captions,
         dualMono,
         denpaAudios = playing?.takeIf { quality == LiveQuality.Raw }?.now?.audios.orEmpty(),
+    )
+    // 焼いたライブの音声は denpa に頼んで選ぶ (`?audio=<id>`)。変われば頼み直す
+    val baked = rememberBakedAudio(
+        repo,
+        audios = playing?.takeIf { quality != LiveQuality.Raw }?.now?.audios.orEmpty(),
+        key = playing?.id,
+        onChange = flash,
     )
     CatchUp(player, buffering)
 
@@ -106,12 +114,17 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         playing = services.firstOrNull { it.id == last } ?: services.firstOrNull()
         ready = true
     }
-    LaunchedEffect(playing?.id, quality) {
+    /** 局・画質を最後に出したもの。音声だけを替えて頼み直したときは出し直さない (「音声 …」の知らせを消さない) */
+    var shown by remember { mutableStateOf<Pair<Long, LiveQuality>?>(null) }
+    LaunchedEffect(playing?.id, quality, baked.ready, baked.audio?.id) {
         val service = playing ?: return@LaunchedEffect
-        val url = repo.url("${service.live}?codec=${quality.codec}") ?: return@LaunchedEffect
+        if (!baked.ready) return@LaunchedEffect
+        val url = repo.url("${service.live}?codec=${quality.codec}${audioQuery(baked.audio)}") ?: return@LaunchedEffect
         player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
         player.prepare()
         player.playWhenReady = true
+        if (shown == service.id to quality) return@LaunchedEffect
+        shown = service.id to quality
         flash(describe(service, quality) + if (hinted) "" else "\n$LIVE_HINT")
         hinted = true
         repo.app.settings.setLastService(service.id)
@@ -199,7 +212,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                             scope.launch { repo.app.settings.setLiveQuality(choice) }
                         }
                     },
-                    "" to tracks.controls() + listOf(
+                    "" to tracks.controls() + baked.controls() + listOf(
                         Control("情報", icon = R.drawable.ic_info) {
                             controls = false
                             flash(describe(current, quality) + "\n$LIVE_HINT")
