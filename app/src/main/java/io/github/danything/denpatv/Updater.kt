@@ -26,6 +26,7 @@ import io.github.danything.denpatv.data.selectUpdate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -119,7 +120,8 @@ class Updater(private val app: DenpaApp) {
                     _state.value = UpdateState.DevBuild(selectUpdate(source.releases(), Version(0, 0, 0))?.label)
                 } else {
                     val update = fetch()
-                    if (update == null) _state.value = UpdateState.UpToDate(latest)
+                    // 待つ間に開いたときの確かめが別の版を取り始めていたら、それを消さない
+                    if (update == null) _state.compareAndSet(UpdateState.Checking, UpdateState.UpToDate(latest))
                     prepare(update, fresh = true, manual = true)
                 }
             } catch (e: CancellationException) {
@@ -177,7 +179,10 @@ class Updater(private val app: DenpaApp) {
     /** 裏で取ってきて照らす (app.scope の中で、いまのコルーチンのまま)。失敗はログだけで、次に確かめたときに取り直す */
     private fun prefetch(update: Update, manual: Boolean) {
         val file = try {
-            source.download(update, cache.dir(update)) { _state.value = UpdateState.Preparing(update, it) }
+            source.download(update, cache.dir(update)) { percent ->
+                // 裏で取っている間だけ進みを書く (ほかに移っていたら上書きしない)
+                _state.update { if (it is UpdateState.Preparing && it.update == update) UpdateState.Preparing(update, percent) else it }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: HashMismatch) {
