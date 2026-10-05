@@ -57,7 +57,7 @@ data class Decoders(
  * - **H.264** — どの端末でも解ける
  * - **AV1** — 同じ画質で軽い。ハードで解ける端末だけ
  * - **MPEG-2** (`raw`) — 焼かずに1局に絞っただけの TS。denpa が焼くのを待たないぶんいちばん遅れが少なく、
- *   denpa の CPU も使わない。ARIB の字幕は出ない。ハードで解ける端末だけ (既定はこれ)
+ *   denpa の CPU も使わない。字幕は denpa が描いた絵を重ねる (`ui/RawCaptions.kt`)。ハードで解ける端末だけ (既定はこれ)
  */
 enum class LiveQuality(val codec: String, val label: String, val mime: String) {
     H264("h264", "H.264", "video/mp4"),

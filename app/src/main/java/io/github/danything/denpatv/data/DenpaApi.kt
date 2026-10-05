@@ -11,7 +11,7 @@ import java.io.IOException
 import java.net.URI
 
 /**
- * denpa の外向けの口 (docs/api.md) を叩く。
+ * denpa の外向けの口 (denpa の docs/api.md) を叩く。
  *
  * **家の LAN からはトークン無しで通る** (denpa の TRUSTED_NETWORKS)。家の外の denpa (OIDC でログインする構成) では、
  * テレビを denpa に登録して受け取ったトークンを `Authorization: Bearer` で付ける (`token`、README の「繋ぐ」)

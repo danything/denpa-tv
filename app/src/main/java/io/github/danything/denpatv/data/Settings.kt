@@ -17,7 +17,8 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 data class Connection(val server: String, val token: String?)
 
 /**
- * 覚えておくもの: 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声。
+ * 覚えておくもの: 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・
+ * アップデートを確かめた時刻。
  *
  * **トークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
  * 2025 年に全部非推奨になった。アプリの領域は他のアプリから読めず、トークンは denpa の画面からいつでも外せる

@@ -11,10 +11,10 @@
 | Gradle | 9.8.0 | 2026-10 時点の最新 ([services.gradle.org](https://services.gradle.org/versions/current)) |
 | Kotlin (Compose / serialization のコンパイラプラグイン) | 2.4.20 | Maven Central の最新の安定版 |
 | Compose BOM | 2026.09.00 | |
-| Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンの帯) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューのアイコンは Material Symbols (Apache License 2.0) の3つを vector drawable として置いた (アイコンのライブラリは入れない) |
+| Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンの帯) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューの3つのアイコンは Material Symbols、再生の操作の札の印は Material Icons (どちらも Apache License 2.0) を vector drawable として置いた (アイコンのライブラリは入れない) |
 | `androidx.tv:tv-foundation` | **使わない** | TV 用の Lazy レイアウトは alpha11 で非推奨、alpha12 で削除済み。普通の Compose の `LazyRow` / `LazyColumn` で足りる (同ノート) |
 | Navigation 3 (`androidx.navigation3`) | 1.2.0 | 戻る履歴をただのリストとして持つ Compose 向けの新しい Navigation。行き先は `@Serializable` のクラス。**minSdk 24 を求める** ので、アプリの minSdk もこれに合わせた |
-| DataStore Preferences | 1.2.1 | 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さを覚える。SharedPreferences の後継 |
+| DataStore Preferences | 1.2.1 | 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・アップデートを確かめた時刻を覚える。SharedPreferences の後継 |
 | Media3 (ExoPlayer) | 1.11.1 | 2026-09-10 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/media3))。minSdk 23 |
 
 ### minSdk 24 (Android 7.0)
@@ -24,12 +24,12 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 
 ### Media3 で何が再生できるか
 
-- **fragmented MP4 (H.264 / AV1)** — denpa のライブ (`api/services/<id>/live`)。ExoPlayer の
+- **fragmented MP4 (H.264 / AV1)** — denpa のライブ (`api/services/<id>/live`) と追っかけ (`api/recordings/<id>/chase`)。ExoPlayer の
   `FragmentedMp4Extractor` が読む。流しっぱなし (長さ不明) でもそのまま再生できる
 - **Matroska (.mkv)** — denpa の焼いた録画。`MatroskaExtractor` が読む。**字幕の PGS
   (`S_HDMV/PGS`) にも対応している** ([MatroskaExtractor のソース](https://github.com/androidx/media/blob/release/libraries/extractor/src/main/java/androidx/media3/extractor/mkv/MatroskaExtractor.java))。
   絵の字幕なので、出すのは Media3 の `SubtitleView` (View)。Compose の部品はまだ絵の字幕を描けない
-- **MPEG-TS (MPEG-2)** — 焼く前の録画と、ライブの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
+- **MPEG-TS (MPEG-2)** — 焼く前の録画と、ライブ・追っかけの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
 - **ARIB の字幕は Media3 では解かない。** Media3 に ARIB の字幕の読み手は無く、libaribcaption を NDK で抱えるのは重い。
   denpa が描いた絵 (放送の PTS 付き) を受け取って、Compose の Canvas で重ねる (`ui/RawCaptions.kt`)。
   時計は **TsExtractor に自分の `TimestampAdjuster` を渡して**控え、寄せ幅 (`getTimestampOffsetUs`) で再生位置を放送の
@@ -44,6 +44,8 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
   [Media3 1.9.0 の紹介](https://android-developers.googleblog.com/2025/12/media3-190-whats-new.html))。
   AV1 は**端末がハードで解けるときだけ**選び (MediaCodecList で調べる)、解けなければ H.264 を頼む。
   denpa はどちらも出せるので、ソフトデコードを抱える理由が無い
+- **二か国語 (デュアルモノ) の片側を両耳へ配るのは、音の出口の手前に挟む自前の `AudioProcessor`** (`ui/DualMono.kt`。
+  混ぜ方は Media3 の `ChannelMixingMatrix` / `AudioMixingUtil`)。生の TS だけで、焼いたライブ・追っかけは denpa に頼み直す (`?audio=<id>`)
 
 ## AndroidX 以外に入れたもの
 
@@ -69,6 +71,7 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
 読み 30 秒と書いてある)。叩くのは局と録画の一覧・番組の中身 (`detail`)・観た位置・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
+生の TS の字幕の絵 (`api/…/captions`、長さ付きのこまが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。
 
 → **アプリの中のアップデート (GitHub のリリースを引く・APK を取る) も HttpURLConnection** (`data/Update.kt`)。入れるのは OS の
 `PackageInstaller` のセッション (`Updater.kt`)。アップデートのライブラリは入れない。
