@@ -132,8 +132,8 @@ fun rememberTracks(
             scope.launch {
                 // デュアルモノはどちら側かを覚える (名前は番組で変わるので覚えない)
                 if (next.side != null) repo.app.settings.setDualMonoSide(next.side)
-                // 名前の付いたものだけ覚える。番号だけのものを選んだら忘れる (次に別の番組で副音声にならないように)。
-                // デュアルモノの中で替えただけなら、覚えている名前はそのまま
+                // 名前の付いたものだけ覚える。番号だけのもの・デュアルモノの本へ移ったら忘れる (次に別の番組で副音声にならないように)。
+                // 同じデュアルモノの本の中で側を替えただけなら、覚えている名前はそのまま
                 if (next.group != selectedGroup || next.side == null) repo.app.settings.setAudioLabel(track.label.takeIf { track.named })
             }
             onChange("音声 ${track.label}")

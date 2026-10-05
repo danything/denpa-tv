@@ -139,6 +139,12 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             refresh()
         }
     }
+    // 番組が終わったら、すぐ取り直す (次の番組の音声の構成 (デュアルモノか) と進みを、1分ごとの取り直しを待たずに替える)
+    LaunchedEffect(playing?.now?.endAt) {
+        val end = playing?.now?.endAt ?: return@LaunchedEffect
+        delay((end - System.currentTimeMillis()).coerceAtLeast(0) + PROGRAM_END_GRACE_MS)
+        if (ready) refresh()
+    }
     // denpa の知らせ (局・番組表が変わった、繋ぎ直した) でも取り直す。番組表は1局集めるたびに来るので、まとめて1回 (1 秒待つ)
     LaunchedEffect(Unit) {
         val changed = setOf(DenpaEvent.Opened, DenpaEvent.Changed("services"), DenpaEvent.Changed("programs"))
@@ -228,3 +234,6 @@ private fun describe(service: Service, quality: LiveQuality): String {
 private const val LIVE_HINT = "決定で局の一覧・長押しでメニュー (画質)"
 
 private const val LOADING_QUALITY = "\u0000loading"
+
+/** 番組の終わりから取り直すまでの間 (ミリ秒)。denpa の時計とのずれのぶん */
+private const val PROGRAM_END_GRACE_MS = 3_000L
