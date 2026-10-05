@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.http.HttpEngine
 import android.os.Build
 import android.os.ext.SdkExtensions
+import android.util.Log
 import io.github.danything.denpatv.data.Decoders
 import io.github.danything.denpatv.data.Settings
 import io.github.danything.denpatv.data.WatchNextRows
@@ -28,7 +29,17 @@ class DenpaApp : Application() {
      * Media3 の DefaultHttpDataSource (OS の HttpURLConnection) を使う
      */
     val httpEngine: HttpEngine? by lazy {
-        if (hasHttpEngine()) HttpEngine.Builder(this).build() else null
+        if (hasHttpEngine()) {
+            try {
+                HttpEngine.Builder(this).build()
+            } catch (error: LinkageError) {
+                // 拡張の版は足りていると言うのに、OS にクラスが無い機種がある (下の hasHttpEngine)
+                Log.w("denpa", "HttpEngine を使えないので OS の HttpURLConnection で取ります", error)
+                null
+            }
+        } else {
+            null
+        }
     }
 
     /** HttpEngine が答えを返す先。映像を開くたびに作ると、そのたびにスレッドが残る */
@@ -41,5 +52,12 @@ class DenpaApp : Application() {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 }
 
+/**
+ * HttpEngine が使えるか。**S 拡張の版だけでは決めない** — Android TV 12 の BRAVIA (KJ-75X80WK) は
+ * S 拡張 7 以上と答えるのに `android.net.http.HttpEngine` が無く、映像を開いた瞬間に
+ * NoClassDefFoundError で落ちていた (denpa-tv#24)。クラスが本当に引けるかも確かめる
+ */
 fun hasHttpEngine(): Boolean =
-    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && SdkExtensions.getExtensionVersion(Build.VERSION_CODES.S) >= 7
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+        SdkExtensions.getExtensionVersion(Build.VERSION_CODES.S) >= 7 &&
+        runCatching { Class.forName("android.net.http.HttpEngine") }.isSuccess
