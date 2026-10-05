@@ -21,6 +21,8 @@ import io.github.danything.denpatv.data.AudioTrack
 import io.github.danything.denpatv.data.DenpaAudio
 import io.github.danything.denpatv.data.audioChoices
 import io.github.danything.denpatv.data.audioTrack
+import io.github.danything.denpatv.data.bakedAudio
+import io.github.danything.denpatv.data.dualMonoLabels
 import io.github.danything.denpatv.data.rememberedAudio
 import io.github.danything.denpatv.data.selectedChoice
 import kotlinx.coroutines.launch
@@ -56,7 +58,7 @@ class TrackControls(
  *   言われたら、焼いた映像の字幕と同じ札を出す (入れ切りの設定も同じもの)
  * @param dualMono デュアルモノの配り直し (`rememberPlayer` の `dualMono`)
  * @param denpaAudios denpa が言う選べる音声 (`DenpaAudio`)。**生の TS のときだけ渡す** — 焼いたものは denpa が先に分けている
- *   (録画は主・副の2本に割って名前を付ける。ライブ・追っかけは主音声だけを焼く) ので、配り直すものが無い
+ *   (録画は主・副の2本に割って名前を付ける。ライブ・追っかけは選んだ1つだけを焼く。`rememberBakedAudio`) ので、配り直すものが無い
  */
 @Composable
 fun rememberTracks(
@@ -139,4 +141,38 @@ fun rememberTracks(
             onChange("音声 ${track.label}")
         },
     )
+}
+
+/**
+ * 焼いて流すライブ・追っかけの音声の切り替え。`audio` を denpa に頼む URL に足し (`audioQuery`)、変わったら頼み直す。
+ * `ready` になるまで (覚えている側を読み終えるまで) は頼まない — 読む前に頼むと、すぐ頼み直しになる
+ */
+class BakedAudio(val ready: Boolean, val audio: DenpaAudio?, private val choices: List<DenpaAudio>, private val next: () -> Unit) {
+    /** 操作の列に足す札 (選べるものが2つ以上あるときだけ) */
+    fun controls(): List<Control> =
+        if (choices.size < 2) emptyList() else listOf(Control(audio?.label?.takeIf { it.isNotBlank() } ?: "音声", icon = R.drawable.ic_audio) { next() })
+}
+
+/**
+ * **焼いたライブ・追っかけで音声を選ぶ** (denpa の `?audio=<id>`)。並びは denpa の `audios` そのまま (ブラウザと同じく
+ * デュアルモノは主・副・主+副の3つ)。押すたびに次へ。デュアルモノのどちら側かは生の TS と同じ設定に覚える。
+ *
+ * @param audios denpa が言う選べる音声。**焼くときだけ渡す** (生の TS はアプリが選ぶ。`rememberTracks`)
+ * @param key 観ているもの (局・録画)。替わったら、この画面で選んだものを忘れる
+ */
+@Composable
+fun rememberBakedAudio(repo: Repository, audios: List<DenpaAudio>, key: Any?, onChange: (String) -> Unit = {}): BakedAudio {
+    val savedSide by repo.app.settings.dualMonoSide.collectAsState(initial = null)
+    var picked by remember(key) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val side = savedSide ?: AudioSide.Main
+    val current = bakedAudio(audios, picked, side)
+    return BakedAudio(savedSide != null, current, audios) {
+        val at = audios.indexOfFirst { it.id == current?.id }
+        val next = audios[(at + 1) % audios.size]
+        picked = next.id
+        val nextSide = AudioSide.of(next.side)
+        if (nextSide != null && dualMonoLabels(audios, next.stream) != null) scope.launch { repo.app.settings.setDualMonoSide(nextSide) }
+        onChange("音声 ${next.label}")
+    }
 }

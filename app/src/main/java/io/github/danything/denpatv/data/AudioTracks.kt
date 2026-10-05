@@ -1,6 +1,7 @@
 package io.github.danything.denpatv.data
 
 import kotlinx.serialization.Serializable
+import java.net.URLEncoder
 import java.util.Locale
 
 /** 音声の1本。`named` は放送の名前 (denpa が書く「主音声ステレオ」「解説ステレオ」など) が付いているか */
@@ -50,8 +51,8 @@ enum class AudioSide(val wire: String, val fallbackLabel: String) {
 
 /**
  * denpa が番組表から組み立てた選べる音声の1つ (ブラウザの `arib.ts` の `AudioTrack`)。`id` は `"0:main"` の形、
- * `stream` は何本目の音声か、`side` はどちら側か。**いまの denpa の外向けの口 (docs/api.md) にはまだ無い**。
- * 無ければ空のまま — デュアルモノを見分けられないので、これまでどおり左右をそのまま出す
+ * `stream` は何本目の音声か、`side` はどちら側か。局の `now.audios` と録画の `audios` で来る (docs/api.md)。
+ * 古い denpa では空のまま — デュアルモノを見分けられないので、これまでどおり左右をそのまま出す
  */
 @Serializable
 data class DenpaAudio(
@@ -107,3 +108,25 @@ fun dualMonoCoefficients(side: AudioSide): FloatArray = when (side) {
     AudioSide.Sub -> floatArrayOf(0f, 0f, 1f, 1f)
     AudioSide.Both -> floatArrayOf(1f, 0f, 0f, 1f)
 }
+
+/**
+ * **焼いて流すライブ・追っかけで頼む音声** (`?audio=<id>`)。焼いたものには音声が1本しか入っていない (denpa が選んで焼く)
+ * ので、選び直すには denpa に頼み直す。生の TS は全部の音声が入っているので使わない (`audioChoices` で選ぶ)。
+ *
+ * - 選べるものが1つ以下なら null (頼まない。denpa の既定のまま)
+ * - この画面で選んだもの (`picked`) が並びにあれば、それ
+ * - 無ければ denpa の既定 (放送の言う主音声、無ければ先頭)。それがデュアルモノなら、覚えている側 (`side`)
+ *
+ * 古い denpa は `audio` を読み捨てるので、頼んでも害は無い (主音声のまま)
+ */
+fun bakedAudio(audios: List<DenpaAudio>, picked: String?, side: AudioSide): DenpaAudio? {
+    if (audios.size < 2) return null
+    audios.firstOrNull { it.id == picked }?.let { return it }
+    val default = audios.firstOrNull { it.main == true } ?: audios.first()
+    if (dualMonoLabels(audios, default.stream) == null) return default
+    return audios.firstOrNull { it.stream == default.stream && it.side == side.wire } ?: default
+}
+
+/** 焼いたものを頼む URL に足す `&audio=<id>` (頼まなければ空) */
+fun audioQuery(audio: DenpaAudio?): String =
+    audio?.id?.takeIf { it.isNotBlank() }?.let { "&audio=" + URLEncoder.encode(it, "UTF-8") }.orEmpty()
