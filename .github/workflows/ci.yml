@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# 同じ PR に積み直したら、前の走りは止める (main は止めない)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -31,3 +36,158 @@ jobs:
         with:
           name: reports
           path: app/build/reports/
+
+
+  # 文書だけの PR か。そうならエミュレータの列は中身を飛ばして通す。
+  # 列ごと (if:) 飛ばすと、matrix の列の名前が「emulator (API ${{ matrix.api-level }})」のまま残り、必須のチェックが待ち続けるので、
+  # 列は必ず走らせて手順のほうを飛ばす
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename')
+          echo "$files"
+          # 文書・アプリの外の台本 (入れ方)・Renovate の設定だけなら、アプリは変わらない
+          code=$(echo "$files" | grep -Ev '(\.md$|^docs/|^LICENSE$|^scripts/install\.(sh|ps1)$|^renovate\.json$)' > /dev/null && echo true || echo false)
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
+  # 縮めた APK (:app の minified。R8 は release と同じで、署名だけ debug) と SmokeTest の APK を1度だけ焼く。
+  # emulator の列はこれを入れて走らせるだけ (Gradle も JDK も使わない)。lint・単体テスト (build の列) とは並べて走る
+  apks:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - if: needs.changes.outputs.code == 'true'
+        uses: actions/checkout@v7
+      - if: needs.changes.outputs.code == 'true'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - if: needs.changes.outputs.code == 'true'
+        uses: gradle/actions/setup-gradle@v6
+      - if: needs.changes.outputs.code == 'true'
+        name: Build APKs
+        run: ./gradlew :app:assembleMinified :smoke:assembleMinified --console=plain
+      - if: needs.changes.outputs.code == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-apks
+          retention-days: 7
+          # mapping.txt は落ちたときのスタックを読み直す (retrace) ため
+          path: |
+            app/build/outputs/apk/minified/app-minified.apk
+            smoke/build/outputs/apk/minified/smoke-minified.apk
+            app/build/outputs/mapping/minified/mapping.txt
+
+  # 縮めた APK を Android TV のエミュレータで動かす (smoke/ の SmokeTest、scripts/smoke-run.sh)。
+  # denpa-tv#24 は R8 を通した APK を Android TV 12 で動かしたときだけ落ちた。minSdk (24) から最新まで API ごとに確かめる。
+  # 像はどれも Android TV (system-images;android-NN;android-tv)。36 だけ x86_64 (24〜34 の TV の像は x86 しか無い)
+  emulator:
+    name: emulator (API ${{ matrix.api-level }})
+    needs: [changes, apks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 24
+            arch: x86
+          - api-level: 28
+            arch: x86
+          - api-level: 31
+            arch: x86
+          - api-level: 34
+            arch: x86
+          - api-level: 36
+            arch: x86_64
+    env:
+      RUN: ${{ needs.changes.outputs.code }}
+      EMULATOR_OPTIONS: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+    steps:
+      - if: env.RUN != 'true'
+        run: echo "文書だけの変更なので飛ばします"
+      # 要るのは scripts/smoke-run.sh だけ
+      - if: env.RUN == 'true'
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - if: env.RUN == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: smoke-apks
+          path: apks
+      # android-emulator-runner の README のとおり
+      - if: env.RUN == 'true'
+        name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # 起動しきったところのスナップショットを API ごとに取っておき、次からはそこから起こす (README の「AVD snapshot caching」)。
+      # 像 (system-images) も一緒に取っておく — 毎回 Google から 1 GB 近く落とすと遅く、途中で壊れて
+      # 「Error on ZipFile unknown archive」で起き上がれないことがあった。場所はランナーの ANDROID_HOME (式の env からは読めない)
+      - if: env.RUN == 'true'
+        name: AVD cache
+        uses: actions/cache@v6
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+            /usr/local/lib/android/sdk/system-images/android-${{ matrix.api-level }}/android-tv/${{ matrix.arch }}
+          # 保存されるのは列が通ったときだけ。エミュレータの版はキーに入れていない (runner は毎回最新を入れる)。
+          # スナップショットが合わなくなっても素で起動し直すだけだが、遅くなったら末尾を変えて作り直す
+          key: avd-android-tv-${{ matrix.api-level }}-${{ matrix.arch }}-4c-2g-img
+      - if: env.RUN == 'true' && steps.avd-cache.outputs.cache-hit != 'true'
+        name: Create AVD snapshot
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: android-tv
+          arch: ${{ matrix.arch }}
+          profile: tv_1080p
+          # ランナー (4 vCPU・16 GB) にはエミュレータしか載らないので、CPU は全部渡す
+          cores: 4
+          ram-size: 2048M
+          force-avd-creation: false
+          emulator-boot-timeout: 300
+          emulator-options: ${{ env.EMULATOR_OPTIONS }}
+          disable-animations: false
+          script: echo "AVD のスナップショットを作りました"
+      - if: env.RUN == 'true'
+        name: Smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: android-tv
+          arch: ${{ matrix.arch }}
+          profile: tv_1080p
+          cores: 4
+          ram-size: 2048M
+          force-avd-creation: false
+          emulator-boot-timeout: 300
+          emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
+          disable-animations: true
+          script: bash scripts/smoke-run.sh apks/app/build/outputs/apk/minified/app-minified.apk apks/smoke/build/outputs/apk/minified/smoke-minified.apk smoke-results
+      - if: failure() && env.RUN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-${{ matrix.api-level }}
+          path: |
+            smoke-results/
+            apks/app/build/outputs/mapping/minified/mapping.txt

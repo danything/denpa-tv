@@ -43,6 +43,16 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        /*
+         * 端末で確かめる版 (:smoke の SmokeTest)。**release と同じに R8 で縮め、署名だけ debug の鍵** にする
+         * (Macrobenchmark の `benchmark` と同じ作り)。縮めた APK にしか出ない落ち方がある (denpa-tv#24) ので debug では
+         * 確かめられず、release の鍵は CI のシークレットにしか無い
+         */
+        create("minified") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+        }
     }
 
     compileOptions {
