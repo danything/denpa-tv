@@ -14,8 +14,9 @@ import io.github.danything.denpatv.Updater
 import io.github.danything.denpatv.notice
 
 /**
- * 新しい版の1行 (「v0.4.0 があります」)。**押すと取ってきて入れる。** 進みも失敗もこの1行に出す。
- * 知らせることが無ければ何も出さない
+ * 新しい版の1行。ふだんは裏で取ってきて照らし終えてから「v0.4.0 を入れられます (押すと入れます)」と出し、**押すとすぐ入れる。**
+ * 裏で取れなかったときは前のとおり「v0.4.0 があります」と出し、押すと取ってきて入れる (その進みと失敗はこの1行に出す)。
+ * 知らせることが無ければ (裏で取ってきている間も) 何も出さない
  */
 @Composable
 fun UpdateNotice(updater: Updater, modifier: Modifier = Modifier) {
