@@ -94,7 +94,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     BackHandler(enabled = bar != null) { bar = null }
     /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
     var leaving by remember { mutableStateOf(false) }
-    val leave = { leaving = true; onLeave() }
+    // 戻るを続けて押しても、1つだけ戻る (2回目は受けない。録画の再生と同じ)
+    val leave = { if (!leaving) { leaving = true; onLeave() } }
     BackHandler(enabled = bar == null) { leave() }
     var at by remember { mutableLongStateOf(from) }
     var length by remember { mutableLongStateOf(recorded()) }
