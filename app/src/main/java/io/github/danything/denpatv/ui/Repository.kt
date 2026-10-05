@@ -34,8 +34,21 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     val recordings: List<Recording> get() = list.items
 
-    /** 録画を読み直す (全部) */
-    suspend fun refreshRecordings() = list.refresh()
+    /** 録画を読み直す (全部)。読めたら「続きを視聴」も合わせる (消えた・観終えた録画を消し、ほかの端末で観た位置に直す) */
+    suspend fun refreshRecordings() {
+        val fetchedAt = System.currentTimeMillis()
+        list.refresh()
+        val items = list.items
+        app.scope.launch { app.watchNext.sync(items, fetchedAt) }
+    }
+
+    /**
+     * 録画を閉じた・最後まで観た。「続きを視聴」に出す・直す・消す (Android 8.0 から)。
+     * **観た位置を denpa に預けたあとに呼ぶ** (先に書くと、その間に読み直した一覧の古い続きで消しうる)
+     */
+    suspend fun watchNext(recording: Recording, positionMs: Long, durationMs: Long, finished: Boolean) {
+        app.watchNext.stopped(recording, positionMs, durationMs, finished, url(recording.poster), token)
+    }
 
     /**
      * 一覧が古くなった (追っかけで観た録画が録り終えた・焼き上がったかもしれない、denpa から `recordings` が来た)。
@@ -50,7 +63,10 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     var focusOnReturn: Long? = null
 
     /** 消した録画を手元の一覧から抜く。隣の id を返す */
-    fun forgetRecording(id: Long): Long? = list.remove(id)
+    fun forgetRecording(id: Long): Long? {
+        app.scope.launch { app.watchNext.remove(id) }
+        return list.remove(id)
+    }
 
     /** 局だけ取り直す (いま放送中の番組が変わるので) */
     suspend fun refreshServices() {

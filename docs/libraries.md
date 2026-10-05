@@ -125,6 +125,22 @@ EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta0
 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/security))。アプリの領域は他のアプリから読めず、
 トークンは denpa の画面から (またはこのアプリの「サーバーから外す」で) いつでも無効にできるので、暗号化の仕組みは足さない。
 
+### ホームの「続きを視聴」: 入れない (OS の `TvContract.WatchNextPrograms`)
+
+2026-10-05 に決めた。録画を途中で閉じたら、Google TV / Android TV のホームの「続きを視聴」に出す (`data/WatchNext.kt`、`data/WatchNextRows.kt`)。
+
+| 候補 | 見たところ |
+| --- | --- |
+| `androidx.tvprovider` (`TvContractCompat` / `WatchNextProgram.Builder`) | 列の名前と ContentValues を組む Builder。API 26 未満でも呼べる形だが、**Watch Next そのものが Android 8.0 (API 26) からで、7.x では何も出せない**のは同じ。依存が1つ増える |
+| **OS の `TvContract.WatchNextPrograms` を ContentResolver で直に** | API 26 から OS にある。書くのは十数列の ContentValues・読むのは自分の行 (TvProvider がパッケージで絞る) だけ。**依存が増えない** |
+
+→ **OS の API を直に**。Android 7.x (minSdk 24・25) では何もしない。権限は要らない (自分の行だけ)。何を書く・直す・消すかは
+素の関数にして単体テストで確かめ (`WatchNextTest`)、ContentResolver に書く所は薄くした。
+
+**ポスターはアプリが取って `content://` で渡す** (`WatchNextPosters`、読むだけの ContentProvider)。denpa のポスターの URL を
+そのまま渡すと、家の外の denpa (トークンが要る) ではホームが読めず、家の LAN でもホームのアプリが素の HTTP を読むとは限らない。
+ホームが読めるよう exported にしてあり、ほかのアプリからも「続きを視聴」に出ている録画のポスターは読める (出すのはそれだけ)。
+
 ### DI: 入れない (手で渡す)
 
 | 候補 | 版 | 見たところ |

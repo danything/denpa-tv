@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.ext.SdkExtensions
 import io.github.danything.denpatv.data.Decoders
 import io.github.danything.denpatv.data.Settings
+import io.github.danything.denpatv.data.WatchNextRows
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,6 +32,9 @@ class DenpaApp : Application() {
 
     /** HttpEngine が答えを返す先。映像を開くたびに作ると、そのたびにスレッドが残る */
     val httpExecutor: Executor by lazy { Executors.newSingleThreadExecutor() }
+
+    /** Google TV のホームの「続きを視聴」。TvProvider の WatchNextPrograms は Android 8.0 からで、それより前は何もしない */
+    val watchNext: WatchNextRows by lazy { WatchNextRows(this) }
 
     /** 画面より長く生きる仕事 (閉じたときに観た位置を預けるなど) */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
