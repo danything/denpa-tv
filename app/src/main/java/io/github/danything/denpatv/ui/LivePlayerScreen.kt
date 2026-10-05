@@ -91,7 +91,11 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         dualMono,
         denpaAudios = playing?.takeIf { quality == LiveQuality.Raw }?.now?.audios.orEmpty(),
     )
-    // 焼いたライブの音声は denpa に頼んで選ぶ (`?audio=<id>`)。変われば頼み直す
+    /*
+     * 焼いたライブの音声は denpa に頼んで選ぶ (`?audio=<id>`)。変われば頼み直す。
+     * **番組が替わって音声の並びが変わったときも頼み直す** (二カ国語の映画が終わってステレオに戻るなど)。denpa は焼きはじめに
+     * 選んだ音声のまま焼き続けるので、頼み直さないと、ステレオの番組の片側だけを両耳に配ったままになる。並びが同じなら頼み直さない
+     */
     val baked = rememberBakedAudio(
         repo,
         audios = playing?.takeIf { quality != LiveQuality.Raw }?.now?.audios.orEmpty(),
