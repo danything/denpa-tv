@@ -237,6 +237,13 @@ denpa に焼かせず、放送そのもの (1局に絞った TS) を流します
 - 使っているライブラリと選んだ理由は [docs/libraries.md](docs/libraries.md)
 - リリースの出し方 (署名の鍵) は [docs/release.md](docs/release.md)
 
+## 謝辞
+
+- [@kametani-mikihiro](https://github.com/kametani-mikihiro) — Android TV 12 (BRAVIA) で再生すると落ちるのを、ログ付きで2度報告してくれました (#24)
+
+マージした PR を書いてくれた人はここに載せます。手を入れる前に [CONTRIBUTING](.github/CONTRIBUTING.md) を
+見てください。不具合・要望は [Issue](https://github.com/danything/denpa-tv/issues/new/choose) へ。
+
 ## ライセンス
 
 [GNU Affero General Public License v3.0](LICENSE) (denpa と同じ)。
