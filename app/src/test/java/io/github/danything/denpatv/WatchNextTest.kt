@@ -64,13 +64,13 @@ class WatchNextTest {
     @Test
     fun あれば位置を直す() {
         val changes = onStopped(recording(12), 900_000, 1_800_000, false, listOf(row(3, 12), row(4, 13)), now = 9)
-        assertEquals(listOf(WatchNextChange.Update(3, 900_000, 1_800_000, 9)), changes)
+        assertEquals(listOf(WatchNextChange.Update(3, 12, 900_000, 1_800_000, 9)), changes)
     }
 
     @Test
     fun 再生の長さが分からなければ録画の長さ() {
         val changes = onStopped(recording(12), 900_000, 0, false, listOf(row(3, 12)), now = 9)
-        assertEquals(listOf(WatchNextChange.Update(3, 900_000, 1_800_000, 9)), changes)
+        assertEquals(listOf(WatchNextChange.Update(3, 12, 900_000, 1_800_000, 9)), changes)
     }
 
     @Test
@@ -98,7 +98,7 @@ class WatchNextTest {
     fun 同じ録画の行が重なっていたら1つに() {
         val changes = onStopped(recording(12), 600_000, 1_800_000, false, listOf(row(3, 12, browsable = false), row(4, 12), row(5, 12)), 9)
         assertEquals(
-            listOf(WatchNextChange.Delete(3, 12), WatchNextChange.Delete(5, 12), WatchNextChange.Update(4, 600_000, 1_800_000, 9)),
+            listOf(WatchNextChange.Delete(3, 12), WatchNextChange.Delete(5, 12), WatchNextChange.Update(4, 12, 600_000, 1_800_000, 9)),
             changes,
         )
     }
@@ -118,7 +118,7 @@ class WatchNextTest {
         val recordings = listOf(recording(12, resumeMs = 1_200_000), recording(13, resumeMs = 602_000))
         val rows = listOf(row(2, 12), row(3, 13))
         // 少しのずれ (預けるのは 15 秒おき) は直さない
-        assertEquals(listOf(WatchNextChange.Update(2, 1_200_000, 1_800_000, 9)), syncWatchNext(recordings, rows, now = 9, fetchedAt = 5))
+        assertEquals(listOf(WatchNextChange.Update(2, 12, 1_200_000, 1_800_000, 9)), syncWatchNext(recordings, rows, now = 9, fetchedAt = 5))
     }
 
     @Test

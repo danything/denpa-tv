@@ -47,7 +47,7 @@ data class WatchNextItem(
 sealed interface WatchNextChange {
     data class Insert(val item: WatchNextItem) : WatchNextChange
     /** 位置と長さだけ直す (題名・ポスターは変わらない) */
-    data class Update(val rowId: Long, val positionMs: Long, val durationMs: Long, val engagedAt: Long) : WatchNextChange
+    data class Update(val rowId: Long, val recordingId: Long, val positionMs: Long, val durationMs: Long, val engagedAt: Long) : WatchNextChange
     data class Delete(val rowId: Long, val recordingId: Long) : WatchNextChange
 }
 
@@ -95,7 +95,7 @@ fun onStopped(
     // 同じ録画の行が2つ以上あれば (ふつうは無い) 1つに。消された行は入れ直すので消す
     val drop = mine.filter { it !== keep }.map { WatchNextChange.Delete(it.rowId, it.recordingId) }
     val change = if (keep != null) {
-        WatchNextChange.Update(keep.rowId, positionMs, length, now)
+        WatchNextChange.Update(keep.rowId, keep.recordingId, positionMs, length, now)
     } else {
         WatchNextChange.Insert(watchNextItem(recording, positionMs, length, now, zone))
     }
@@ -121,7 +121,7 @@ fun syncWatchNext(recordings: List<Recording>, rows: List<WatchNextRow>, now: Lo
             recording == null || resume == null -> WatchNextChange.Delete(row.rowId, row.recordingId)
             !row.browsable -> null
             abs(resume - row.positionMs) < WATCH_NEXT_POSITION_SLACK_MS -> null
-            else -> WatchNextChange.Update(row.rowId, resume, recording.lengthMs().takeIf { it > 0 } ?: row.durationMs, now)
+            else -> WatchNextChange.Update(row.rowId, row.recordingId, resume, recording.lengthMs().takeIf { it > 0 } ?: row.durationMs, now)
         }
     }
 }

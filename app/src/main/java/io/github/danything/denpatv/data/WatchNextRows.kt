@@ -90,17 +90,22 @@ class WatchNextRows(private val context: Context) {
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private fun apply(changes: List<WatchNextChange>, poster: (WatchNextItem) -> Uri?) {
+    /**
+     * `poster` はポスターを取って置く (閉じたときだけ。読み直しでは取らない)。入れるときと、直すときに置いたものが無ければ
+     * (前に取れなかった・重なった行と一緒に消した) 呼ぶ
+     */
+    private fun apply(changes: List<WatchNextChange>, poster: () -> Uri?) {
         val resolver = context.contentResolver
         for (change in changes) {
             when (change) {
-                is WatchNextChange.Insert -> resolver.insert(WatchNextPrograms.CONTENT_URI, values(change.item, poster(change.item)))
+                is WatchNextChange.Insert -> resolver.insert(WatchNextPrograms.CONTENT_URI, values(change.item, poster()))
                 is WatchNextChange.Update -> resolver.update(
                     ContentUris.withAppendedId(WatchNextPrograms.CONTENT_URI, change.rowId),
                     ContentValues().apply {
                         put(WatchNextPrograms.COLUMN_LAST_PLAYBACK_POSITION_MILLIS, change.positionMs.toIntMs())
                         put(WatchNextPrograms.COLUMN_DURATION_MILLIS, change.durationMs.toIntMs())
                         put(WatchNextPrograms.COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS, change.engagedAt)
+                        if (!WatchNextPosters.file(context, change.recordingId).exists()) poster()?.let { putPoster(it) }
                     },
                     null,
                     null,
@@ -126,10 +131,13 @@ class WatchNextRows(private val context: Context) {
         // このアプリで開く (同じ denpa:// を受けるほかのアプリに渡らないように、パッケージを決めておく)
         val intent = Intent(Intent.ACTION_VIEW, item.link.toUri()).setPackage(context.packageName)
         put(WatchNextPrograms.COLUMN_INTENT_URI, intent.toUri(Intent.URI_INTENT_SCHEME))
-        if (poster != null) {
-            put(WatchNextPrograms.COLUMN_POSTER_ART_URI, poster.toString())
-            put(WatchNextPrograms.COLUMN_POSTER_ART_ASPECT_RATIO, WatchNextPrograms.ASPECT_RATIO_16_9)
-        }
+        poster?.let { putPoster(it) }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun ContentValues.putPoster(poster: Uri) {
+        put(WatchNextPrograms.COLUMN_POSTER_ART_URI, poster.toString())
+        put(WatchNextPrograms.COLUMN_POSTER_ART_ASPECT_RATIO, WatchNextPrograms.ASPECT_RATIO_16_9)
     }
 
     /** denpa のポスターを取って、ホームが読める所 (`WatchNextPosters`) に置く。取れなければ null (絵なしで出す) */
