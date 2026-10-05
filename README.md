@@ -236,7 +236,8 @@ denpa に焼かせず、放送そのもの (1局に絞った TS) を流します
 - `./gradlew assembleDebug` / `./gradlew testDebugUnitTest` / `./gradlew lintDebug`
 - エミュレータ (か繋いだテレビ) で、縮めた APK を動かして確かめる: `./gradlew :smoke:connectedMinifiedAndroidTest`
   (`smoke/`。偽の denpa を立ててライブと録画を映し、落ちないか・映像が出るかを見る。CI は API 24・28・31・34・36 の
-  Android TV のエミュレータで走らせる)。端末が何台も繋がっているときは `ANDROID_SERIAL` で1台に絞る
+  Android TV のエミュレータで走らせる。CI は APK を1度だけ焼き、各 API では `scripts/smoke-run.sh` で入れて走らせるだけ)。
+  端末が何台も繋がっているときは `ANDROID_SERIAL` で1台に絞る
 - 使っているライブラリと選んだ理由は [docs/libraries.md](docs/libraries.md)
 - リリースの出し方 (署名の鍵) は [docs/release.md](docs/release.md)
 

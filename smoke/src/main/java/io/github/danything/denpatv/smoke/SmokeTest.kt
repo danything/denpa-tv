@@ -57,11 +57,11 @@ class SmokeTest {
     fun recordingsAndSettings() = watching {
         open("denpa://recordings")
         awaitText { it == FakeDenpa.RECORDING_TITLE }
-        // 左キーでメニューを開く (どこにも合っていなければ、1回目は一覧に合うだけ)。開くと行き先の名前が出る
-        for (i in 0 until 3) {
-            SystemClock.sleep(KEY_GAP_MS)
-            if ("設定" in texts()) break
+        // 左キーでメニューを開く (どこにも合っていなければ、1回目は一覧に合うだけ)。開くと行き先の名前が出る。
+        // 遅いエミュレータでは開くのに間がかかるので、押すたびにしばらく待つ
+        for (i in 0 until MENU_TRIES) {
             press(KeyEvent.KEYCODE_DPAD_LEFT)
+            if (poll(MENU_WAIT_MS) { "設定" in texts() }) break
         }
         // ライブは選ぶとすぐ映すので、キーで下りず、設定を直に押す
         val settings = node { it.text?.toString() == "設定" }?.let(::clickable) ?: throw AssertionError("メニューが開きません: ${texts()}")
@@ -174,6 +174,16 @@ class SmokeTest {
             instrumentation.context.startActivity(intent)
         }
 
+        /** `done` になるまで最大 `ms` 待つ。なったら true */
+        private fun poll(ms: Long, done: () -> Boolean): Boolean {
+            val deadline = SystemClock.uptimeMillis() + ms
+            while (SystemClock.uptimeMillis() < deadline) {
+                if (done()) return true
+                SystemClock.sleep(POLL_MS)
+            }
+            return done()
+        }
+
         private fun awaitText(match: (String) -> Boolean) {
             val deadline = SystemClock.uptimeMillis() + TEXT_TIMEOUT_MS
             while (SystemClock.uptimeMillis() < deadline) {
@@ -231,6 +241,7 @@ class SmokeTest {
         private const val TEXT_TIMEOUT_MS = 30_000L
         private const val SETTLE_MS = 3_000L
         private const val POLL_MS = 500L
-        private const val KEY_GAP_MS = 700L
+        private const val MENU_TRIES = 4
+        private const val MENU_WAIT_MS = 3_000L
     }
 }
