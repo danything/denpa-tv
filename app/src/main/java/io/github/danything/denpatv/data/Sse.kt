@@ -84,7 +84,7 @@ object Sse {
     private const val CONNECT_TIMEOUT_MS = 10_000
 
     /**
-     * 何も届かずにこれだけ経ったら死んだ繋ぎと見なす。denpa は 25 秒おきに `ping` を送る (docs/api.md)。
+     * 何も届かずにこれだけ経ったら死んだ繋ぎと見なす。denpa は 25 秒おきに `ping` を送る (denpa の docs/api.md)。
      * 読みの時間切れで見るので、番犬は要らない
      */
     const val SILENCE_MS = 60_000

@@ -3,7 +3,7 @@ package io.github.danything.denpatv.data
 import kotlinx.serialization.Serializable
 
 /**
- * denpa の `GET /api/services` の1件 (docs/api.md)。URL は denpa の根からの相対 (`api/…`)
+ * denpa の `GET /api/services` の1件 (denpa の docs/api.md)。URL は denpa の根からの相対 (`api/…`)
  */
 @Serializable
 data class Service(

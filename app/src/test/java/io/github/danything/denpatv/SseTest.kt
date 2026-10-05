@@ -59,8 +59,8 @@ class SseTest {
             DenpaEvent.Encode(12, 0.5f),
             denpaEvent(SseEvent("encode", """{"recordingId":12,"percent":0.5,"etaMs":null,"log":"","extra":1}""")),
         )
-        // docs/api.md の例は百分率
-        assertEquals(DenpaEvent.Encode(12, 0.425f), denpaEvent(SseEvent("encode", """{"recordingId":12,"percent":42.5}""")))
+        // docs/api.md の例と同じ 0..1
+        assertEquals(DenpaEvent.Encode(12, 0.425f), denpaEvent(SseEvent("encode", """{"recordingId":12,"percent":0.425,"etaMs":600000}""")))
         val warnings = mutableListOf<String>()
         assertNull(denpaEvent(SseEvent("encode", """{"id":12}"""), warnings::add))
         assertNull(denpaEvent(SseEvent("encode", "not json"), warnings::add))

@@ -51,7 +51,7 @@ enum class AudioSide(val wire: String, val fallbackLabel: String) {
 
 /**
  * denpa が番組表から組み立てた選べる音声の1つ (ブラウザの `arib.ts` の `AudioTrack`)。`id` は `"0:main"` の形、
- * `stream` は何本目の音声か、`side` はどちら側か。局の `now.audios` と録画の `audios` で来る (docs/api.md)。
+ * `stream` は何本目の音声か、`side` はどちら側か。局の `now.audios` と録画の `audios` で来る (denpa の docs/api.md)。
  * 古い denpa では空のまま — デュアルモノを見分けられないので、これまでどおり左右をそのまま出す
  */
 @Serializable

@@ -10,7 +10,7 @@ import java.io.IOException
 import java.net.URI
 
 /**
- * denpa の変化の知らせ (`GET api/events`、docs/api.md)。受け取ったら該当の一覧を読み直す。
+ * denpa の変化の知らせ (`GET api/events`、denpa の docs/api.md)。受け取ったら該当の一覧を読み直す。
  * 名前は `recordings` `services` `programs` `tuners` ほか。**知らない名前もそのまま渡す** (使う側が読み捨てる)
  */
 sealed interface DenpaEvent {
@@ -41,8 +41,8 @@ fun denpaEvent(event: SseEvent, warn: (String) -> Unit = {}): DenpaEvent? = when
             warn("encode の形が違います (denpa の版が違う?): ${event.data.take(200)}")
             null
         } else {
-            // denpa は 0..1 で送る。docs/api.md の例は 42.5 (百分率) なので、1 を超えたら百分率と読む
-            DenpaEvent.Encode(id, (if (percent > 1) percent / 100 else percent).toFloat().coerceIn(0f, 1f))
+            // 0..1 (名前に反して百分率ではない。denpa の docs/api.md)
+            DenpaEvent.Encode(id, percent.toFloat().coerceIn(0f, 1f))
         }
     }
     else -> DenpaEvent.Changed(event.name)
