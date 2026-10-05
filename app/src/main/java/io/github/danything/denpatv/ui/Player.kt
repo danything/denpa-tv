@@ -108,7 +108,6 @@ fun dataSourceFactory(context: Context, engine: HttpEngine?, executor: Executor,
 fun authorizationHeaders(token: String?): Map<String, String> =
     Http.bearer(token)?.let { mapOf("Authorization" to it) } ?: emptyMap()
 
-
 /**
  * `clock` は TS の読み手が 0 に寄せた幅を覚える (生の TS の字幕を放送の PTS で突き合わせるため。RawCaptions.kt)。
  * 読み手の作り方は Media3 の既定と同じ。`dualMono` は音の出口の手前に挟む (デュアルモノの片側を両耳へ。DualMono.kt)
