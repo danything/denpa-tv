@@ -182,7 +182,10 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
                 ended = true
                 bar = null
                 val length = length()
-                repo.app.scope.launch { repo.api.saveResume(repo.base, recording.id, length, length) }
+                repo.app.scope.launch {
+                    repo.api.saveResume(repo.base, recording.id, length, length)
+                    repo.watchNext(recording, (length * 1000).toLong(), (length * 1000).toLong(), finished = true)
+                }
             }
         }
         player.addListener(listener)
@@ -213,7 +216,11 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
         onDispose {
             val at = player.currentPosition / 1000.0
             val length = length()
-            if (at > 0 && !deleted) repo.app.scope.launch { repo.api.saveResume(repo.base, recording.id, at, length) }
+            if (at > 0 && !deleted) repo.app.scope.launch {
+                repo.api.saveResume(repo.base, recording.id, at, length)
+                // 途中なら「続きを視聴」に出す (最後まで来ていれば消す)
+                repo.watchNext(recording, (at * 1000).toLong(), (length * 1000).toLong(), finished = ended)
+            }
         }
     }
 

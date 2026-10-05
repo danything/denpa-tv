@@ -158,11 +158,17 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         pending = null
     }
 
-    /** 観た位置を預ける。尺は予定の長さ (録画中は分からない。最新の近くで「観終えた」と消されないように) */
-    fun save(atMs: Long, finished: Boolean = false) {
+    /**
+     * 観た位置を預ける。尺は予定の長さ (録画中は分からない。最新の近くで「観終えた」と消されないように)。
+     * 閉じた・観終えたとき (`stopped`) は「続きを視聴」も直す
+     */
+    fun save(atMs: Long, finished: Boolean = false, stopped: Boolean = finished) {
         val seconds = atMs / 1000.0
         val scheduled = recording.endAt?.let { (it - recording.startAt) / 1000.0 } ?: 0.0
-        repo.app.scope.launch { repo.api.saveResume(repo.base, recording.id, seconds, if (finished) seconds else scheduled) }
+        repo.app.scope.launch {
+            repo.api.saveResume(repo.base, recording.id, seconds, if (finished) seconds else scheduled)
+            if (stopped) repo.watchNext(recording, atMs, (scheduled * 1000).toLong(), finished)
+        }
     }
     LaunchedEffect(player) {
         while (true) {
@@ -171,7 +177,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         }
     }
     DisposableEffect(Unit) {
-        onDispose { if (!ended && position() > 0) save(position()) }
+        onDispose { if (!ended && position() > 0) save(position(), stopped = true) }
     }
     DisposableEffect(player) {
         val listener = object : Player.Listener {

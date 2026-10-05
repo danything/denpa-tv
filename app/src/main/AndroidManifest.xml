@@ -36,5 +36,11 @@
                 <data android:scheme="denpa" />
             </intent-filter>
         </activity>
+        <!-- 「続きを視聴」のポスターをホームに読ませる (data/WatchNextRows.kt)。読むだけ -->
+        <provider
+            android:name=".data.WatchNextPosters"
+            android:authorities="${applicationId}.watchnext"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
     </application>
 </manifest>
