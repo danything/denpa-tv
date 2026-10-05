@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- アプリの中から新しい版に上げる (Updater。PackageInstaller のセッション) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- テレビ向け。タッチ画面は要らず、リーンバックで起動する -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

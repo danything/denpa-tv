@@ -70,6 +70,9 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
 読み 30 秒と書いてある)。叩くのは局と録画の一覧・番組の中身 (`detail`)・観た位置・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
 
+→ **アプリの中のアップデート (GitHub のリリースを引く・APK を取る) も HttpURLConnection** (`data/Update.kt`)。入れるのは OS の
+`PackageInstaller` のセッション (`Updater.kt`)。アップデートのライブラリは入れない。
+
 → **denpa の知らせ (`api/events`、Server-Sent Events) も HttpURLConnection** で読む (`data/Sse.kt`)。EventSource の
 ライブラリ (OkHttp の `okhttp-sse` など) は入れない。行の読み分けは数十行で、60 秒何も届かなければ死んだ繋ぎと見なすのは
 読みの時間切れ (`readTimeout`) で足りる。繋ぐのはアプリが前に出ている間だけで、Compose の `LifecycleStartEffect`

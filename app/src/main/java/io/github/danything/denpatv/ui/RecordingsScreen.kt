@@ -201,6 +201,8 @@ fun RecordingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                     Text("録画", style = MaterialTheme.typography.headlineMedium)
                     Text("長押しで詳しく (説明・削除)", style = MaterialTheme.typography.bodyMedium)
+                    // 新しい版があれば (上キーで合う)
+                    UpdateNotice(repo.app.updater)
                 }
             }
             groups.forEach { (day, items) ->

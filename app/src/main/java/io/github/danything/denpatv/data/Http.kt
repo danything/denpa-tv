@@ -18,9 +18,16 @@ object Http {
     }
 
     /**
-     * `token` があれば `Authorization: Bearer` を付ける (家の外の denpa に登録したとき。README の「denpa に繋ぐ」)
+     * `token` があれば `Authorization: Bearer` を付ける (家の外の denpa に登録したとき。README の「denpa に繋ぐ」)。
+     * `headers` はほかに付けるもの (GitHub のリリースを引くときの Accept など)
      */
-    fun request(url: URI, method: String = "GET", json: String? = null, token: String? = null): Response {
+    fun request(
+        url: URI,
+        method: String = "GET",
+        json: String? = null,
+        token: String? = null,
+        headers: Map<String, String> = emptyMap(),
+    ): Response {
         val connection = url.toURL().openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = CONNECT_TIMEOUT_MS
@@ -28,6 +35,7 @@ object Http {
             connection.requestMethod = method
             connection.instanceFollowRedirects = true
             bearer(token)?.let { connection.setRequestProperty("Authorization", it) }
+            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
             // GET 以外には本文が無くても Content-Type を付ける。denpa (SvelteKit) は Content-Type も Origin も無い
             // GET 以外を「よそのサイトからのフォーム送信」と見なして 403 で断る (本文の無い DELETE が消せなかった)
             if (method != "GET") connection.setRequestProperty("Content-Type", "application/json")
