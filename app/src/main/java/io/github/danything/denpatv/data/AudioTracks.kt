@@ -1,5 +1,6 @@
 package io.github.danything.denpatv.data
 
+import kotlinx.serialization.Serializable
 import java.util.Locale
 
 /** 音声の1本。`named` は放送の名前 (denpa が書く「主音声ステレオ」「解説ステレオ」など) が付いているか */
@@ -27,4 +28,78 @@ fun rememberedAudio(tracks: List<AudioTrack>, remembered: String?): Int? {
 private fun languageName(tag: String): String? {
     val code = if (tag.length == 3) Locale.getISOLanguages().firstOrNull { Locale.Builder().setLanguage(it).build().isO3Language == tag } ?: tag else tag
     return Locale.Builder().setLanguage(code).build().getDisplayLanguage(Locale.JAPANESE).takeIf { it.isNotBlank() && it != code && it != tag }
+}
+
+/**
+ * デュアルモノ (二か国語・解説) の**どちら側を出すか**。ブラウザの denpa の `AudioSide` と同じ。
+ *
+ * デュアルモノは音声1本の左に主音声・右に副音声が入っている。`Main` は左を、`Sub` は右を両耳へ配り直し、
+ * `Both` はそのまま (左右から別の音が同時に鳴る。テレビの「主+副」)。`wire` は denpa の JSON での書き方
+ */
+enum class AudioSide(val wire: String, val fallbackLabel: String) {
+    Main("main", "主音声"),
+    Sub("sub", "副音声"),
+    Both("both", "主+副"),
+    ;
+
+    companion object {
+        /** denpa の書き方から。知らない・無いなら null */
+        fun of(wire: String?): AudioSide? = entries.firstOrNull { it.wire == wire }
+    }
+}
+
+/**
+ * denpa が番組表から組み立てた選べる音声の1つ (ブラウザの `arib.ts` の `AudioTrack`)。`id` は `"0:main"` の形、
+ * `stream` は何本目の音声か、`side` はどちら側か。**いまの denpa の外向けの口 (docs/api.md) にはまだ無い**。
+ * 無ければ空のまま — デュアルモノを見分けられないので、これまでどおり左右をそのまま出す
+ */
+@Serializable
+data class DenpaAudio(
+    val id: String = "",
+    val stream: Int = 0,
+    val side: String = "both",
+    val label: String = "",
+    val main: Boolean? = null,
+)
+
+/**
+ * 何本目の音声がデュアルモノなら、主・副・主+副それぞれの名前 (denpa の名前。無ければ「主音声」など)。
+ * デュアルモノでなければ null。**主か副を denpa が言っているときだけ**デュアルモノとみなす (`both` だけなら
+ * ふつうの音声)
+ */
+fun dualMonoLabels(audios: List<DenpaAudio>, stream: Int): Map<AudioSide, String>? {
+    val sides = audios.filter { it.stream == stream }.mapNotNull { audio -> AudioSide.of(audio.side)?.let { it to audio.label } }
+    if (sides.none { it.first != AudioSide.Both }) return null
+    return AudioSide.entries.associateWith { side -> sides.firstOrNull { it.first == side }?.second?.takeIf { it.isNotBlank() } ?: side.fallbackLabel }
+}
+
+/**
+ * 札で選べる1つ。`group` は Media3 の音声の何本目か、`side` はデュアルモノのどちら側か (デュアルモノでなければ null)
+ */
+data class AudioChoice(val group: Int, val side: AudioSide?, val track: AudioTrack)
+
+/**
+ * 選べる音声を**平らに並べる** (ブラウザの `audioTracks` と同じ)。デュアルモノの1本からは主・副・主+副の3つが出る。
+ * デュアルモノの名前は覚える名前に使わない (`named = false`。どちら側かは別に覚える。`AudioSide`)
+ */
+fun audioChoices(groups: List<AudioTrack>, denpa: List<DenpaAudio>): List<AudioChoice> =
+    groups.flatMapIndexed { group, track ->
+        val dual = dualMonoLabels(denpa, group)
+        if (dual == null) listOf(AudioChoice(group, null, track))
+        else AudioSide.entries.map { side -> AudioChoice(group, side, AudioTrack(dual.getValue(side), false)) }
+    }
+
+/** いま選ばれているもの (並びの何番目か)。デュアルモノなら `side` の側。見つからなければ 0 */
+fun selectedChoice(choices: List<AudioChoice>, group: Int, side: AudioSide): Int =
+    choices.indexOfFirst { it.group == group && (it.side == null || it.side == side) }.coerceAtLeast(0)
+
+/**
+ * 2ch の配り直しの係数 (入力 × 出力の行優先。Media3 の `ChannelMixingMatrix` の並び)。
+ * `Main` は左を両耳へ、`Sub` は右を両耳へ、`Both` はそのまま
+ */
+fun dualMonoCoefficients(side: AudioSide): FloatArray = when (side) {
+    //                 L→L  L→R  R→L  R→R
+    AudioSide.Main -> floatArrayOf(1f, 1f, 0f, 0f)
+    AudioSide.Sub -> floatArrayOf(0f, 0f, 1f, 1f)
+    AudioSide.Both -> floatArrayOf(1f, 0f, 0f, 1f)
 }

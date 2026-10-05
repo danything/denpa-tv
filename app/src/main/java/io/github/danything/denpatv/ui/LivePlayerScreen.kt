@@ -70,7 +70,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     var hinted by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val clock = remember { TsClock() }
-    val (player, error) = rememberPlayer(repo, buffering, onUnauthorized, clock)
+    val (player, error, dualMono) = rememberPlayer(repo, buffering, onUnauthorized, clock)
     val (overlay, flash) = rememberFlash()
     // 生の TS の字幕は denpa が描いた絵を別の口で受け取る (焼いたものは映像に入っている)
     val captions = rememberRawCaptions(
@@ -81,7 +81,15 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         generation = playing?.id,
         onUnauthorized = onUnauthorized,
     )
-    val tracks = rememberTracks(repo, player, flash, captions)
+    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いたライブは denpa が主音声だけを焼く)
+    val tracks = rememberTracks(
+        repo,
+        player,
+        flash,
+        captions,
+        dualMono,
+        denpaAudios = playing?.takeIf { quality == LiveQuality.Raw }?.now?.audios.orEmpty(),
+    )
     CatchUp(player, buffering)
 
     LaunchedEffect(Unit) {

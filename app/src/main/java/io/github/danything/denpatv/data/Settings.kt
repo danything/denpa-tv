@@ -33,6 +33,7 @@ class Settings(private val context: Context) {
     private val speedKey = floatPreferencesKey("playback_speed")
     private val subtitlesKey = booleanPreferencesKey("subtitles")
     private val audioKey = stringPreferencesKey("audio_label")
+    private val dualMonoKey = stringPreferencesKey("dual_mono_side")
     private val updateCheckedKey = longPreferencesKey("update_checked_at")
     private val updateKey = stringPreferencesKey("update")
 
@@ -99,6 +100,16 @@ class Settings(private val context: Context) {
 
     suspend fun setAudioLabel(label: String?) {
         context.dataStore.edit { if (label == null) it.remove(audioKey) else it[audioKey] = label }
+    }
+
+    /**
+     * デュアルモノで最後に選んだ側 (主音声・副音声・主+副)。**既定は主音声** (ブラウザの denpa が何も頼まれないとき
+     * 主音声を選ぶのと同じ)。次のデュアルモノの番組もこれで始める
+     */
+    val dualMonoSide: Flow<AudioSide> = context.dataStore.data.map { AudioSide.of(it[dualMonoKey]) ?: AudioSide.Main }
+
+    suspend fun setDualMonoSide(side: AudioSide) {
+        context.dataStore.edit { it[dualMonoKey] = side.wire }
     }
 
     suspend fun setSkipCm(skip: Boolean) {

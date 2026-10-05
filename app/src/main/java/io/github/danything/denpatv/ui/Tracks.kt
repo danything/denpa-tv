@@ -3,6 +3,7 @@ package io.github.danything.denpatv.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,17 +16,23 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import io.github.danything.denpatv.R
+import io.github.danything.denpatv.data.AudioSide
 import io.github.danything.denpatv.data.AudioTrack
+import io.github.danything.denpatv.data.DenpaAudio
+import io.github.danything.denpatv.data.audioChoices
 import io.github.danything.denpatv.data.audioTrack
 import io.github.danything.denpatv.data.rememberedAudio
+import io.github.danything.denpatv.data.selectedChoice
 import kotlinx.coroutines.launch
 
 /**
  * 字幕と音声の切り替え。**ブラウザの denpa の再生の字幕・音声のボタンにあたる。** Media3 のトラックの選び方で切り替える。
  *
  * - 字幕: 入れ切り (端末ごとに覚える)。字幕のトラックがあるときだけ札を出す
- * - 音声: 押すたびに次の音声へ。2本以上あるときだけ札を出す。名前の付いた音声 (「解説ステレオ」など) は覚えて、
- *   次に同じ名前があればそれで始める。**1本の中の二か国語 (デュアルモノ) は分けられない** (左右に分かれて同時に鳴る)
+ * - 音声: 押すたびに次の音声へ。選べるものが2つ以上あるときだけ札を出す。名前の付いた音声 (「解説ステレオ」など) は覚えて、
+ *   次に同じ名前があればそれで始める
+ * - **1本の中の二か国語 (デュアルモノ)** は、denpa がそう言っていれば (`DenpaAudio`) ブラウザと同じく「主音声」「副音声」「主+副」の
+ *   3つに分けて並べ、選んだ側を両耳へ配り直す (`DualMonoProcessor`)。どちら側かは端末ごとに覚える (既定は主音声)
  */
 class TrackControls(
     val subtitles: Boolean,
@@ -47,11 +54,25 @@ class TrackControls(
 /**
  * @param rawCaptions 生の TS の字幕 (Media3 のトラックには出てこない。`rememberRawCaptions`)。選べる字幕があると
  *   言われたら、焼いた映像の字幕と同じ札を出す (入れ切りの設定も同じもの)
+ * @param dualMono デュアルモノの配り直し (`rememberPlayer` の `dualMono`)
+ * @param denpaAudios denpa が言う選べる音声 (`DenpaAudio`)。**生の TS のときだけ渡す** — 焼いたものは denpa が先に分けている
+ *   (録画は主・副の2本に割って名前を付ける。ライブ・追っかけは主音声だけを焼く) ので、配り直すものが無い
  */
 @Composable
-fun rememberTracks(repo: Repository, player: ExoPlayer, onChange: (String) -> Unit = {}, rawCaptions: RawCaptionState? = null): TrackControls {
+fun rememberTracks(
+    repo: Repository,
+    player: ExoPlayer,
+    onChange: (String) -> Unit = {},
+    rawCaptions: RawCaptionState? = null,
+    dualMono: DualMonoProcessor? = null,
+    denpaAudios: List<DenpaAudio> = emptyList(),
+): TrackControls {
     val subtitles by repo.app.settings.subtitles.collectAsState(initial = true)
     val remembered by repo.app.settings.audioLabel.collectAsState(initial = null)
+    val savedSide by repo.app.settings.dualMonoSide.collectAsState(initial = AudioSide.Main)
+    /** この画面で選んだ側。覚えたものが届くのを待たずにすぐ効かせる */
+    var pickedSide by remember { mutableStateOf<AudioSide?>(null) }
+    val side = pickedSide ?: savedSide
     var tracks by remember { mutableStateOf(player.currentTracks) }
     val scope = rememberCoroutineScope()
     DisposableEffect(player) {
@@ -64,8 +85,13 @@ fun rememberTracks(repo: Repository, player: ExoPlayer, onChange: (String) -> Un
         onDispose { player.removeListener(listener) }
     }
     val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }
-    val audio = audioGroups.mapIndexed { index, group -> group.getTrackFormat(0).let { audioTrack(index, it.label, it.language) } }
-    val selectedAudio = audioGroups.indexOfFirst { it.isSelected }.coerceAtLeast(0)
+    val groupTracks = audioGroups.mapIndexed { index, group -> group.getTrackFormat(0).let { audioTrack(index, it.label, it.language) } }
+    val selectedGroup = audioGroups.indexOfFirst { it.isSelected }.coerceAtLeast(0)
+    val choices = audioChoices(groupTracks, if (dualMono == null) emptyList() else denpaAudios)
+    val selectedAudio = selectedChoice(choices, selectedGroup, side)
+    // 選んでいる音声がデュアルモノなら覚えている側を両耳へ、そうでなければそのまま
+    val mix = choices.getOrNull(selectedAudio)?.side ?: AudioSide.Both
+    SideEffect { dualMono?.side = mix }
     val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
 
     fun selectAudio(index: Int) {
@@ -84,26 +110,32 @@ fun rememberTracks(repo: Repository, player: ExoPlayer, onChange: (String) -> Un
         player.trackSelectionParameters = builder.build()
     }
     // 覚えている名前の音声があれば、それにする (並びが変わるたび。選んだものと同じなら何もしない)
-    LaunchedEffect(audio, remembered) {
-        val index = rememberedAudio(audio, remembered) ?: return@LaunchedEffect
-        if (index != selectedAudio) selectAudio(index)
+    LaunchedEffect(groupTracks, remembered) {
+        val index = rememberedAudio(groupTracks, remembered) ?: return@LaunchedEffect
+        if (index != selectedGroup) selectAudio(index)
     }
 
     return TrackControls(
         subtitles = subtitles,
         hasText = textGroups.isNotEmpty() || rawCaptions?.available == true,
-        audio = audio,
+        audio = choices.map { it.track },
         selectedAudio = selectedAudio,
         toggleSubtitles = {
             scope.launch { repo.app.settings.setSubtitles(!subtitles) }
             onChange(if (subtitles) "字幕 切" else "字幕 入")
         },
         nextAudio = {
-            val next = (selectedAudio + 1) % audio.size
-            selectAudio(next)
-            val track = audio[next]
-            // 名前の付いたものだけ覚える。番号だけのものを選んだら忘れる (次に別の番組で副音声にならないように)
-            scope.launch { repo.app.settings.setAudioLabel(track.label.takeIf { track.named }) }
+            val next = choices[(selectedAudio + 1) % choices.size]
+            if (next.group != selectedGroup) selectAudio(next.group)
+            val track = next.track
+            if (next.side != null) pickedSide = next.side
+            scope.launch {
+                // デュアルモノはどちら側かを覚える (名前は番組で変わるので覚えない)
+                if (next.side != null) repo.app.settings.setDualMonoSide(next.side)
+                // 名前の付いたものだけ覚える。番号だけのものを選んだら忘れる (次に別の番組で副音声にならないように)。
+                // デュアルモノの中で替えただけなら、覚えている名前はそのまま
+                if (next.group != selectedGroup || next.side == null) repo.app.settings.setAudioLabel(track.label.takeIf { track.named })
+            }
             onChange("音声 ${track.label}")
         },
     )
