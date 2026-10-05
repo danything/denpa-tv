@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 偽の denpa (FakeDenpa) を 127.0.0.1 に立てる -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 確かめるアプリを起動する (Android 11 からのパッケージの見え方) -->
+    <queries>
+        <package android:name="io.github.danything.denpatv" />
+    </queries>
+</manifest>

@@ -1,6 +1,6 @@
 # 使っているライブラリと、選んだ理由
 
-調べた日: 2026-10-04。版は Google Maven / Maven Central の `maven-metadata.xml` と各公式の
+調べた日: 2026-10-04 (エミュレータで動かすテストは 2026-10-05)。版は Google Maven / Maven Central の `maven-metadata.xml` と各公式の
 リリースノートで確かめたもの。**依存は少なく**を基本にして、入れるものは1つずつ理由を書く。
 
 ## 土台 (Android / AndroidX)
@@ -171,3 +171,29 @@ Navigation 3 と DataStore が既に使っている。QR の符号化だけは�
 - JUnit 4.13.2 — Android のローカルテストの標準
 - kotlinx-coroutines-test — `runTest`
 - 偽の denpa は JDK の `com.sun.net.httpserver.HttpServer` (依存を足さない)
+
+### エミュレータで動かすテスト (`smoke/`)
+
+2026-10-05 に足した。v0.6.0〜0.6.1 は Android TV 12 で再生を始めた瞬間に落ちていた (denpa-tv#24、`HttpEngine` の
+NoClassDefFoundError)。**R8 で縮めた APK を古い Android で動かしたときだけ**出る落ち方で、debug の APK の単体テストでは
+見つからない。そこで release と同じ縮め方の APK を、CI で API 24・28・31・34・36 の Android TV のエミュレータに入れて
+ライブと録画を映す (`.github/workflows/ci.yml` の `emulator`)。v0.6.1 に当てると、API 31 で `live` が
+`NoClassDefFoundError: Failed resolution of: Landroid/net/http/HttpEngine;` で落ちることを確かめてある。
+
+| 決めたこと | 理由 |
+| --- | --- |
+| **縮めた APK は `minified` の build type** (`initWith(release)`、署名だけ debug の鍵) | Macrobenchmark の `benchmark` と同じ作り。release の鍵は CI のシークレットにしか無く、PR では使えない。R8 の設定は release そのまま |
+| **テストはアプリと別の APK・別のプロセス** (`com.android.test` の self-instrumenting。これも Macrobenchmark と同じ) | アプリの `androidTest` は縮めたアプリと同じプロセスで動き、テストが使うクラス (Kotlin の標準ライブラリ・`androidx.tracing`) を R8 が消してしまう (試したら `ClassNotFoundException: androidx.tracing.Trace` で起き上がらなかった)。アプリに keep を足すと縮め方が release とずれる。外から触れば縮め方はそのままで、アプリが落ちてもテストは生き残り、落ちた記録 (logcat の crash) を失敗の文に入れられる |
+| **アプリのクラスには触らない** | 縮めると名前が変わり、使わないものは消える。触るのは Android の口だけ: 起動とリンク (`denpa://…`) は Intent、見るのは画面の文字 (アクセシビリティの木) と画面の絵 (`UiAutomation.takeScreenshot`)、キーは `UiAutomation`。繋ぐ先も DataStore に直に書けない (別のプロセスで、アプリは debuggable でない) ので、繋ぐ画面の欄に URL を入れて「繋ぐ」を押す |
+| **映像が出たかは画面の絵の色で見る** | 偽の映像は地を1色にしてあり (`scripts/smoke-media.sh`)、画面を撮ってその色の点が 3 割を超えたら出ている。Player の状態は外から読めない |
+| **偽の denpa はテストのプロセスで 127.0.0.1 に立てる** (`java.net.ServerSocket` で HTTP/1.1 を数十行) | Android には `com.sun.net.httpserver` が無い。MockWebServer (OkHttp) は Range・SSE を出し分けるのに Dispatcher を書くことになり、手で書くのと手間が変わらないので足さない |
+| **映像は H.264 だけ** (fragmented MP4 と Matroska、合わせて約 100 KB をリポジトリに置く) | Android TV のエミュレータは MPEG-2 のデコーダを有効にしていない (`c2.android.mpeg2.decoder` は `domain="tv"` で、エミュレータでは使えない)。生の TS (MPEG-2) の再生は確かめられない |
+
+入れたもの (テストの APK だけ。アプリには入らない):
+
+- **`androidx.test:runner` 1.7.0** — `AndroidJUnitRunner` (端末で JUnit 4 を走らせる標準)。`InstrumentationRegistry` (`androidx.test:monitor`) もこれが引く
+- **JUnit 4.13.2** — 単体テストと同じ
+
+入れなかったもの: `androidx.test.ext:junit` (`@RunWith(AndroidJUnit4::class)` は無くても `AndroidJUnitRunner` が JUnit 4 のクラスを走らせる)・
+`androidx.test:core` (`ActivityScenario` は同じプロセスのアプリにしか使えない)・UiAutomator (要るのは文字を探す・押す・キーを送るだけで、
+OS の `UiAutomation` で足りる)・Compose の `ui-test` (縮めたアプリの Compose には外から繋げない)
