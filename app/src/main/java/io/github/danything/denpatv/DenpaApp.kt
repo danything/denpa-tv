@@ -20,6 +20,7 @@ import java.util.concurrent.Executors
 class DenpaApp : Application() {
     val settings: Settings by lazy { Settings(this) }
     val decoders: Decoders by lazy { Decoders.detect() }
+    val updater: Updater by lazy { Updater(this) }
 
     /**
      * 映像を取る HttpEngine。**アプリで1つを使い回す** (Media3 のネットワーク スタックの頁の勧め)。

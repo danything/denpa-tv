@@ -52,6 +52,8 @@ android {
 
     buildFeatures {
         compose = true
+        // 新しい版と比べるのに VERSION_NAME を使う (Updater)
+        buildConfig = true
     }
 
     lint {

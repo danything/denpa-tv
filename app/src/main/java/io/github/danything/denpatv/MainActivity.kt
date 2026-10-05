@@ -16,7 +16,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val app = application as DenpaApp
         // 作り直し (プロセスが落ちて戻ったなど) では、同じリンクをもう一度開かない
-        if (savedInstanceState == null) link.value = DeepLink.parse(intent?.dataString)
+        if (savedInstanceState == null) {
+            link.value = DeepLink.parse(intent?.dataString)
+            // 新しい版があるか (12 時間に1回まで。届かなくても黙っている)
+            app.updater.checkOnStart()
+        }
         setContent { DenpaTv(app, link) }
     }
 

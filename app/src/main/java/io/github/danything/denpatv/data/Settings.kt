@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -32,6 +33,8 @@ class Settings(private val context: Context) {
     private val speedKey = floatPreferencesKey("playback_speed")
     private val subtitlesKey = booleanPreferencesKey("subtitles")
     private val audioKey = stringPreferencesKey("audio_label")
+    private val updateCheckedKey = longPreferencesKey("update_checked_at")
+    private val updateKey = stringPreferencesKey("update")
 
     /** 繋ぐ先。まだ無ければ null */
     val connection: Flow<Connection?> = context.dataStore.data.map { prefs ->
@@ -100,5 +103,17 @@ class Settings(private val context: Context) {
 
     suspend fun setSkipCm(skip: Boolean) {
         context.dataStore.edit { it[skipCmKey] = skip }
+    }
+
+    /** 最後に新しい版を確かめた時刻 (エポック ms) と、そのとき見つけた版 (`Update` の JSON。無ければ null) */
+    suspend fun lastUpdateCheck(): Pair<Long, String?> = context.dataStore.data.first().let {
+        (it[updateCheckedKey] ?: 0L) to it[updateKey]
+    }
+
+    suspend fun setUpdateCheck(at: Long, update: String?) {
+        context.dataStore.edit {
+            it[updateCheckedKey] = at
+            if (update == null) it.remove(updateKey) else it[updateKey] = update
+        }
     }
 }

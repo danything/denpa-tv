@@ -1,0 +1,158 @@
+package io.github.danything.denpatv
+
+import io.github.danything.denpatv.data.GitHubAsset
+import io.github.danything.denpatv.data.GitHubRelease
+import io.github.danything.denpatv.data.Update
+import io.github.danything.denpatv.data.UpdateRejected
+import io.github.danything.denpatv.data.UpdateSource
+import io.github.danything.denpatv.data.Version
+import io.github.danything.denpatv.data.isDevBuild
+import io.github.danything.denpatv.data.parseSha256Sums
+import io.github.danything.denpatv.data.selectUpdate
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.nio.file.Files
+import java.security.MessageDigest
+
+/** アプリの中のアップデート: 版の比べ方・SHA256SUMS の読み方・リリースの選び方 (scripts/install.sh と同じ) */
+class UpdateTest {
+    private val github = FakeDenpa()
+
+    @After fun stop() = github.close()
+
+    private fun v(text: String) = Version.parse(text)!!
+
+    @Test
+    fun 版を比べる() {
+        assertTrue(v("v0.4.0") > v("0.3.0"))
+        assertTrue(v("0.10.0") > v("0.9.9"))
+        assertTrue(v("1.0.0") > v("0.99.99"))
+        assertEquals(0, v("v0.3.0").compareTo(v("0.3.0")))
+        // 試し版は同じ数字の正式版より前、前の版よりは後
+        assertTrue(v("0.4.0-rc.1") < v("0.4.0"))
+        assertTrue(v("0.4.0-rc.1") > v("0.3.0"))
+        // semver の例の並び
+        val ordered = listOf("1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0")
+        assertEquals(ordered, ordered.shuffled().sortedBy { v(it) })
+        assertNull(Version.parse("latest"))
+        assertNull(Version.parse("0.4"))
+    }
+
+    @Test
+    fun 手元で焼いた版は上げない() {
+        assertTrue(isDevBuild("0.0.0-dev"))
+        assertTrue(isDevBuild("なにか"))
+        assertFalse(isDevBuild("0.3.0"))
+        assertFalse(isDevBuild("0.4.0-rc.1"))
+    }
+
+    @Test
+    fun SHA256SUMS_を読む() {
+        val a = "a".repeat(64)
+        val b = "B".repeat(64)
+        val sums = parseSha256Sums("$a  denpa-tv-0.4.0.apk\n$b *denpa-tv-0.4.0-debug.apk\n\nごみ\n")
+        assertEquals(mapOf("denpa-tv-0.4.0.apk" to a, "denpa-tv-0.4.0-debug.apk" to "b".repeat(64)), sums)
+        assertEquals(emptyMap<String, String>(), parseSha256Sums("abc  x.apk"))
+    }
+
+    private fun release(tag: String, vararg assets: String, prerelease: Boolean = false, draft: Boolean = false) =
+        GitHubRelease(tag, draft, prerelease, assets.map { GitHubAsset(it, "https://example.invalid/$tag/$it") })
+
+    @Test
+    fun いちばん新しい版を選ぶ_試し版も含む() {
+        val releases = listOf(
+            release("v0.5.0", "denpa-tv-0.5.0.apk", "SHA256SUMS", draft = true),
+            release("v0.4.1-rc.1", "denpa-tv-0.4.1-rc.1.apk", "SHA256SUMS", prerelease = true),
+            release("v0.4.0", "denpa-tv-0.4.0.apk", "SHA256SUMS"),
+            release("v0.3.0", "denpa-tv-0.3.0.apk", "SHA256SUMS"),
+        )
+        val update = selectUpdate(releases, v("0.3.0"))!!
+        assertEquals("0.4.1-rc.1", update.version)
+        assertEquals("v0.4.1-rc.1", update.label)
+        assertEquals("denpa-tv-0.4.1-rc.1.apk", update.apkName)
+        assertEquals("https://example.invalid/v0.4.1-rc.1/SHA256SUMS", update.sumsUrl)
+        // 並びが作った順でなくても版で選ぶ
+        assertEquals("0.4.1-rc.1", selectUpdate(releases.reversed(), v("0.3.0"))!!.version)
+        // 新しいものが無ければ null
+        assertNull(selectUpdate(releases, v("0.4.1-rc.1")))
+        assertNull(selectUpdate(releases, v("0.4.1")))
+        assertNull(selectUpdate(emptyList(), v("0.3.0")))
+    }
+
+    @Test
+    fun debug_の署名の_APK_しかないリリースは選ばない() {
+        val releases = listOf(
+            release("v0.5.0", "denpa-tv-0.5.0-debug.apk", "SHA256SUMS"),
+            release("v0.4.0", "denpa-tv-0.4.0.apk"),
+        )
+        val update = selectUpdate(releases, v("0.3.0"))!!
+        assertEquals("0.4.0", update.version)
+        // SHA256SUMS の無いリリースも選ぶ (取るときに断って、そう出す)
+        assertNull(update.sumsUrl)
+    }
+
+    /** GitHub の答えの形 (知らない鍵は無視する) */
+    @Test
+    fun リリースを引く() {
+        github.enqueue(
+            """[{"url":"https://api.github.com/repos/danything/denpa-tv/releases/1","tag_name":"v0.4.0","name":"v0.4.0",
+               "draft":false,"prerelease":false,"assets":[
+                 {"name":"denpa-tv-0.4.0.apk","size":123,"browser_download_url":"https://github.com/danything/denpa-tv/releases/download/v0.4.0/denpa-tv-0.4.0.apk"},
+                 {"name":"SHA256SUMS","size":84,"browser_download_url":"https://github.com/danything/denpa-tv/releases/download/v0.4.0/SHA256SUMS"}]}]""",
+        )
+        val releases = UpdateSource(github.url("/repos/danything/denpa-tv").trimEnd('/')).releases()
+        assertEquals("/repos/danything/denpa-tv/releases?per_page=10", github.requests.take().target)
+        val update = selectUpdate(releases, v("0.3.0"))!!
+        assertEquals(123L, update.size)
+        assertEquals("https://github.com/danything/denpa-tv/releases/download/v0.4.0/denpa-tv-0.4.0.apk", update.apkUrl)
+    }
+
+    private fun sha256(text: String) =
+        MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+
+    private fun update(sums: Boolean = true) = Update(
+        "0.4.0",
+        "denpa-tv-0.4.0.apk",
+        github.url("/apk"),
+        if (sums) github.url("/SHA256SUMS") else null,
+    )
+
+    @Test
+    fun ハッシュが合えば取ってくる() {
+        val apk = "PK fake apk"
+        github.enqueue("${sha256(apk)}  denpa-tv-0.4.0.apk\n")
+        github.enqueue(apk)
+        val dir = Files.createTempDirectory("update").toFile()
+        val progress = mutableListOf<Int>()
+        val file = UpdateSource(github.url()).download(update(), dir) { progress += it }
+        assertEquals(apk, file.readText())
+        assertEquals(100, progress.last())
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun ハッシュが合わない_無いときは断って消す() {
+        val dir = Files.createTempDirectory("update").toFile()
+        val source = UpdateSource(github.url())
+
+        github.enqueue("${sha256("別もの")}  denpa-tv-0.4.0.apk\n")
+        github.enqueue("PK fake apk")
+        assertThrows(UpdateRejected::class.java) { source.download(update(), dir) {} }
+        assertFalse(dir.resolve("denpa-tv-0.4.0.apk").exists())
+
+        // SHA256SUMS に名前が無い
+        github.enqueue("${sha256("x")}  denpa-tv-0.4.0-debug.apk\n")
+        assertThrows(UpdateRejected::class.java) { source.download(update(), dir) {} }
+
+        // リリースに SHA256SUMS が無い (取りにも行かない)
+        assertThrows(UpdateRejected::class.java) { source.download(update(sums = false), dir) {} }
+        github.requests.clear()
+        assertTrue(github.requests.isEmpty())
+        dir.deleteRecursively()
+    }
+}
