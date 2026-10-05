@@ -150,6 +150,8 @@ jobs:
             ~/.android/avd/*
             ~/.android/adb*
             /usr/local/lib/android/sdk/system-images/android-${{ matrix.api-level }}/android-tv/${{ matrix.arch }}
+          # 保存されるのは列が通ったときだけ。エミュレータの版はキーに入れていない (runner は毎回最新を入れる)。
+          # スナップショットが合わなくなっても素で起動し直すだけだが、遅くなったら末尾を変えて作り直す
           key: avd-android-tv-${{ matrix.api-level }}-${{ matrix.arch }}-4c-2g-img
       - if: env.RUN == 'true' && steps.avd-cache.outputs.cache-hit != 'true'
         name: Create AVD snapshot

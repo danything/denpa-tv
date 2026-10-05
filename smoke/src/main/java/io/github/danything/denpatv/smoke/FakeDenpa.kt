@@ -12,6 +12,7 @@ import java.net.Socket
 import java.net.SocketException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import kotlin.concurrent.thread
 
 /**
@@ -38,7 +39,13 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
                 } catch (_: IOException) {
                     break
                 }
-                pool.execute { socket.use(::handle) }
+                try {
+                    pool.execute { socket.use(::handle) }
+                } catch (_: RejectedExecutionException) {
+                    // 閉じている途中
+                    socket.close()
+                    break
+                }
             }
         }
     }
@@ -105,11 +112,12 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
 
     private fun media(out: OutputStream, asset: String, type: String, range: String?) {
         val bytes = assets.open(asset).use(InputStream::readBytes)
-        val match = range?.let { Regex("bytes=(\\d+)-(\\d*)").matchEntire(it.trim()) }
-        if (match == null) return respond(out, 200, type, bytes, "Accept-Ranges: bytes")
-        val from = match.groupValues[1].toInt()
-        if (from >= bytes.size) return respond(out, 416, type, ByteArray(0), "Content-Range: bytes */${bytes.size}")
-        val to = match.groupValues[2].toIntOrNull()?.coerceAtMost(bytes.size - 1) ?: (bytes.size - 1)
+        val match = range?.let { Regex("bytes=(\\d*)-(\\d*)").matchEntire(it.trim()) }
+        val (first, last) = match?.destructured ?: return respond(out, 200, type, bytes, "Accept-Ranges: bytes")
+        // bytes=N- / bytes=N-M / bytes=-N (後ろから N バイト)
+        val from = if (first.isEmpty()) (bytes.size - (last.toIntOrNull() ?: 0)).coerceAtLeast(0) else first.toInt()
+        val to = if (first.isEmpty()) bytes.size - 1 else last.toIntOrNull()?.coerceAtMost(bytes.size - 1) ?: (bytes.size - 1)
+        if (from >= bytes.size || from > to) return respond(out, 416, type, ByteArray(0), "Content-Range: bytes */${bytes.size}")
         respond(out, 206, type, bytes.copyOfRange(from, to + 1), "Content-Range: bytes $from-$to/${bytes.size}")
     }
 

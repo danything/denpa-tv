@@ -67,8 +67,6 @@ class SmokeTest {
         val settings = node { it.text?.toString() == "設定" }?.let(::clickable) ?: throw AssertionError("メニューが開きません: ${texts()}")
         assertTrue("「設定」を押せません", settings.performAction(AccessibilityNodeInfo.ACTION_CLICK))
         awaitText { it.startsWith("繋ぐ先: ${denpa.url}") }
-        // 知らせ (SSE) にも繋いでいる
-        assertRequested("GET /api/events")
     }
 
     /**
@@ -77,9 +75,10 @@ class SmokeTest {
     private fun watching(block: () -> Unit) {
         // 前のテストで落ちた記録は消す (それぞれのテストが自分の分だけ見る)
         shell("logcat -b crash -c")
-        block()
+        // 前から取る (block の間に落ちて起き直しても見逃さない)。アプリは connect() から動いている
         val pid = pid()
         assertTrue("アプリのプロセスがありません", pid.isNotEmpty())
+        block()
         SystemClock.sleep(SETTLE_MS)
         assertNoCrash()
         assertEquals("アプリのプロセスが替わりました (落ちて起き直した?)", pid, pid())
@@ -161,8 +160,9 @@ class SmokeTest {
             assertTrue("URL を入れられません", field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, text))
             val button = node { it.text?.toString() == "繋ぐ" }?.let(::clickable) ?: error("「繋ぐ」がありません")
             assertTrue("「繋ぐ」を押せません", button.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-            // 繋がると録画の一覧が開く
+            // 繋がると録画の一覧が開き、知らせ (SSE) にも繋ぐ
             awaitText { it == FakeDenpa.RECORDING_TITLE }
+            assertTrue("api/events に繋ぎません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { "GET /api/events" in denpa.requests })
         }
 
         @AfterClass
@@ -197,7 +197,8 @@ class SmokeTest {
         /** アプリが落ちていれば、その記録で失敗にする */
         private fun assertNoCrash() {
             val log = shell("logcat -b crash -d")
-            if ("Process: $APP," in log) fail("アプリが落ちました:\n$log")
+            // Java の例外は「Process: <パッケージ>, PID: …」、ネイティブ (tombstone) は「>>> <パッケージ> <<<」
+            if ("Process: $APP," in log || ">>> $APP <<<" in log) fail("アプリが落ちました:\n$log")
         }
 
         private fun pid(): String = shell("pidof $APP").trim()
