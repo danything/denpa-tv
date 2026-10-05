@@ -1,6 +1,5 @@
 package io.github.danything.denpatv.data
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -54,10 +53,8 @@ object CaptionFeed {
 
     /** 1こまの上限。壊れた長さで何百 MB も取りにいかない (字幕の絵は 1 枚 数十 KB) */
     private const val MAX_FRAME = 16 * 1024 * 1024
-    private const val CONNECT_TIMEOUT_MS = 10_000
     /** denpa は 20 秒おきに ping を送る。2 回来なければ切れたとみなす */
     private const val READ_TIMEOUT_MS = 45_000
-    private val json = Json { ignoreUnknownKeys = true }
 
     /** 1こま読む。終わり (きれいに閉じた) なら null */
     fun read(input: DataInputStream): CaptionFrame? {
@@ -85,7 +82,7 @@ object CaptionFeed {
 
     /** 形の違う知らせは読み捨てる (denpa の版の違い。止めるほどのことではない) */
     private fun notice(payload: ByteArray): CaptionFrame {
-        val obj = runCatching { json.parseToJsonElement(payload.toString(Charsets.UTF_8)) as? JsonObject }.getOrNull()
+        val obj = runCatching { lenientJson.parseToJsonElement(payload.toString(Charsets.UTF_8)) as? JsonObject }.getOrNull()
             ?: return CaptionFrame.Other
         if ((obj["type"] as? JsonPrimitive)?.content != "captions") return CaptionFrame.Other
         return CaptionFrame.Tracks((obj["tracks"] as? JsonArray)?.size ?: 0)
@@ -96,10 +93,7 @@ object CaptionFeed {
 
     /** 繋ぐ。`token` があれば `Authorization: Bearer` を付ける。401 は `Unauthorized`、ほかの失敗は `Refused` */
     fun connect(url: URI, token: String?): HttpURLConnection {
-        val connection = url.toURL().openConnection() as HttpURLConnection
-        connection.connectTimeout = CONNECT_TIMEOUT_MS
-        connection.readTimeout = READ_TIMEOUT_MS
-        Http.bearer(token)?.let { connection.setRequestProperty("Authorization", it) }
+        val connection = Http.connection(url, token, readTimeoutMs = READ_TIMEOUT_MS)
         val code = connection.responseCode
         if (code == 401) {
             connection.disconnect()

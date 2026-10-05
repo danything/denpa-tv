@@ -53,10 +53,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
     val chase = recording.chase ?: return Centered("追っかけの口がありません")
-    val saved by repo.app.settings.liveQuality.collectAsState(initial = LOADING_QUALITY)
-    if (saved == LOADING_QUALITY) return
-    val quality = remember(saved) { LiveQuality.choose(saved, repo.app.decoders) }
-    val buffering = if (quality == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
+    val quality = rememberLiveQuality(repo) ?: return
+    val buffering = quality.buffering
     val clock = remember { TsClock() }
     val (player, error, dualMono) = rememberPlayer(repo, buffering, onUnauthorized, clock)
     val (overlay, flash) = rememberFlash()
@@ -90,7 +88,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         flash(label)
     }
 
-    var bar by remember { mutableStateOf<ChaseBar?>(null) }
+    var bar by remember { mutableStateOf<Bar?>(null) }
     BackHandler(enabled = bar != null) { bar = null }
     /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
     var leaving by remember { mutableStateOf(false) }
@@ -137,7 +135,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     }
     LaunchedEffect(Unit) {
         val resume = recording.resumeMs ?: 0L
-        flash("録画中  ${recording.title}\n" + (if (resume > 0) "続きから (${position(from)})  " else "") + CHASE_HINT)
+        flash("録画中  ${recording.title}\n" + (if (resume > 0) "続きから (${position(from)})  " else "") + SEEK_HINT)
     }
     // 位置と録れた長さを取り直す。最新に追いついたら等速に
     LaunchedEffect(player) {
@@ -237,7 +235,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         if (player.playWhenReady) {
             player.playWhenReady = false
             pausedAt = System.nanoTime()
-            flash("一時停止  ${position(position())}\n$CHASE_HINT")
+            flash("一時停止  ${position(position())}\n$SEEK_HINT")
         } else {
             // 長く止めていたら繋がりが切れているかもしれないので、止めた位置から頼み直す
             if (System.nanoTime() - pausedAt > 10_000_000_000L) {
@@ -249,7 +247,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         }
         playing = player.playWhenReady
     }
-    fun open(which: ChaseBar) {
+    fun open(which: Bar) {
         at = position()
         length = recorded()
         playing = player.playWhenReady
@@ -264,7 +262,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                 listOf("" to listOf(Control("一覧に戻る", on = true, icon = R.drawable.ic_back) { leave() })),
             )
         } else bar?.let { which ->
-            LaunchedEffect(which) { if (which == ChaseBar.SeekBar) runCatching { seekFocus.requestFocus() } }
+            LaunchedEffect(which) { if (which == Bar.SeekBar) runCatching { seekFocus.requestFocus() } }
             ControlBar(
                 "録画中  ${recording.title}\n${position(at)} / ${position(length)} (録れたところまで)",
                 listOf(
@@ -287,7 +285,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                 header = { actions ->
                     ProgressLine(at, length, focus = seekFocus, down = actions) { direction -> step(direction) }
                 },
-                focusActions = which == ChaseBar.Actions,
+                focusActions = which == Bar.Actions,
                 onActivity = { touched = System.nanoTime() },
             )
         }
@@ -295,8 +293,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         when (recordingCommand(event.nativeKeyEvent.keyCode)) {
             RecordingCommand.Back -> { step(-1); true }
             RecordingCommand.Forward -> { step(1); true }
-            RecordingCommand.SeekBar -> { open(ChaseBar.SeekBar); true }
-            RecordingCommand.Actions -> { open(ChaseBar.Actions); true }
+            RecordingCommand.SeekBar -> { open(Bar.SeekBar); true }
+            RecordingCommand.Actions -> { open(Bar.Actions); true }
             RecordingCommand.PlayPause -> { togglePause(); true }
             RecordingCommand.NextSpeed -> {
                 val next = nextSpeed(speed)
@@ -311,15 +309,9 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     }, onCenter = { press ->
         when (press) {
             CenterPress.Action.Short -> togglePause()
-            CenterPress.Action.Long -> open(ChaseBar.Actions)
+            CenterPress.Action.Long -> open(Bar.Actions)
         }
     })
 }
 
-private enum class ChaseBar { SeekBar, Actions }
-
 private const val REFUSED = "denpa が焼くのを断りました (混んでいるかも)。少し待つか、画質を替えてください"
-
-private const val CHASE_HINT = "下でシークバー・上でメニュー"
-
-private const val LOADING_QUALITY = "\u0000loading"

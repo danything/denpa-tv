@@ -6,7 +6,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
-import java.net.HttpURLConnection
 import java.net.URI
 
 /** Server-Sent Events の1件。`name` は `event:` (無ければ `message`)、`data` は `data:` の行を改行で繋いだもの */
@@ -81,8 +80,6 @@ class SseParser {
 }
 
 object Sse {
-    private const val CONNECT_TIMEOUT_MS = 10_000
-
     /**
      * 何も届かずにこれだけ経ったら死んだ繋ぎと見なす。denpa は 25 秒おきに `ping` を送る (denpa の docs/api.md)。
      * 読みの時間切れで見るので、番犬は要らない
@@ -94,7 +91,7 @@ object Sse {
      * 繋がった (200 が返った) ら `onOpen`。**呼ぶ側のコルーチンを止めると、繋ぎを閉じて戻る** (読みの待ちは止められないので、閉じて起こす)
      */
     suspend fun listen(url: URI, token: String?, onOpen: () -> Unit = {}, onEvent: (SseEvent) -> Unit) = coroutineScope {
-        val connection = url.toURL().openConnection() as HttpURLConnection
+        val connection = Http.connection(url, token, mapOf("Accept" to "text/event-stream"), SILENCE_MS)
         val closer = launch {
             try {
                 awaitCancellation()
@@ -104,10 +101,6 @@ object Sse {
         }
         try {
             withContext(Dispatchers.IO) {
-                connection.connectTimeout = CONNECT_TIMEOUT_MS
-                connection.readTimeout = SILENCE_MS
-                connection.setRequestProperty("Accept", "text/event-stream")
-                Http.bearer(token)?.let { connection.setRequestProperty("Authorization", it) }
                 val code = connection.responseCode
                 if (code == 401) throw Unauthorized(url)
                 if (code !in 200..299) throw IOException("$code $url")

@@ -43,10 +43,8 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
-    val saved by repo.app.settings.liveQuality.collectAsState(initial = LOADING_QUALITY)
-    if (saved == LOADING_QUALITY) return
-    val quality = remember(saved) { LiveQuality.choose(saved, repo.app.decoders) }
-    val buffering = if (quality == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
+    val quality = rememberLiveQuality(repo) ?: return
+    val buffering = quality.buffering
 
     var services by remember { mutableStateOf(repo.services) }
     /**
@@ -249,6 +247,14 @@ private fun describe(service: Service, quality: LiveQuality): String {
 }
 
 private const val LIVE_HINT = "決定で局の一覧・長押しでメニュー (画質)"
+
+/** 覚えているライブの画質 (追っかけも同じものを使う)。この端末で選べなければ選び直す。読み終えるまでは null */
+@Composable
+fun rememberLiveQuality(repo: Repository): LiveQuality? {
+    val saved by repo.app.settings.liveQuality.collectAsState(initial = LOADING_QUALITY)
+    if (saved == LOADING_QUALITY) return null
+    return remember(saved) { LiveQuality.choose(saved, repo.app.decoders) }
+}
 
 private const val LOADING_QUALITY = "\u0000loading"
 

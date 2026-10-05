@@ -28,10 +28,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
@@ -57,6 +55,8 @@ import androidx.media3.ui.SubtitleView
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.Http
+import io.github.danything.denpatv.data.LongPressGuard
+import io.github.danything.denpatv.data.LiveQuality
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -79,6 +79,9 @@ enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val after
     LowLatency(500, 2_000, 250, 500),
 }
 
+/** ライブ・追っかけの溜め方。生の TS は届いたそばから出す */
+val LiveQuality.buffering: Buffering get() = if (this == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
+
 /**
  * 映像を取る道。**Media3 のネットワーク スタックの頁の勧めどおり**: Android 14 からは OS の
  * HttpEngine (アプリで1つ)、それより前は DefaultHttpDataSource (OS の HttpURLConnection)。
@@ -89,12 +92,12 @@ enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val after
 fun dataSourceFactory(context: Context, engine: HttpEngine?, executor: Executor, token: String?): DataSource.Factory {
     val http: HttpDataSource.Factory = if (engine != null) {
         HttpEngineDataSource.Factory(engine, executor)
-            .setConnectionTimeoutMs(CONNECT_TIMEOUT_MS)
-            .setReadTimeoutMs(READ_TIMEOUT_MS)
+            .setConnectionTimeoutMs(Http.CONNECT_TIMEOUT_MS)
+            .setReadTimeoutMs(Http.READ_TIMEOUT_MS)
     } else {
         DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(CONNECT_TIMEOUT_MS)
-            .setReadTimeoutMs(READ_TIMEOUT_MS)
+            .setConnectTimeoutMs(Http.CONNECT_TIMEOUT_MS)
+            .setReadTimeoutMs(Http.READ_TIMEOUT_MS)
     }
     // 家の外の denpa に登録してあれば、映像にもトークンを付ける
     http.setDefaultRequestProperties(authorizationHeaders(token))
@@ -104,10 +107,6 @@ fun dataSourceFactory(context: Context, engine: HttpEngine?, executor: Executor,
 /** 映像の要求に足すヘッダ。トークンが無ければ空 */
 fun authorizationHeaders(token: String?): Map<String, String> =
     Http.bearer(token)?.let { mapOf("Authorization" to it) } ?: emptyMap()
-
-private const val CONNECT_TIMEOUT_MS = 10_000
-// ライブは流しっぱなしなので読みの時間切れは長めに (止まったら ExoPlayer が言う)
-private const val READ_TIMEOUT_MS = 30_000
 
 /**
  * `clock` は TS の読み手が 0 に寄せた幅を覚える (生の TS の字幕を放送の PTS で突き合わせるため。RawCaptions.kt)。
@@ -219,7 +218,7 @@ fun PlayerFrame(
             // 上に重ねたものが開いている間は受けない (そちらのキーがここまで上がってくるので)
             .onKeyEvent { event ->
                 if (!active) return@onKeyEvent false
-                if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                if (event.nativeKeyEvent.keyCode in LongPressGuard.CENTER_KEYS) {
                     val action = when (event.type) {
                         KeyEventType.KeyDown -> center.down(event.nativeKeyEvent.repeatCount, event.nativeKeyEvent.isLongPress)
                         KeyEventType.KeyUp -> center.up()

@@ -28,7 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
+import io.github.danything.denpatv.data.lenientJson
 import java.io.File
 
 /** アップデートのいま。録画の一覧の頭の1行と設定の画面が出す */
@@ -79,7 +79,6 @@ class Updater(private val app: DenpaApp) {
     val dev: Boolean = isDevBuild(current)
 
     private val source = UpdateSource()
-    private val json = Json { ignoreUnknownKeys = true }
     private val cache = ApkCache(File(app.cacheDir, "update"))
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> get() = _state
@@ -92,7 +91,7 @@ class Updater(private val app: DenpaApp) {
             val now = System.currentTimeMillis()
             if (now - at in 0 until CHECK_INTERVAL_MS) {
                 // 確かめたばかり。そのとき見つけた版があれば (まだ上げていなければ)、取ってある APK を使う (無ければ取ってくる)
-                val update = saved?.let { runCatching { json.decodeFromString(Update.serializer(), it) }.getOrNull() }
+                val update = saved?.let { runCatching { lenientJson.decodeFromString(Update.serializer(), it) }.getOrNull() }
                     ?.takeIf { isNewer(it) }
                 prepare(update, fresh = false, manual = false)
                 return@launch
@@ -238,7 +237,7 @@ class Updater(private val app: DenpaApp) {
         val releases = source.releases()
         latest = selectUpdate(releases, Version(0, 0, 0))?.label
         val update = selectUpdate(releases, Version.parse(current) ?: return null)
-        app.settings.setUpdateCheck(System.currentTimeMillis(), update?.let { json.encodeToString(Update.serializer(), it) })
+        app.settings.setUpdateCheck(System.currentTimeMillis(), update?.let { lenientJson.encodeToString(Update.serializer(), it) })
         return update
     }
 

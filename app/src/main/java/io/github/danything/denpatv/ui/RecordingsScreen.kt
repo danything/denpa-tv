@@ -22,7 +22,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -74,17 +73,7 @@ fun RecordingsScreen(
     var loaded by remember { mutableStateOf(recordings.isNotEmpty()) }
     var retry by remember { mutableIntStateOf(0) }
     /** 下に数秒出す知らせ (消せなかったときなど) */
-    var notice by remember { mutableStateOf<String?>(null) }
-    var noticedAt by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(noticedAt) {
-        if (noticedAt == 0L) return@LaunchedEffect
-        delay(4_000)
-        notice = null
-    }
-    fun notify(text: String) {
-        notice = text
-        noticedAt = System.nanoTime()
-    }
+    val (notice, notify) = rememberFlash()
     /** 詳しいところを開いている録画 (長押し) */
     var opened by remember { mutableStateOf<Recording?>(null) }
     /** 最後に合わせていた録画。観て戻ってきたらここに合わせ直す (画面を作り直しても残る) */
@@ -345,4 +334,5 @@ private fun gridIndex(recordings: List<Recording>, id: Long): Int? {
 private const val RECORDING_BADGE = "● 録画中"
 
 private val DAY = SimpleDateFormat("M月d日(E)", Locale.JAPAN)
-private val WHEN = SimpleDateFormat("M/d(E) HH:mm", Locale.JAPAN)
+/** カードと詳しくの放送日時 */
+internal val WHEN = SimpleDateFormat("M/d(E) HH:mm", Locale.JAPAN)

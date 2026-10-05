@@ -166,7 +166,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
         player.prepare()
         player.playWhenReady = true
         val pace = repo.app.settings.playbackSpeed.first().takeIf { it != 1f }?.let { "  速さ ${speedLabel(it)}" } ?: ""
-        flash((if (resume > 0) "${recording.title}\n続きから (${position(resume)})$pace" else "${recording.title}$pace") + "\n$RECORDING_HINT")
+        flash((if (resume > 0) "${recording.title}\n続きから (${position(resume)})$pace" else "${recording.title}$pace") + "\n$SEEK_HINT")
     }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -288,7 +288,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
             // 止めている間の位置の帯。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上・長押しで操作の列)
             val total = player.duration.takeIf { it != C.TIME_UNSET }
             ControlBar(
-                "一時停止  ${recording.title}\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}  ・決定で再生  $RECORDING_HINT",
+                "一時停止  ${recording.title}\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}  ・決定で再生  $SEEK_HINT",
                 emptyList(),
                 header = { ProgressLine(at, total ?: 0, chapters) },
                 focusActions = false,
@@ -352,7 +352,8 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     })
 }
 
-/** 録画の帯をどこに合わせて開いたか。下キーならシークバー、上キー・決定の長押し・Menu なら操作の列 */
-private enum class Bar { SeekBar, Actions }
+/** 録画・追っかけの帯をどこに合わせて開いたか。下キーならシークバー、上キー・決定の長押し・Menu なら操作の列 */
+internal enum class Bar { SeekBar, Actions }
 
-private const val RECORDING_HINT = "下でシークバー・上でメニュー"
+/** 録画・追っかけのキーの手引き */
+internal const val SEEK_HINT = "下でシークバー・上でメニュー"

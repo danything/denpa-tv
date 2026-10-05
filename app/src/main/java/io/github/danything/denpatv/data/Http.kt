@@ -1,16 +1,20 @@
 package io.github.danything.denpatv.data
 
+import kotlinx.serialization.json.Json
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
+
+/** JSON の読み書き。知らない鍵は読み捨てる (denpa も GitHub も鍵を足すことがある) */
+val lenientJson = Json { ignoreUnknownKeys = true }
 
 /**
  * denpa の API を叩く素の HTTP。**OS の HttpURLConnection で足りる** — 叩くのは家の LAN の
  * denpa の JSON だけで、HTTP/2 も QUIC も効かない (docs/libraries.md)。呼ぶ側が IO の上で呼ぶ
  */
 object Http {
-    private const val CONNECT_TIMEOUT_MS = 10_000
-    private const val READ_TIMEOUT_MS = 30_000
+    const val CONNECT_TIMEOUT_MS = 10_000
+    const val READ_TIMEOUT_MS = 30_000
 
     class Response(val code: Int, val body: ByteArray) {
         val ok: Boolean get() = code in 200..299
@@ -28,14 +32,10 @@ object Http {
         token: String? = null,
         headers: Map<String, String> = emptyMap(),
     ): Response {
-        val connection = url.toURL().openConnection() as HttpURLConnection
+        val connection = connection(url, token, headers)
         try {
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
             connection.requestMethod = method
             connection.instanceFollowRedirects = true
-            bearer(token)?.let { connection.setRequestProperty("Authorization", it) }
-            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
             // GET 以外には本文が無くても Content-Type を付ける。denpa (SvelteKit) は Content-Type も Origin も無い
             // GET 以外を「よそのサイトからのフォーム送信」と見なして 403 で断る (本文の無い DELETE が消せなかった)
             if (method != "GET") connection.setRequestProperty("Content-Type", "application/json")
@@ -56,6 +56,22 @@ object Http {
         if (res.code == 401) throw Unauthorized(url)
         if (!res.ok) throw IOException("${res.code} $url")
         return res.text()
+    }
+
+    /**
+     * まだ繋いでいない HttpURLConnection (時間切れ・トークン・ヘッダを付けたもの)。流しっぱなしの本文
+     * (知らせ・字幕・APK) は、これで開いて呼ぶ側が読む。閉じる (`disconnect`) のも呼ぶ側
+     */
+    fun connection(
+        url: URI,
+        token: String? = null,
+        headers: Map<String, String> = emptyMap(),
+        readTimeoutMs: Int = READ_TIMEOUT_MS,
+    ): HttpURLConnection = (url.toURL().openConnection() as HttpURLConnection).apply {
+        connectTimeout = CONNECT_TIMEOUT_MS
+        readTimeout = readTimeoutMs
+        bearer(token)?.let { setRequestProperty("Authorization", it) }
+        headers.forEach { (name, value) -> setRequestProperty(name, value) }
     }
 
     /** Authorization の値。トークンが無ければ null */
