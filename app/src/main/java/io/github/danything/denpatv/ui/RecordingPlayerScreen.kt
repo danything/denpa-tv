@@ -72,7 +72,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
         return
     }
     val clock = remember { TsClock() }
-    val (player, error) = rememberPlayer(repo, Buffering.Recording, onUnauthorized, clock)
+    val (player, error, dualMono) = rememberPlayer(repo, Buffering.Recording, onUnauthorized, clock)
     val (overlay, flash) = rememberFlash()
     val scope = rememberCoroutineScope()
     /** 飛んだ回数。生の TS の字幕を、飛んだ先から頼み直す */
@@ -96,7 +96,8 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
         fromMs = { player.currentPosition },
         onUnauthorized = onUnauthorized,
     )
-    val tracks = rememberTracks(repo, player, flash, captions)
+    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いた録画は denpa が主・副の2本に割ってある)
+    val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { file.source == "ts" }.orEmpty())
     /**
      * CM 飛ばし。観はじめはブラウザと同じく、覚えている設定に従うが、ロゴで CM を判定できなかった録画は切って始める
      * (`skipCmAtStart`)。切り替えは、判定できた録画なら覚え、できなかった録画ではこの録画だけ

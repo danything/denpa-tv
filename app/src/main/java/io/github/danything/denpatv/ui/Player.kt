@@ -111,11 +111,19 @@ private const val READ_TIMEOUT_MS = 30_000
 
 /**
  * `clock` は TS の読み手が 0 に寄せた幅を覚える (生の TS の字幕を放送の PTS で突き合わせるため。RawCaptions.kt)。
- * 読み手の作り方は Media3 の既定と同じ
+ * 読み手の作り方は Media3 の既定と同じ。`dualMono` は音の出口の手前に挟む (デュアルモノの片側を両耳へ。DualMono.kt)
  */
 @OptIn(UnstableApi::class)
-fun buildPlayer(context: Context, engine: HttpEngine?, executor: Executor, token: String?, buffering: Buffering, clock: TsClock): ExoPlayer =
-    ExoPlayer.Builder(context)
+fun buildPlayer(
+    context: Context,
+    engine: HttpEngine?,
+    executor: Executor,
+    token: String?,
+    buffering: Buffering,
+    clock: TsClock,
+    dualMono: DualMonoProcessor,
+): ExoPlayer =
+    ExoPlayer.Builder(context, DualMonoRenderersFactory(context, dualMono))
         .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory(context, engine, executor, token), clock))
         .setLoadControl(
             DefaultLoadControl.Builder()
@@ -280,14 +288,18 @@ fun rememberFlash(): Pair<String?, (String) -> Unit> {
     }
 }
 
+/** `rememberPlayer` が返すもの。`val (player, error) = …` で受けられる。`dualMono` はデュアルモノの配り直し (`rememberTracks` に渡す) */
+data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono: DualMonoProcessor)
+
 /**
  * ExoPlayer を画面の寿命に合わせる。エラーは文にして返す。
  * `clock` は生の TS の字幕を出す画面だけが渡す (`rememberRawCaptions` と同じものを)
  */
 @Composable
-fun rememberPlayer(repo: Repository, buffering: Buffering, onUnauthorized: () -> Unit = {}, clock: TsClock = remember { TsClock() }): Pair<ExoPlayer, String?> {
+fun rememberPlayer(repo: Repository, buffering: Buffering, onUnauthorized: () -> Unit = {}, clock: TsClock = remember { TsClock() }): PlayerHandle {
     val context = LocalContext.current
-    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, repo.app.httpExecutor, repo.token, buffering, clock) }
+    val dualMono = remember(buffering) { DualMonoProcessor() }
+    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, repo.app.httpExecutor, repo.token, buffering, clock, dualMono) }
     var error by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -308,7 +320,7 @@ fun rememberPlayer(repo: Repository, buffering: Buffering, onUnauthorized: () ->
             player.release()
         }
     }
-    return player to error
+    return PlayerHandle(player, error, dualMono)
 }
 
 fun MediaItem.Builder.uri(url: String, mime: String): MediaItem = setUri(url).setMimeType(mime).build()

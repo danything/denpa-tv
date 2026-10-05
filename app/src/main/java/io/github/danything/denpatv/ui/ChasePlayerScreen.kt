@@ -58,7 +58,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     val quality = remember(saved) { LiveQuality.choose(saved, repo.app.decoders) }
     val buffering = if (quality == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
     val clock = remember { TsClock() }
-    val (player, error) = rememberPlayer(repo, buffering, onUnauthorized, clock)
+    val (player, error, dualMono) = rememberPlayer(repo, buffering, onUnauthorized, clock)
     val (overlay, flash) = rememberFlash()
     val scope = rememberCoroutineScope()
     // 一覧の「録画中」は古くなる (録り終える・焼き上がる)。戻ったら読み直してもらう
@@ -82,7 +82,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         fromMs = { from + player.currentPosition },
         onUnauthorized = onUnauthorized,
     )
-    val tracks = rememberTracks(repo, player, flash, captions)
+    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いた追っかけは denpa が主音声だけを焼く)
+    val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { quality == LiveQuality.Raw }.orEmpty())
 
     var bar by remember { mutableStateOf<ChaseBar?>(null) }
     BackHandler(enabled = bar != null) { bar = null }

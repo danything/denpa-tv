@@ -70,7 +70,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     var hinted by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val clock = remember { TsClock() }
-    val (player, error) = rememberPlayer(repo, buffering, onUnauthorized, clock)
+    val (player, error, dualMono) = rememberPlayer(repo, buffering, onUnauthorized, clock)
     val (overlay, flash) = rememberFlash()
     // 生の TS の字幕は denpa が描いた絵を別の口で受け取る (焼いたものは映像に入っている)
     val captions = rememberRawCaptions(
@@ -81,7 +81,15 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         generation = playing?.id,
         onUnauthorized = onUnauthorized,
     )
-    val tracks = rememberTracks(repo, player, flash, captions)
+    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いたライブは denpa が主音声だけを焼く)
+    val tracks = rememberTracks(
+        repo,
+        player,
+        flash,
+        captions,
+        dualMono,
+        denpaAudios = playing?.takeIf { quality == LiveQuality.Raw }?.now?.audios.orEmpty(),
+    )
     CatchUp(player, buffering)
 
     LaunchedEffect(Unit) {
@@ -130,6 +138,12 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             delay(60_000)
             refresh()
         }
+    }
+    // 番組が終わったら、すぐ取り直す (次の番組の音声の構成 (デュアルモノか) と進みを、1分ごとの取り直しを待たずに替える)
+    LaunchedEffect(playing?.now?.endAt) {
+        val end = playing?.now?.endAt ?: return@LaunchedEffect
+        delay((end - System.currentTimeMillis()).coerceAtLeast(0) + PROGRAM_END_GRACE_MS)
+        if (ready) refresh()
     }
     // denpa の知らせ (局・番組表が変わった、繋ぎ直した) でも取り直す。番組表は1局集めるたびに来るので、まとめて1回 (1 秒待つ)
     LaunchedEffect(Unit) {
@@ -220,3 +234,6 @@ private fun describe(service: Service, quality: LiveQuality): String {
 private const val LIVE_HINT = "決定で局の一覧・長押しでメニュー (画質)"
 
 private const val LOADING_QUALITY = "\u0000loading"
+
+/** 番組の終わりから取り直すまでの間 (ミリ秒)。denpa の時計とのずれのぶん */
+private const val PROGRAM_END_GRACE_MS = 3_000L

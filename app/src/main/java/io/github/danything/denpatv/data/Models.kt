@@ -57,6 +57,8 @@ data class NowProgram(
     val title: String,
     val startAt: Long,
     val endAt: Long,
+    /** 選べる音声 (デュアルモノの主・副を見分ける。`DenpaAudio`)。いまの denpa には無いので空 */
+    val audios: List<DenpaAudio> = emptyList(),
 ) {
     /** 進み具合 (0..1) */
     fun progress(at: Long): Float =
@@ -86,6 +88,8 @@ data class Recording(
     val chase: String? = null,
     /** CM 飛ばしを観はじめに入れてよいか (ロゴでの判定に失敗した録画は false)。無ければ入れてよい */
     val cmReliable: Boolean = true,
+    /** 選べる音声 (デュアルモノの主・副を見分ける。`DenpaAudio`)。いまの denpa には無いので空 */
+    val audios: List<DenpaAudio> = emptyList(),
 )
 
 /** 追っかけで観るか (録画中で、追っかけの口がある) */
