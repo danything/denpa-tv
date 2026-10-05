@@ -121,7 +121,8 @@ class Updater(private val app: DenpaApp) {
             is UpdateState.Available -> start(state.update, null)
             is UpdateState.Failed -> start(state.update, state.file?.takeIf { it.exists() })
             // 確認の画面を戻るで閉じると、OS から何も返らないことがある。押せばもう一度出す
-            is UpdateState.Installing -> start(state.update, state.file.takeIf { it.exists() })
+            // (セッションを書いている最中 = 確認の画面を出す前は何もしない)
+            is UpdateState.Installing -> if (state.confirming) start(state.update, state.file.takeIf { it.exists() })
             else -> Unit
         }
     }
@@ -133,7 +134,7 @@ class Updater(private val app: DenpaApp) {
             return
         }
         // 続けて押されても2本取らないよう、先に「取ってきている」にする
-        if (downloaded == null) _state.value = UpdateState.Downloading(update, 0)
+        _state.value = if (downloaded == null) UpdateState.Downloading(update, 0) else UpdateState.Installing(update, downloaded)
         app.scope.launch {
             val file = downloaded ?: try {
                 dir.deleteRecursively()
@@ -211,9 +212,12 @@ class Updater(private val app: DenpaApp) {
     /** PackageInstaller のセッションで入れる。結果は `onStatus` に返る */
     private fun install(update: Update, file: File) {
         _state.value = UpdateState.Installing(update, file)
+        val installer = app.packageManager.packageInstaller
+        // 前のセッション (確認の画面を閉じた・やめた) は片づける。その結果が後から届いても、いまの id と違うので見ない
+        abandon(installer, session)
+        var id = NO_SESSION
         try {
             registerReceiver()
-            val installer = app.packageManager.packageInstaller
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
                 setAppPackageName(app.packageName)
                 setSize(file.length())
@@ -222,7 +226,8 @@ class Updater(private val app: DenpaApp) {
                     setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
                 }
             }
-            val id = installer.createSession(params)
+            id = installer.createSession(params)
+            session = id
             installer.openSession(id).use { session ->
                 session.openWrite("base.apk", 0, file.length()).use { out ->
                     file.inputStream().use { it.copyTo(out) }
@@ -236,7 +241,21 @@ class Updater(private val app: DenpaApp) {
             }
         } catch (e: Exception) {
             Log.w(TAG, "入れられませんでした", e)
+            abandon(installer, id)
+            if (session == id) session = NO_SESSION
             _state.value = UpdateState.Failed(update, "${update.label} を入れられませんでした (${e.message ?: e.javaClass.simpleName})", file)
+        }
+    }
+
+    /** いま入れているセッション。結果はこの id のものだけ受ける */
+    @Volatile private var session = NO_SESSION
+
+    private fun abandon(installer: PackageInstaller, id: Int) {
+        if (id == NO_SESSION) return
+        try {
+            installer.abandonSession(id)
+        } catch (_: Exception) {
+            // 終わった・もう無いセッション
         }
     }
 
@@ -255,6 +274,8 @@ class Updater(private val app: DenpaApp) {
 
     private fun onStatus(intent: Intent) {
         val installing = _state.value as? UpdateState.Installing ?: return
+        // 前に作って捨てたセッションの結果は見ない
+        if (intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, NO_SESSION) != session) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         val failed = { message: String -> _state.value = UpdateState.Failed(installing.update, message, installing.file) }
         when (status) {
@@ -287,6 +308,7 @@ class Updater(private val app: DenpaApp) {
 
     private companion object {
         const val TAG = "DenpaUpdate"
+        const val NO_SESSION = -1
         const val CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000L
         const val ACTION_STATUS = "io.github.danything.denpatv.UPDATE_STATUS"
     }
