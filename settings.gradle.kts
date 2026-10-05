@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "denpa-tv"
 include(":app")
+// 縮めた APK をエミュレータで動かすテスト (CI の emulator の列)
+include(":smoke")

@@ -31,3 +31,91 @@ jobs:
         with:
           name: reports
           path: app/build/reports/
+
+  # 縮めた APK (:app の minified。R8 は release と同じで、署名だけ debug) をエミュレータで動かす (smoke/ の SmokeTest)。
+  # denpa-tv#24 は R8 を通した APK を Android TV 12 で動かしたときだけ落ちた。minSdk (24) から最新まで API ごとに確かめる。
+  # 像はどれも Android TV (system-images;android-NN;android-tv)。36 だけ x86_64 (24〜34 の TV の像は x86 しか無い)
+  emulator:
+    name: emulator (API ${{ matrix.api-level }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 24
+            arch: x86
+          - api-level: 28
+            arch: x86
+          - api-level: 31
+            arch: x86
+          - api-level: 34
+            arch: x86
+          - api-level: 36
+            arch: x86_64
+    env:
+      EMULATOR_OPTIONS: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      # エミュレータを立ててから焼くと、その間エミュレータが遊ぶ。先に焼いておく
+      - name: Build APKs
+        run: ./gradlew :app:assembleMinified :smoke:assembleMinified --console=plain
+      # android-emulator-runner の README のとおり
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # 起動しきったところのスナップショットを API ごとに取っておき、次からはそこから起こす (README の「AVD snapshot caching」)
+      - name: AVD cache
+        uses: actions/cache@v6
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-android-tv-${{ matrix.api-level }}-${{ matrix.arch }}
+      - name: Create AVD snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: android-tv
+          arch: ${{ matrix.arch }}
+          profile: tv_1080p
+          force-avd-creation: false
+          emulator-options: ${{ env.EMULATOR_OPTIONS }}
+          disable-animations: false
+          script: echo "AVD のスナップショットを作りました"
+      - name: Smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: android-tv
+          arch: ${{ matrix.arch }}
+          profile: tv_1080p
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
+          disable-animations: true
+          # 1行ずつ sh で走る。落ちたら logcat を残す
+          script: ./gradlew :smoke:connectedMinifiedAndroidTest --console=plain || { adb logcat -d > logcat.txt; exit 1; }
+      # テストの APK ごと起き上がれないと、0 件のまま通ってしまう
+      - name: Check that tests ran
+        run: |
+          grep -h -o '<testsuites tests="[0-9]*"' smoke/build/outputs/androidTest-results/connected/minified/*.xml
+          grep -q '<testsuites tests="[1-9]' smoke/build/outputs/androidTest-results/connected/minified/*.xml
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-${{ matrix.api-level }}
+          # スタックは R8 の名前のまま。mapping.txt で retrace する
+          path: |
+            smoke/build/reports/androidTests/
+            smoke/build/outputs/androidTest-results/
+            app/build/outputs/mapping/minified/mapping.txt
+            logcat.txt
