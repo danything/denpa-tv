@@ -3,10 +3,8 @@ package io.github.danything.denpatv.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
 import java.net.URI
 import java.security.MessageDigest
 
@@ -212,14 +210,12 @@ class ApkCache(private val root: File) {
  * GitHub のリリースを引き、APK を取ってくる。`api` は手元のテストで差し替える
  */
 class UpdateSource(private val api: String = "https://api.github.com/repos/danything/denpa-tv") {
-    private val json = Json { ignoreUnknownKeys = true }
-
     /** いちばん新しい版の候補 (試し版も含めて新しい順に何本か)。並びは作った順なので、版で選び直す */
     fun releases(): List<GitHubRelease> {
         val url = URI("$api/releases?per_page=$RELEASES")
         val res = Http.request(url, headers = GITHUB_HEADERS)
         if (!res.ok) throw IOException("${res.code} $url")
-        return json.decodeFromString(ListSerializer(GitHubRelease.serializer()), res.text())
+        return lenientJson.decodeFromString(ListSerializer(GitHubRelease.serializer()), res.text())
     }
 
     /**
@@ -242,11 +238,8 @@ class UpdateSource(private val api: String = "https://api.github.com/repos/danyt
         sum.delete()
         file.delete()
         val digest = MessageDigest.getInstance("SHA-256")
-        val connection = URI(update.apkUrl).toURL().openConnection() as HttpURLConnection
+        val connection = Http.connection(URI(update.apkUrl), headers = DOWNLOAD_HEADERS)
         try {
-            connection.connectTimeout = 10_000
-            connection.readTimeout = 30_000
-            DOWNLOAD_HEADERS.forEach { (k, v) -> connection.setRequestProperty(k, v) }
             val code = connection.responseCode
             if (code !in 200..299) throw IOException("APK を取れません ($code)")
             val total = connection.contentLengthLong.takeIf { it > 0 } ?: update.size

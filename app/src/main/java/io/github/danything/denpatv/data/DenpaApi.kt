@@ -3,7 +3,6 @@ package io.github.danything.denpatv.data
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -17,8 +16,6 @@ import java.net.URI
  * テレビを denpa に登録して受け取ったトークンを `Authorization: Bearer` で付ける (`token`、README の「繋ぐ」)
  */
 class DenpaApi(private val token: () -> String? = { null }) {
-    private val json = Json { ignoreUnknownKeys = true }
-
     suspend fun health(base: URI): Boolean = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/health") ?: return@withContext false
         try {
@@ -57,7 +54,7 @@ class DenpaApi(private val token: () -> String? = { null }) {
         }
         if (res.code == 401) throw Unauthorized(url)
         if (!res.ok) return@withContext null
-        runCatching { json.decodeFromString(RecordingDetail.serializer(), res.text()) }.getOrNull()
+        runCatching { lenientJson.decodeFromString(RecordingDetail.serializer(), res.text()) }.getOrNull()
     }
 
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。消せたら true */
@@ -90,21 +87,21 @@ class DenpaApi(private val token: () -> String? = { null }) {
     /** テレビを denpa に登録しはじめる (`POST api/device/code`、RFC 8628 の device authorization) */
     suspend fun deviceCode(base: URI, name: String): DeviceCode = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/device/code") ?: throw IOException("URL を組み立てられません")
-        val res = Http.request(url, "POST", json.encodeToString(DeviceCodeRequest.serializer(), DeviceCodeRequest(name)))
+        val res = Http.request(url, "POST", lenientJson.encodeToString(DeviceCodeRequest.serializer(), DeviceCodeRequest(name)))
         if (res.code == 429) throw IOException("登録を待っているテレビが多すぎます。しばらくしてからやり直してください")
         if (!res.ok) throw IOException("${res.code} $url")
-        json.decodeFromString(DeviceCode.serializer(), res.text())
+        lenientJson.decodeFromString(DeviceCode.serializer(), res.text())
     }
 
     /** 登録が済んだかを聞く (`POST api/device/token`) */
     suspend fun deviceToken(base: URI, deviceCode: String): TokenResult = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/device/token") ?: throw IOException("URL を組み立てられません")
-        val res = Http.request(url, "POST", json.encodeToString(DeviceTokenRequest.serializer(), DeviceTokenRequest(deviceCode)))
+        val res = Http.request(url, "POST", lenientJson.encodeToString(DeviceTokenRequest.serializer(), DeviceTokenRequest(deviceCode)))
         if (res.ok) {
-            TokenResult.Granted(json.decodeFromString(DeviceToken.serializer(), res.text()).token)
+            TokenResult.Granted(lenientJson.decodeFromString(DeviceToken.serializer(), res.text()).token)
         } else {
             val error = runCatching {
-                json.decodeFromString(JsonObject.serializer(), res.text())["error"]?.jsonPrimitive?.contentOrNull
+                lenientJson.decodeFromString(JsonObject.serializer(), res.text())["error"]?.jsonPrimitive?.contentOrNull
             }.getOrNull()
             TokenResult.Error(error ?: "http_${res.code}")
         }
@@ -122,7 +119,7 @@ class DenpaApi(private val token: () -> String? = { null }) {
 
     private suspend inline fun <reified T> get(base: URI, path: String): T = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, path) ?: throw IOException("URL を組み立てられません: $path")
-        json.decodeFromString<T>(Http.get(url, token()))
+        lenientJson.decodeFromString<T>(Http.get(url, token()))
     }
 }
 

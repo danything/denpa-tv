@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -103,7 +104,7 @@ fun ChannelPanel(
                         style = MaterialTheme.typography.titleMedium,
                         color = if (type == shown) Color.White else Color.Gray,
                         modifier = if (type == shown) {
-                            Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), androidx.compose.foundation.shape.RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 6.dp)
+                            Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 6.dp)
                         } else {
                             Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                         },

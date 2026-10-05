@@ -1,7 +1,6 @@
 package io.github.danything.denpatv.data
 
 import kotlinx.coroutines.delay
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -26,15 +25,13 @@ sealed interface DenpaEvent {
     data class Encode(val recordingId: Long, val percent: Float) : DenpaEvent
 }
 
-private val json = Json { ignoreUnknownKeys = true }
-
 /**
  * SSE の1件を読む。`ping` (繋ぎを保つだけ) は null。`encode` の中身が読めなければ `warn` に書いて null (止めない)
  */
 fun denpaEvent(event: SseEvent, warn: (String) -> Unit = {}): DenpaEvent? = when (event.name) {
     "ping" -> null
     "encode" -> {
-        val body = runCatching { json.decodeFromString(JsonObject.serializer(), event.data) }.getOrNull()
+        val body = runCatching { lenientJson.decodeFromString(JsonObject.serializer(), event.data) }.getOrNull()
         val id = body?.get("recordingId")?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
         val percent = body?.get("percent")?.let { runCatching { it.jsonPrimitive.doubleOrNull }.getOrNull() }
         if (id == null || percent == null) {

@@ -32,9 +32,7 @@ import io.github.danything.denpatv.data.RecordingDetail
 import io.github.danything.denpatv.data.codecLabels
 import io.github.danything.denpatv.data.durationLabel
 import io.github.danything.denpatv.data.Unauthorized
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 /**
  * 録画の詳しいところ (カードの長押しで開く)。局・日時・長さ・形・続きの位置と、番組の説明。
@@ -125,8 +123,6 @@ private fun Paragraph(heading: String?, body: String) {
         Text(body, style = MaterialTheme.typography.bodyLarge)
     }
 }
-
-private val WHEN = SimpleDateFormat("M/d(E) HH:mm", Locale.JAPAN)
 
 /** 再生位置 (1:02:03) */
 fun position(ms: Long): String {
