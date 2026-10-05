@@ -1,0 +1,43 @@
+name: バグ報告
+description: 動かない・おかしい動きをする・落ちる
+labels: [bug]
+body:
+    - type: textarea
+      id: what
+      attributes:
+          label: 何が起きたか
+          description: 期待した動きと、実際の動き
+          placeholder: 録画を選ぶと〜になる。〜になってほしい
+      validations:
+          required: true
+    - type: textarea
+      id: steps
+      attributes:
+          label: 再現手順
+          placeholder: |
+              1. 〜を開く
+              2. 〜を押す
+              3. 〜になる
+      validations:
+          required: true
+    - type: textarea
+      id: logs
+      attributes:
+          label: ログ
+          description: |
+              **落ちるとき**は PC から adb で繋いで取ってください (落ちたときの記録だけが入ります):
+              `adb logcat -c` → テレビで落ちる操作 → `adb logcat -d -b crash > crash.txt`
+              画面にエラーが出るなら、その文字か写真でも構いません
+          render: text
+    - type: input
+      id: version
+      attributes:
+          label: denpa TV と denpa のバージョン
+          description: denpa TV は設定の画面に出ています
+          placeholder: denpa TV v0.6.2 / denpa v1.39.0
+    - type: input
+      id: environment
+      attributes:
+          label: テレビ・環境
+          description: 機種・Android のバージョン・ライブの画質 (H.264 / AV1 / MPEG-2) など
+          placeholder: BRAVIA KJ-75X80WK / Android TV 12 / H.264
