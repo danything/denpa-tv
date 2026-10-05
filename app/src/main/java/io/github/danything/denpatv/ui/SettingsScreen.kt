@@ -71,7 +71,9 @@ fun SettingsScreen(repo: Repository) {
                 is UpdateState.UpToDate -> Text(s.latest?.let { "最新です ($it)" } ?: "リリースがまだありません")
                 is UpdateState.DevBuild -> Text("手元で焼いた版なので上げません" + (s.latest?.let { " (最新は $it)" } ?: ""))
                 is UpdateState.CheckFailed -> Text(s.message)
-                // 新しい版がある・取ってきている・入れている・失敗した: 録画の一覧の頭と同じ1行 (押すと入れる)
+                // 裏で取ってきている (録画の一覧の頭には出さない)
+                is UpdateState.Preparing -> Text("${s.update.label} を取ってきています ${s.percent}%")
+                // 新しい版がある・入れられる・取ってきている・入れている・失敗した: 録画の一覧の頭と同じ1行 (押すと入れる)
                 else -> UpdateNotice(updater)
             }
         }

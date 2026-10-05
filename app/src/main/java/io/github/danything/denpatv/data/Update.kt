@@ -116,7 +116,97 @@ fun selectUpdate(releases: List<GitHubRelease>, current: Version): Update? = rel
     ?.second
 
 /** 入れずに断る (ハッシュが合わない・無い)。1行で出す */
-class UpdateRejected(message: String) : IOException(message)
+open class UpdateRejected(message: String) : IOException(message)
+
+/** 取ってきた APK のハッシュが SHA256SUMS と合わない (消してある。次に確かめたときに取り直す) */
+class HashMismatch(message: String) : UpdateRejected(message)
+
+/** ファイルの SHA-256 (小文字の16進) */
+fun sha256Hex(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            digest.update(buffer, 0, n)
+        }
+    }
+    return digest.digest().toHex()
+}
+
+private fun ByteArray.toHex() = joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+
+/**
+ * 新しい版が見えたときにどうするか。**確かめた APK が手元にあればそれを使う** (取り直さない)。
+ * 無ければ裏で取ってくる。ただし SHA256SUMS の無いリリースは取っても入れられないので、前のとおり知らせだけ出す
+ * (押すと断る文が出る)。裏で何度も取れないときも知らせだけ出し、押したら取ってくる。
+ * `fresh` は GitHub をいま引いた (開いたときの 12 時間ごと・設定の「確かめる」) とき。そのときは数えずにもう一度取りに行く
+ */
+enum class Prefetch { Reuse, Download, Offer }
+
+fun prefetchPlan(cached: Boolean, hasSums: Boolean, failures: Int, fresh: Boolean): Prefetch = when {
+    cached -> Prefetch.Reuse
+    !hasSums -> Prefetch.Offer
+    fresh || failures < MAX_SILENT_FAILURES -> Prefetch.Download
+    else -> Prefetch.Offer
+}
+
+/**
+ * 裏で取れなかったあと、知らせ (「v0.4.0 があります」、押すと取ってくる) を出すか。
+ * 黙っているのは、開いたときの裏の取り込みが続けて [MAX_SILENT_FAILURES] 回より少なく失敗したときだけ
+ * (次に確かめたときに取り直す)。設定で「確かめる」を押したときは、見ているので出す
+ */
+fun offerAfterFailure(failures: Int, manual: Boolean): Boolean = manual || failures >= MAX_SILENT_FAILURES
+
+const val MAX_SILENT_FAILURES = 3
+
+/**
+ * 確かめた APK を版ごとに置くところ (`<root>/<版>/<APK>`)。APK の隣に、照らした SHA256SUMS の行 (`<APK>.sha256`) と
+ * 裏で取れなかった回数 (`failures`) を置く。開き直したときは隣の行とハッシュを計り直して照らし、合えば取り直さない
+ */
+class ApkCache(private val root: File) {
+    fun dir(update: Update) = File(root, update.version)
+
+    /** 確かめた APK。無い・途中まで・合わない (中身が変わった) ときは null (合わないものは消す) */
+    fun verified(update: Update): File? {
+        val dir = dir(update)
+        val apk = File(dir, update.apkName)
+        val sum = File(dir, sumName(update.apkName))
+        if (!apk.isFile || !sum.isFile) return null
+        val expected = parseSha256Sums(sum.readText())[update.apkName]
+        if (expected != null && sha256Hex(apk) == expected) return apk
+        apk.delete()
+        sum.delete()
+        return null
+    }
+
+    /** `keep` の版のほかは捨てる (古い版・入れ終えた版・もっと新しい版が出て要らなくなった版)。null なら全部 */
+    fun prune(keep: Update?) {
+        root.listFiles()?.forEach { if (keep == null || it.name != keep.version) it.deleteRecursively() }
+    }
+
+    fun failures(update: Update): Int =
+        File(dir(update), FAILURES).takeIf { it.isFile }?.readText()?.trim()?.toIntOrNull() ?: 0
+
+    /** 裏で取れなかった。数えた回数を返す */
+    fun recordFailure(update: Update): Int {
+        val count = failures(update) + 1
+        dir(update).mkdirs()
+        File(dir(update), FAILURES).writeText(count.toString())
+        return count
+    }
+
+    fun clearFailures(update: Update) {
+        File(dir(update), FAILURES).delete()
+    }
+
+    companion object {
+        private const val FAILURES = "failures"
+
+        fun sumName(apkName: String) = "$apkName.sha256"
+    }
+}
 
 /**
  * GitHub のリリースを引き、APK を取ってくる。`api` は手元のテストで差し替える
@@ -134,7 +224,8 @@ class UpdateSource(private val api: String = "https://api.github.com/repos/danyt
 
     /**
      * APK を `dir` に取ってきて、SHA256SUMS と照らす。合わなければ (無ければ) 消して `UpdateRejected`。
-     * `progress` は 0..100 (大きさが分からなければ呼ばない)
+     * 合えば隣に照らした行 (`<APK>.sha256`) を置く (`ApkCache.verified` が開き直したときに照らし直す)。
+     * 途中は `<APK>.part` に書くので、落ちても半端な APK は残らない。`progress` は 0..100 (大きさが分からなければ呼ばない)
      */
     fun download(update: Update, dir: File, progress: (Int) -> Unit): File {
         // 先にハッシュを取る (無いリリースのために大きな APK を落とさない)
@@ -146,6 +237,10 @@ class UpdateSource(private val api: String = "https://api.github.com/repos/danyt
 
         dir.mkdirs()
         val file = File(dir, update.apkName)
+        val sum = File(dir, ApkCache.sumName(update.apkName))
+        val part = File(dir, "${update.apkName}.part")
+        sum.delete()
+        file.delete()
         val digest = MessageDigest.getInstance("SHA-256")
         val connection = URI(update.apkUrl).toURL().openConnection() as HttpURLConnection
         try {
@@ -156,7 +251,7 @@ class UpdateSource(private val api: String = "https://api.github.com/repos/danyt
             if (code !in 200..299) throw IOException("APK を取れません ($code)")
             val total = connection.contentLengthLong.takeIf { it > 0 } ?: update.size
             connection.inputStream.use { input ->
-                file.outputStream().use { output ->
+                part.outputStream().use { output ->
                     val buffer = ByteArray(64 * 1024)
                     var done = 0L
                     var last = -1
@@ -174,16 +269,21 @@ class UpdateSource(private val api: String = "https://api.github.com/repos/danyt
                 }
             }
         } catch (e: Exception) {
-            file.delete()
+            part.delete()
             throw e
         } finally {
             connection.disconnect()
         }
-        val actual = digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+        val actual = digest.digest().toHex()
         if (actual != expected) {
-            file.delete()
-            throw UpdateRejected("APK のハッシュが合わないので入れません (もう一度押すと取り直します)")
+            part.delete()
+            throw HashMismatch("APK のハッシュが合わないので入れません (もう一度押すと取り直します)")
         }
+        if (!part.renameTo(file)) {
+            part.delete()
+            throw IOException("APK を置けません")
+        }
+        sum.writeText("$expected  ${update.apkName}\n")
         return file
     }
 

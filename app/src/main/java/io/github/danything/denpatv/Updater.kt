@@ -12,11 +12,16 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import io.github.danything.denpatv.data.ApkCache
+import io.github.danything.denpatv.data.HashMismatch
+import io.github.danything.denpatv.data.Prefetch
 import io.github.danything.denpatv.data.Update
 import io.github.danything.denpatv.data.UpdateRejected
 import io.github.danything.denpatv.data.UpdateSource
 import io.github.danything.denpatv.data.Version
 import io.github.danything.denpatv.data.isDevBuild
+import io.github.danything.denpatv.data.offerAfterFailure
+import io.github.danything.denpatv.data.prefetchPlan
 import io.github.danything.denpatv.data.selectUpdate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,7 +40,13 @@ sealed interface UpdateState {
     /** 手元で焼いた版 (0.0.0-dev)。リリースと署名が違うので上げない */
     data class DevBuild(val latest: String?) : UpdateState
     data class CheckFailed(val message: String) : UpdateState
+    /** 新しい版がある。裏で取れなかった (取らない) ときの知らせで、押すと取ってきて入れる */
     data class Available(val update: Update) : UpdateState
+    /** 新しい版を見つけて、裏で取ってきて照らしている。**録画の一覧の頭には出さない** (設定にだけ進みを出す) */
+    data class Preparing(val update: Update, val percent: Int) : UpdateState
+    /** 照らし終えた APK が手元にある。押すとすぐ入れる */
+    data class Ready(val update: Update, val file: File) : UpdateState
+    /** 押してから取ってきている (裏で取れなかったとき) */
     data class Downloading(val update: Update, val percent: Int) : UpdateState
     /** 確かめた APK を入れている。`confirming` はテレビに確認の画面を出したところ */
     data class Installing(val update: Update, val file: File, val confirming: Boolean = false) : UpdateState
@@ -43,9 +54,10 @@ sealed interface UpdateState {
     data class Failed(val update: Update, val message: String, val file: File? = null) : UpdateState
 }
 
-/** 押せる1行に出す文。出さないときは null */
+/** 押せる1行に出す文。出さないときは null (裏で取ってきている間も出さない) */
 fun UpdateState.notice(): String? = when (this) {
     is UpdateState.Available -> "${update.label} があります"
+    is UpdateState.Ready -> "${update.label} を入れられます (押すと入れます)"
     is UpdateState.Downloading -> "${update.label} を取ってきています $percent%"
     is UpdateState.Installing ->
         if (confirming) "${update.label}: 出てきた確認の画面で入れてください" else "${update.label} を入れています…"
@@ -55,9 +67,11 @@ fun UpdateState.notice(): String? = when (this) {
 
 /**
  * アプリの中から新しい版に上げる (README の「アップデート」)。**設定は増やさない**: 開いたとき (12 時間に1回まで) に
- * GitHub のリリースを見て、新しければ録画の一覧の頭に1行出す。押すと取ってきて SHA256SUMS と照らし、
- * PackageInstaller のセッションで入れる (リリースは同じ鍵で署名しているので上書きで入る)。
- * 開いたときの確かめは、届かなくても黙っている (ログだけ)。設定の「確かめる」は出す
+ * GitHub のリリースを見て、新しければ**黙って裏で取ってきて SHA256SUMS と照らし**、照らし終えたら録画の一覧の頭に1行出す。
+ * 押すと PackageInstaller のセッションで入れる (リリースは同じ鍵で署名しているので上書きで入る)。
+ * 照らした APK は cache に版ごとに置き、開き直しても (ハッシュを計り直して合えば) 取り直さない。
+ * 開いたときの確かめと裏の取り込みは、届かなくても黙っている (ログだけ。次に確かめたときに取り直す)。
+ * 何度も取れなければ前のとおり「新しい版があります」を出し、押したら取ってくる。設定の「確かめる」は出す
  */
 class Updater(private val app: DenpaApp) {
     val current: String = BuildConfig.VERSION_NAME
@@ -65,7 +79,7 @@ class Updater(private val app: DenpaApp) {
 
     private val source = UpdateSource()
     private val json = Json { ignoreUnknownKeys = true }
-    private val dir get() = File(app.cacheDir, "update")
+    private val cache = ApkCache(File(app.cacheDir, "update"))
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> get() = _state
 
@@ -73,19 +87,17 @@ class Updater(private val app: DenpaApp) {
     fun checkOnStart() {
         if (dev) return
         app.scope.launch {
-            // 前に取ってきた APK (入れ終えた・やめた) は捨てる
-            if (_state.value == UpdateState.Idle) dir.deleteRecursively()
             val (at, saved) = app.settings.lastUpdateCheck()
             val now = System.currentTimeMillis()
             if (now - at in 0 until CHECK_INTERVAL_MS) {
-                // 確かめたばかり。そのとき見つけた版があれば (まだ上げていなければ) 知らせだけ出す
+                // 確かめたばかり。そのとき見つけた版があれば (まだ上げていなければ)、取ってある APK を使う (無ければ取ってくる)
                 val update = saved?.let { runCatching { json.decodeFromString(Update.serializer(), it) }.getOrNull() }
-                if (update != null && isNewer(update)) offer(update)
+                    ?.takeIf { isNewer(it) }
+                prepare(update, fresh = false, manual = false)
                 return@launch
             }
             try {
-                val update = fetch()
-                if (update != null) offer(update)
+                prepare(fetch(), fresh = true, manual = false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -96,28 +108,33 @@ class Updater(private val app: DenpaApp) {
 
     /** 設定の「アップデートを確かめる」。取ってきている・入れている間は何もしない */
     fun checkNow() {
-        val busy = _state.value.let { it is UpdateState.Checking || it is UpdateState.Downloading || it is UpdateState.Installing }
+        val busy = _state.value.let {
+            it is UpdateState.Checking || it is UpdateState.Preparing || it is UpdateState.Downloading || it is UpdateState.Installing
+        }
         if (busy) return
         _state.value = UpdateState.Checking
         app.scope.launch {
-            _state.value = try {
+            try {
                 if (dev) {
-                    UpdateState.DevBuild(selectUpdate(source.releases(), Version(0, 0, 0))?.label)
+                    _state.value = UpdateState.DevBuild(selectUpdate(source.releases(), Version(0, 0, 0))?.label)
                 } else {
-                    fetch()?.let { UpdateState.Available(it) } ?: UpdateState.UpToDate(latest)
+                    val update = fetch()
+                    if (update == null) _state.value = UpdateState.UpToDate(latest)
+                    prepare(update, fresh = true, manual = true)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "新しい版を確かめられませんでした", e)
-                UpdateState.CheckFailed("確かめられませんでした (${e.message ?: e.javaClass.simpleName})")
+                _state.value = UpdateState.CheckFailed("確かめられませんでした (${e.message ?: e.javaClass.simpleName})")
             }
         }
     }
 
-    /** 1行を押した: 取ってきて入れる。取ってきている間は何もしない */
+    /** 1行を押した: 入れる (照らした APK が無ければ取ってきてから)。取ってきている間は何もしない */
     fun act() {
         when (val state = _state.value) {
+            is UpdateState.Ready -> start(state.update, state.file.takeIf { it.exists() })
             is UpdateState.Available -> start(state.update, null)
             is UpdateState.Failed -> start(state.update, state.file?.takeIf { it.exists() })
             // 確認の画面を戻るで閉じると、OS から何も返らないことがある。押せばもう一度出す
@@ -125,6 +142,65 @@ class Updater(private val app: DenpaApp) {
             is UpdateState.Installing -> if (state.confirming) start(state.update, state.file.takeIf { it.exists() })
             else -> Unit
         }
+    }
+
+    /**
+     * 新しい版 `update` を見つけた (null なら無い)。ほかの版の APK を捨て、照らした APK があればそれで「入れられます」に、
+     * 無ければ裏で取ってきて照らす。取ってきている・入れている・知らせを押したあとは触らない
+     */
+    private fun prepare(update: Update?, fresh: Boolean, manual: Boolean) {
+        // 入れ終えた・もっと新しい版が出た・新しい版が無い: 要らない APK を捨てる
+        if (!settled(_state.value)) return
+        cache.prune(update)
+        if (update == null) return
+        val cached = cache.verified(update)
+        when (prefetchPlan(cached != null, update.sumsUrl != null, cache.failures(update), fresh)) {
+            Prefetch.Reuse -> claim(UpdateState.Ready(update, cached!!))
+            Prefetch.Offer -> claim(UpdateState.Available(update))
+            Prefetch.Download -> if (claim(UpdateState.Preparing(update, 0))) prefetch(update, manual)
+        }
+    }
+
+    /** 知らせを出したり裏で取り始めたりしてよいとき (ほかに何もしていない) */
+    private fun settled(state: UpdateState) = state is UpdateState.Idle || state is UpdateState.Checking ||
+        state is UpdateState.UpToDate || state is UpdateState.CheckFailed || state is UpdateState.Available || state is UpdateState.Ready
+
+    /** 何もしていなければ `next` にする。開いたときと「確かめる」が重なっても、2本取らない */
+    private fun claim(next: UpdateState): Boolean {
+        while (true) {
+            val now = _state.value
+            if (!settled(now)) return false
+            if (_state.compareAndSet(now, next)) return true
+        }
+    }
+
+    /** 裏で取ってきて照らす (app.scope の中で、いまのコルーチンのまま)。失敗はログだけで、次に確かめたときに取り直す */
+    private fun prefetch(update: Update, manual: Boolean) {
+        val file = try {
+            source.download(update, cache.dir(update)) { _state.value = UpdateState.Preparing(update, it) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: HashMismatch) {
+            Log.w(TAG, "${update.label} の APK のハッシュが合いません (消しました。次に確かめたときに取り直します)", e)
+            fallBack(update, manual)
+            return
+        } catch (e: UpdateRejected) {
+            // SHA256SUMS に名前が無いなど。取り直しても変わらないので知らせを出す (押すと断る文が出る)
+            Log.w(TAG, "${update.label} は入れられません: ${e.message}")
+            _state.value = UpdateState.Available(update)
+            return
+        } catch (e: Exception) {
+            Log.w(TAG, "${update.label} を裏で取れませんでした (次に確かめたときに取り直します)", e)
+            fallBack(update, manual)
+            return
+        }
+        cache.clearFailures(update)
+        _state.value = UpdateState.Ready(update, file)
+    }
+
+    private fun fallBack(update: Update, manual: Boolean) {
+        val failures = cache.recordFailure(update)
+        _state.value = if (offerAfterFailure(failures, manual)) UpdateState.Available(update) else UpdateState.Idle
     }
 
     private fun start(update: Update, downloaded: File?) {
@@ -137,8 +213,8 @@ class Updater(private val app: DenpaApp) {
         _state.value = if (downloaded == null) UpdateState.Downloading(update, 0) else UpdateState.Installing(update, downloaded)
         app.scope.launch {
             val file = downloaded ?: try {
-                dir.deleteRecursively()
-                source.download(update, dir) { _state.value = UpdateState.Downloading(update, it) }
+                source.download(update, cache.dir(update)) { _state.value = UpdateState.Downloading(update, it) }
+                    .also { cache.clearFailures(update) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: UpdateRejected) {
@@ -167,14 +243,6 @@ class Updater(private val app: DenpaApp) {
     private fun isNewer(update: Update): Boolean {
         val mine = Version.parse(current) ?: return false
         return (Version.parse(update.version) ?: return false) > mine
-    }
-
-    /** 知らせを出す。もう取ってきている・入れているときは触らない */
-    private fun offer(update: Update) {
-        val now = _state.value
-        if (now is UpdateState.Idle || now is UpdateState.UpToDate || now is UpdateState.Available) {
-            _state.value = UpdateState.Available(update)
-        }
     }
 
     private fun allowedToInstall(): Boolean =

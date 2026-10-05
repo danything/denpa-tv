@@ -1,17 +1,24 @@
 package io.github.danything.denpatv
 
+import io.github.danything.denpatv.data.ApkCache
 import io.github.danything.denpatv.data.GitHubAsset
 import io.github.danything.denpatv.data.GitHubRelease
+import io.github.danything.denpatv.data.HashMismatch
+import io.github.danything.denpatv.data.MAX_SILENT_FAILURES
+import io.github.danything.denpatv.data.Prefetch
 import io.github.danything.denpatv.data.Update
 import io.github.danything.denpatv.data.UpdateRejected
 import io.github.danything.denpatv.data.UpdateSource
 import io.github.danything.denpatv.data.Version
 import io.github.danything.denpatv.data.isDevBuild
+import io.github.danything.denpatv.data.offerAfterFailure
 import io.github.danything.denpatv.data.parseSha256Sums
+import io.github.danything.denpatv.data.prefetchPlan
 import io.github.danything.denpatv.data.selectUpdate
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -132,6 +139,9 @@ class UpdateTest {
         val file = UpdateSource(github.url()).download(update(), dir) { progress += it }
         assertEquals(apk, file.readText())
         assertEquals(100, progress.last())
+        // 照らした行を隣に置き、途中のファイルは残さない
+        assertEquals("${sha256(apk)}  denpa-tv-0.4.0.apk\n", dir.resolve("denpa-tv-0.4.0.apk.sha256").readText())
+        assertFalse(dir.resolve("denpa-tv-0.4.0.apk.part").exists())
         dir.deleteRecursively()
     }
 
@@ -142,8 +152,10 @@ class UpdateTest {
 
         github.enqueue("${sha256("別もの")}  denpa-tv-0.4.0.apk\n")
         github.enqueue("PK fake apk")
-        assertThrows(UpdateRejected::class.java) { source.download(update(), dir) {} }
+        assertThrows(HashMismatch::class.java) { source.download(update(), dir) {} }
         assertFalse(dir.resolve("denpa-tv-0.4.0.apk").exists())
+        assertFalse(dir.resolve("denpa-tv-0.4.0.apk.part").exists())
+        assertFalse(dir.resolve("denpa-tv-0.4.0.apk.sha256").exists())
 
         // SHA256SUMS に名前が無い
         github.enqueue("${sha256("x")}  denpa-tv-0.4.0-debug.apk\n")
@@ -154,5 +166,79 @@ class UpdateTest {
         github.requests.clear()
         assertTrue(github.requests.isEmpty())
         dir.deleteRecursively()
+    }
+
+    @Test
+    fun 照らした_APK_があれば取り直さない() {
+        // 手元にあれば (SHA256SUMS の有無や失敗の数にかかわらず) それを使う
+        assertEquals(Prefetch.Reuse, prefetchPlan(cached = true, hasSums = true, failures = 0, fresh = false))
+        assertEquals(Prefetch.Reuse, prefetchPlan(cached = true, hasSums = false, failures = 9, fresh = true))
+        // 無ければ裏で取る。SHA256SUMS の無いリリースは取らずに知らせだけ (押すと断る)
+        assertEquals(Prefetch.Download, prefetchPlan(cached = false, hasSums = true, failures = 0, fresh = false))
+        assertEquals(Prefetch.Offer, prefetchPlan(cached = false, hasSums = false, failures = 0, fresh = true))
+        // 何度も取れなければ、開くたびには取らず知らせだけ。GitHub を引き直したときはもう一度取る
+        assertEquals(Prefetch.Download, prefetchPlan(cached = false, hasSums = true, failures = MAX_SILENT_FAILURES - 1, fresh = false))
+        assertEquals(Prefetch.Offer, prefetchPlan(cached = false, hasSums = true, failures = MAX_SILENT_FAILURES, fresh = false))
+        assertEquals(Prefetch.Download, prefetchPlan(cached = false, hasSums = true, failures = MAX_SILENT_FAILURES, fresh = true))
+    }
+
+    @Test
+    fun 裏で取れないときは黙っていて_続けば知らせる() {
+        assertFalse(offerAfterFailure(1, manual = false))
+        assertFalse(offerAfterFailure(MAX_SILENT_FAILURES - 1, manual = false))
+        assertTrue(offerAfterFailure(MAX_SILENT_FAILURES, manual = false))
+        // 設定で「確かめる」を押したときは出す
+        assertTrue(offerAfterFailure(1, manual = true))
+    }
+
+    @Test
+    fun 取ってある_APK_を照らし直す() {
+        val root = Files.createTempDirectory("update").toFile()
+        val cache = ApkCache(root)
+        val update = update()
+        assertNull(cache.verified(update))
+
+        val apk = "PK fake apk"
+        github.enqueue("${sha256(apk)}  denpa-tv-0.4.0.apk\n")
+        github.enqueue(apk)
+        val file = UpdateSource(github.url()).download(update, cache.dir(update)) {}
+        assertEquals(file, cache.verified(update))
+
+        // 中身が変わっていたら使わずに消す
+        file.writeText("PK changed")
+        assertNull(cache.verified(update))
+        assertFalse(file.exists())
+        assertFalse(cache.dir(update).resolve("denpa-tv-0.4.0.apk.sha256").exists())
+
+        // 照らした行が無い (途中で落ちた) ものも使わない
+        file.writeText(apk)
+        assertNull(cache.verified(update))
+        root.deleteRecursively()
+    }
+
+    @Test
+    fun ほかの版の_APK_は捨てる() {
+        val root = Files.createTempDirectory("update").toFile()
+        val cache = ApkCache(root)
+        val old = Update("0.3.0", "denpa-tv-0.3.0.apk", "", null)
+        val new = update()
+        listOf(old, new).forEach { cache.dir(it).mkdirs(); cache.dir(it).resolve(it.apkName).writeText("x") }
+        // 前の作り (update/ の直下に APK)
+        root.resolve("denpa-tv-0.2.0.apk").writeText("x")
+
+        assertEquals(0, cache.failures(new))
+        assertEquals(1, cache.recordFailure(new))
+        assertEquals(2, cache.recordFailure(new))
+        cache.prune(new)
+        assertEquals(listOf("0.4.0"), root.list()!!.toList())
+        assertNotNull(cache.dir(new).resolve(new.apkName).takeIf { it.exists() })
+        assertEquals(2, cache.failures(new))
+        cache.clearFailures(new)
+        assertEquals(0, cache.failures(new))
+
+        // 新しい版が無い (入れ終えた) ときは全部
+        cache.prune(null)
+        assertEquals(emptyList<String>(), root.list()!!.toList())
+        root.deleteRecursively()
     }
 }
