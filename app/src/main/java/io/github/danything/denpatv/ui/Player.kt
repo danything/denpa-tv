@@ -2,7 +2,6 @@ package io.github.danything.denpatv.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.net.http.HttpEngine
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -46,12 +45,12 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.datasource.HttpEngineDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.ui.SubtitleView
+import io.github.danything.denpatv.data.EngineHttp
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.Http
@@ -61,7 +60,6 @@ import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
-import java.util.concurrent.Executor
 
 /**
  * 溜め方。**ライブは少なく溜めて、放送に近いところで観る。**
@@ -88,12 +86,10 @@ val LiveQuality.buffering: Buffering get() = if (this == LiveQuality.Raw) Buffer
  * どちらも `DefaultDataSource.Factory` で包む (http(s) 以外も同じ口で開けるように)。docs/libraries.md
  */
 @OptIn(UnstableApi::class)
-@SuppressLint("NewApi") // HttpEngine は hasHttpEngine() で確かめてから作る (DenpaApp.httpEngine)
-fun dataSourceFactory(context: Context, engine: HttpEngine?, executor: Executor, token: String?): DataSource.Factory {
+@SuppressLint("NewApi") // EngineHttp は hasHttpEngine() が通ったときしか作られない (DenpaApp.engineHttp)
+fun dataSourceFactory(context: Context, engine: EngineHttp?, token: String?): DataSource.Factory {
     val http: HttpDataSource.Factory = if (engine != null) {
-        HttpEngineDataSource.Factory(engine, executor)
-            .setConnectionTimeoutMs(Http.CONNECT_TIMEOUT_MS)
-            .setReadTimeoutMs(Http.READ_TIMEOUT_MS)
+        engine.factory()
     } else {
         DefaultHttpDataSource.Factory()
             .setConnectTimeoutMs(Http.CONNECT_TIMEOUT_MS)
@@ -115,15 +111,14 @@ fun authorizationHeaders(token: String?): Map<String, String> =
 @OptIn(UnstableApi::class)
 fun buildPlayer(
     context: Context,
-    engine: HttpEngine?,
-    executor: Executor,
+    engine: EngineHttp?,
     token: String?,
     buffering: Buffering,
     clock: TsClock,
     dualMono: DualMonoProcessor,
 ): ExoPlayer =
     ExoPlayer.Builder(context, DualMonoRenderersFactory(context, dualMono))
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory(context, engine, executor, token), clock))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory(context, engine, token), clock))
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(buffering.minMs, buffering.maxMs, buffering.startMs, buffering.afterRebufferMs)
@@ -298,7 +293,7 @@ data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono:
 fun rememberPlayer(repo: Repository, buffering: Buffering, onUnauthorized: () -> Unit = {}, clock: TsClock = remember { TsClock() }): PlayerHandle {
     val context = LocalContext.current
     val dualMono = remember(buffering) { DualMonoProcessor() }
-    val player = remember(buffering) { buildPlayer(context, repo.app.httpEngine, repo.app.httpExecutor, repo.token, buffering, clock, dualMono) }
+    val player = remember(buffering) { buildPlayer(context, repo.app.engineHttp, repo.token, buffering, clock, dualMono) }
     var error by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
