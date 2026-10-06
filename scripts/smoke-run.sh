@@ -23,17 +23,26 @@ adb logcat -v threadtime > "$out/logcat.txt" 2>&1 &
 logcat=$!
 trap 'kill $logcat 2>/dev/null || true' EXIT
 # am instrument は失敗しても 0 で戻るので、JUnit の締めの行 (OK (3 tests) / FAILURES!!!) で見る。
-# テストの APK ごと起き上がれないと 0 件のまま終わるので、1件以上通ったことも見る。
-# **固まっても待ち続けない** (`SMOKE_TIMEOUT` 秒で切る)。-r でテストごとの始まり・終わりも出すので、どこで止まったか分かる
-status=0
-timeout "${SMOKE_TIMEOUT:-480}" adb shell am instrument -w -r io.github.danything.denpatv.smoke/androidx.test.runner.AndroidJUnitRunner \
-    | tee "$out/instrument.txt" || status=$?
-if [ "$status" -eq 0 ] && grep -q '^OK ([1-9]' "$out/instrument.txt"; then
+# テストの APK ごと起き上がれないと 0 件のまま終わるので、1件以上通ったことも見る。-r でテストごとの始まり・終わりも出す。
+#
+# **adb shell が戻るのを待たない。** API 28 のエミュレータでは、テストが終わって am が閉じても (logcat に
+# 「run finished」も出る) adb shell が戻らず、そのまま adb ごと応えなくなることがあった (CI で 30 分待って切られた)。
+# 終わりの印 (INSTRUMENTATION_CODE) が出たら adb を待たずに読み終える。出ないまま `SMOKE_TIMEOUT` 秒たったら切る
+adb shell am instrument -w -r io.github.danything.denpatv.smoke/androidx.test.runner.AndroidJUnitRunner > "$out/instrument.txt" 2>&1 &
+instrument=$!
+deadline=$((SECONDS + ${SMOKE_TIMEOUT:-480}))
+while kill -0 "$instrument" 2>/dev/null && ! grep -q '^INSTRUMENTATION_CODE:' "$out/instrument.txt" && [ "$SECONDS" -lt "$deadline" ]; do
+    sleep 2
+done
+finished=$(grep -c '^INSTRUMENTATION_CODE:' "$out/instrument.txt" || true)
+kill "$instrument" 2>/dev/null || true
+cat "$out/instrument.txt"
+if grep -q '^OK ([1-9]' "$out/instrument.txt"; then
     exit 0
 fi
-[ "$status" -eq 124 ] && echo "am instrument が ${SMOKE_TIMEOUT:-480} 秒で終わりませんでした" | tee -a "$out/instrument.txt"
-# 止まったところの画面と、画面の部品の木 (どこで待っているかの手掛かり)
-adb exec-out screencap -p > "$out/screen.png" || true
-adb exec-out uiautomator dump /dev/tty > "$out/window.xml" 2>/dev/null || true
-adb shell dumpsys activity activities > "$out/activities.txt" 2>&1 || true
+[ "$finished" -eq 0 ] && echo "am instrument が ${SMOKE_TIMEOUT:-480} 秒で終わりませんでした" | tee -a "$out/instrument.txt"
+# 止まったところの画面と、画面の部品の木 (どこで待っているかの手掛かり)。adb が応えないこともあるので、どれも待ちすぎない
+timeout 30 adb exec-out screencap -p > "$out/screen.png" || true
+timeout 30 adb exec-out uiautomator dump /dev/tty > "$out/window.xml" 2>/dev/null || true
+timeout 30 adb shell dumpsys activity activities > "$out/activities.txt" 2>&1 || true
 exit 1
