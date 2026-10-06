@@ -46,7 +46,7 @@ import kotlinx.coroutines.launch
  *
  * - 左右で 10 秒戻す・送る、決定で止める・動かす (キーの割り当ては data/Remote.kt と README の「操作」)
  * - **下でシークバー** (左右で 10 秒ずつ。CM は色を変えて出す)、下でその下の操作の列へ
- * - **上 (か決定の長押し・Menu) で操作の列**: 再生 / 一時停止、前へ・次へ (チャプター)、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
+ * - **上 (か決定の長押し・Menu) で操作の列**。帯の中は上下で操作の列とシークバーを行き来し、**シークバー (いちばん上) から上で閉じる**。操作の列: 再生 / 一時停止、前へ・次へ (チャプター)、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
  *   **CM 飛ばし** (既定で入。ロゴで CM を判定できなかった録画は切で始まる)、**字幕**・**音声** (あれば)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
  *   動いている間は 5 秒触らなければ閉じる。戻るでも閉じる。緑のボタンは速さを1段送る
  * - リモコンの次へ・前へでチャプター送り
@@ -350,7 +350,8 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
                     "" to listOf(deleteControl),
                 ),
                 header = { actions ->
-                    ProgressLine(at, total ?: 0, chapters, seekFocus, down = actions) { direction -> step(direction) }
+                    // シークバーが帯のいちばん上の列。そこで上キーを押すと閉じて映像に戻る (ライブのメニューの操作の列と同じ)
+                    ProgressLine(at, total ?: 0, chapters, seekFocus, down = actions, onUp = { bar = null }) { direction -> step(direction) }
                 },
                 focusActions = which == Bar.Actions,
                 onActivity = { touched = System.nanoTime() },
