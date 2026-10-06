@@ -55,7 +55,13 @@ object Images {
         val key = "$url@blur"
         cache.get(key)?.let { return it }
         val small = decode(fetch(url, token) ?: return null, BLUR_WIDTH, BLUR_HEIGHT, opaque = false) ?: return null
-        val exact = if (small.width == BLUR_WIDTH && small.height == BLUR_HEIGHT) small else small.scale(BLUR_WIDTH, BLUR_HEIGHT)
+        // 覆う大きさに読んであるので、真ん中を切り出す (16:9 でない絵も縦横比を崩さない)。足りなければ引き伸ばす
+        val exact = when {
+            small.width == BLUR_WIDTH && small.height == BLUR_HEIGHT -> small
+            small.width >= BLUR_WIDTH && small.height >= BLUR_HEIGHT ->
+                Bitmap.createBitmap(small, (small.width - BLUR_WIDTH) / 2, (small.height - BLUR_HEIGHT) / 2, BLUR_WIDTH, BLUR_HEIGHT)
+            else -> small.scale(BLUR_WIDTH, BLUR_HEIGHT)
+        }
         val pixels = IntArray(BLUR_WIDTH * BLUR_HEIGHT)
         exact.getPixels(pixels, 0, BLUR_WIDTH, 0, 0, BLUR_WIDTH, BLUR_HEIGHT)
         repeat(BLUR_PASSES) { boxBlur(pixels, BLUR_WIDTH, BLUR_HEIGHT, BLUR_RADIUS) }

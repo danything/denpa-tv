@@ -232,10 +232,8 @@ fun RecordingsScreen(
                                     RecordingCard(
                                         repo,
                                         recording,
-                                        modifier = Modifier.focusRequester(requester).onSizeChanged {
-                                            cardSize[0] = it.width
-                                            cardSize[1] = it.height
-                                        }.onFocusChanged {
+                                        cardSize = cardSize,
+                                        modifier = Modifier.focusRequester(requester).onFocusChanged {
                                             if (it.isFocused) {
                                                 lastFocused = recording.id
                                                 focusedCard = recording.id
@@ -456,6 +454,8 @@ private fun Badge(label: String, background: Color, color: Color) {
 private fun RecordingCard(
     repo: Repository,
     recording: Recording,
+    /** 絵の大きさ (px) を書いておく所 (先読みを、絵と同じ大きさ = 同じ覚えの鍵で読むため) */
+    cardSize: IntArray,
     modifier: Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -474,7 +474,12 @@ private fun RecordingCard(
             border = CardDefaults.border(focusedBorder = Focus.border(shape)),
             glow = CardDefaults.glow(focusedGlow = Focus.glow),
         ) {
-            Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier.fillMaxSize().onSizeChanged {
+                    cardSize[0] = it.width
+                    cardSize[1] = it.height
+                },
+            ) {
                 RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxSize(), repo.token, opaque = true)
                 Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (recording.recording) Badge(RECORDING_BADGE, Palette.Recording, Color.White)
