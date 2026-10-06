@@ -47,6 +47,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import androidx.tv.material3.MaterialTheme
@@ -62,6 +66,8 @@ data class Control(
     val icon: Int? = null,
     /** 開いたときにここに合わせる (無ければ、入っているものの1つ目) */
     val initial: Boolean = false,
+    /** 読み上げの名前。札を短くしたもの (「前へ」) だけ、略さない名前 (「前のチャプター」) を付ける。null なら `label` */
+    val description: String? = null,
     val onClick: () -> Unit,
 )
 
@@ -107,31 +113,27 @@ fun BoxScope.ControlBar(
             if (!inside) runCatching { first.requestFocus() }
         }
     }
-    var focused = false
-    Column(
+    BottomPanel(
         Modifier
-            .align(Alignment.BottomStart)
-            .fillMaxWidth()
-            .background(SCRIM)
             .onFocusChanged { inside = it.hasFocus }
             .onPreviewKeyEvent { onActivity(); false }
             // 決定の長押しで開くので、押し続けている決定の続きと離しで札が押されないように (押し直したら効く)
-            .ignoreHeldCenter()
-            .padding(start = 48.dp, end = 48.dp, top = 48.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .ignoreHeldCenter(),
+        spacing = 6.dp,
     ) {
-        title.lines().forEachIndexed { index, line ->
-            Text(
-                line,
-                style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
-                color = if (index == 0) Color.White else Color(0xFFD0D0D0),
-            )
-        }
+        TitleLines(title)
         header?.invoke(this, first)
-        // 狭い画面ではみ出したら、合わせたものが見えるところまで横に送る
+        /** 開いたときに合わせる札を、もう決めたか (組み直すたびに数え直す) */
+        var focused = false
+        /*
+         * **1080p・720p (どちらも 960dp 幅) で1行に収める。** 札は短く (「前へ」「次へ」)、組の間も詰める。
+         * それでもはみ出したら (音声の名前が長い・「もう一度押すと削除」・文字を大きくしたテレビ)、合わせたものが
+         * 見えるところまで横に送る
+         */
         Row(
-            Modifier.offset(x = (-6).dp).horizontalScroll(rememberScrollState()).padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            // 合わせた札は少し膨らむ (1.1 倍) ので、横に送る枠で切れないよう両脇を空けておく (左の端は帯の端に揃える)
+            Modifier.offset(x = (-10).dp).horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(GROUP_GAP),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 空の組 (字幕も音声も無いときの組など) は並べない。間が空きすぎる
@@ -158,13 +160,51 @@ fun BoxScope.ControlBar(
 /** 帯の中に合いがあるか見張る間 (ミリ秒) */
 private const val HOLD_FOCUS_MS = 300L
 
+/** 組 (再生・速さ・CM 飛ばし・字幕と音声・削除) の間。札の間 (6dp) より広く、区切りが分かるだけ */
+private val GROUP_GAP = 14.dp
+
+/** 帯の上の透かしの高さ。ここは映像が透けて見えるだけなので、字幕が乗ってもよい (`rememberCoverReport`) */
+val SCRIM_TOP = 48.dp
+
+/**
+ * 下の端に重ねる板 (操作の帯・知らせ)。下から薄く暗くし、**高さを字幕に知らせる** (`PlayerFrame` の中なら、字幕がこの上へ逃げる。
+ * `rememberCoverReport`)。下の端に何か出すときは、これを使う (知らせ忘れると字幕が隠れる)
+ */
+@Composable
+fun BoxScope.BottomPanel(modifier: Modifier = Modifier, spacing: Dp, content: @Composable ColumnScope.() -> Unit) {
+    val cover = rememberCoverReport(skipTop = SCRIM_TOP)
+    Column(
+        Modifier
+            .align(Alignment.BottomStart)
+            .fillMaxWidth()
+            .background(SCRIM)
+            .onSizeChanged(cover)
+            .then(modifier)
+            .padding(start = 48.dp, end = 48.dp, top = SCRIM_TOP, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(spacing),
+        content = content,
+    )
+}
+
+/** 板の題。1行目は白く、2行目からは小さく (番組名・位置など) */
+@Composable
+fun TitleLines(text: String) {
+    text.lines().forEachIndexed { index, line ->
+        Text(
+            line,
+            style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
+            color = if (index == 0) Color.White else Color(0xFFD0D0D0),
+        )
+    }
+}
+
 /** 下から薄く暗くする (映像の上でも文字が読めるだけ。上は透かす) */
 val SCRIM = Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000), Color(0xCC000000)))
 
 /** 印つきの小さな札。入っているものは塗る */
 @Composable
 private fun Chip(control: Control, modifier: Modifier) {
-    val padding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+    val padding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
     val content: @Composable RowScope.() -> Unit = {
         control.icon?.let {
             Icon(painterResource(it), contentDescription = null, modifier = Modifier.size(18.dp))
@@ -183,9 +223,10 @@ private fun Chip(control: Control, modifier: Modifier) {
     } else {
         OutlinedButtonDefaults.colors()
     }
+    val named = control.description?.let { name -> Modifier.semantics { contentDescription = name } } ?: Modifier
     OutlinedButton(
         onClick = control.onClick,
-        modifier = modifier.heightIn(min = 32.dp).wrapContentWidth(unbounded = true),
+        modifier = modifier.heightIn(min = 32.dp).wrapContentWidth(unbounded = true).then(named),
         contentPadding = padding,
         colors = colors,
         content = content,

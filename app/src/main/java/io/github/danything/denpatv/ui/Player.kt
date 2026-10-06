@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +56,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
+import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -187,7 +189,8 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
  * 取り戻す** (閉じたものが消える間・帯が勝手に消えたとき・端末によって遅れて合いが外れる場合も)。
  * 開いている間と、画面を離れるとき (一覧に戻る間に一覧が合いを取るので、取り返さない) は `active = false`
  *
- * 字幕は `SubtitleView` (View) で出す。焼いたものの字幕は PGS (絵) で、Compose の部品はまだ絵の字幕を描けない
+ * 字幕は `SubtitleView` (View) で出す。焼いたものの字幕は PGS (絵) で、Compose の部品はまだ絵の字幕を描けない。
+ * **字幕は、下に重ねたもの (知らせ・`above` の帯やメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -212,6 +215,25 @@ fun PlayerFrame(
     val center = remember { CenterPress() }
     /** 映像そのものに合っているか */
     var focused by remember { mutableStateOf(false) }
+    /** 下に重ねたものの高さ。字幕をその上へ逃がす */
+    val insets = remember { OverlayInsets() }
+    val inset = rememberCaptionInset(insets)
+    /** いま出している字幕 (`SubtitleView` に渡し、どこまで逃がすかも見る) */
+    var cues by remember { mutableStateOf(emptyList<Cue>()) }
+    val captionSpan = remember { { width: Int, height: Int -> cueSpan(cues, width, height) } }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onCues(cueGroup: CueGroup) {
+                cues = cueGroup.cues
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            // プレーヤーを作り直したら、前のプレーヤーの字幕を残さない
+            cues = emptyList()
+        }
+    }
     LaunchedEffect(active) {
         center.reset()
         if (!active) return@LaunchedEffect
@@ -247,47 +269,36 @@ fun PlayerFrame(
     ) {
         PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
         AndroidView(
-            factory = { context ->
-                SubtitleView(context).also { view ->
-                    player.addListener(object : Player.Listener {
-                        override fun onCues(cueGroup: CueGroup) = view.setCues(cueGroup.cues)
-                    })
-                }
-            },
+            factory = ::SubtitleView,
             /*
              * **流している間は画面を点けたままにする** (スクリーンセーバーを出さない)。この画面の View に付けるので、
              * 画面を離れれば一緒に外れる (ComposeView に付けると、次の画面と取り合って消し合う)
              */
-            update = { view -> view.keepScreenOn = loading.awake },
+            update = { view ->
+                view.keepScreenOn = loading.awake
+                view.setCues(cues)
+            },
             // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
             onReset = { view -> view.keepScreenOn = false },
             onRelease = { view -> view.keepScreenOn = false },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().liftCaptions(inset, captionSpan),
         )
-        captions?.let { RawCaptionLayer(it) }
+        captions?.let { RawCaptionLayer(it, inset) }
         if (error == null) LoadingVeil(loading, busyLabel)
-        val text = error ?: overlay
-        if (text != null) {
-            // 操作の帯と同じく、下の端に小さく (下から薄く暗くするだけ)
-            Column(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .background(SCRIM)
-                    .padding(start = 48.dp, end = 48.dp, top = 48.dp, bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                text.lines().forEachIndexed { index, line ->
-                    Text(
-                        line,
-                        style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
-                        color = if (index == 0) Color.White else Color(0xFFD0D0D0),
-                    )
-                }
-                if (error == null) progress?.let { (at, length) -> ProgressLine(at, length) }
-            }
+        CompositionLocalProvider(LocalOverlayInsets provides insets) {
+            Notice(error ?: overlay, if (error == null) progress else null)
+            above()
         }
-        above()
+    }
+}
+
+/** 下の端に出す知らせ。操作の帯と同じく、下の端に小さく (下から薄く暗くするだけ) */
+@Composable
+private fun BoxScope.Notice(text: String?, progress: Pair<Long, Long>?) {
+    if (text == null) return
+    BottomPanel(spacing = 4.dp) {
+        TitleLines(text)
+        progress?.let { (at, length) -> ProgressLine(at, length) }
     }
 }
 

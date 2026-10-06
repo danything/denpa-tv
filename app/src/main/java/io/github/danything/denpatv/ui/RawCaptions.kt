@@ -36,6 +36,7 @@ import io.github.danything.denpatv.data.CaptionFrame
 import io.github.danything.denpatv.data.CueTimeline
 import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.Unauthorized
+import io.github.danything.denpatv.data.inkRows
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
@@ -115,8 +116,11 @@ class TsClock(private val inner: DefaultExtractorsFactory = DefaultExtractorsFac
 private const val CANVAS_WIDTH = 1920f
 private const val CANVAS_HEIGHT = 1080f
 
-/** 解いた字幕の絵と置き場所 */
-class CaptionPicture(val bitmap: ImageBitmap, val cue: CaptionCue)
+/**
+ * 解いた字幕の絵と置き場所。`ink` は何か描いてある行の上の端と下の端 (絵の中の行。画面まるごとの絵で届くので、
+ * 帯の上へ逃がすときに字の在りかを見る。`inkRows`)。何も描いていなければ null
+ */
+class CaptionPicture(val bitmap: ImageBitmap, val cue: CaptionCue, val ink: Pair<Int, Int>?)
 
 /** 生の TS の字幕の、画面に出すぶん */
 class RawCaptionState {
@@ -276,16 +280,27 @@ private suspend fun follow(url: URI, token: String?, state: RawCaptionState, kee
     }
 }
 
-/** 絵を解く。PNG は RGBA で、1920x1080 まるごと */
+/** 絵を解く。PNG は RGBA で、1920x1080 まるごと。字のある行もここで探す (上と下から見て、字に当たったら止める) */
 private suspend fun decode(cue: CaptionCue): CaptionPicture? = withContext(Dispatchers.Default) {
-    BitmapFactory.decodeByteArray(cue.png, 0, cue.png.size)?.let { CaptionPicture(it.asImageBitmap(), cue) }
+    BitmapFactory.decodeByteArray(cue.png, 0, cue.png.size)?.let { bitmap ->
+        val ink = inkRows(bitmap.width, bitmap.height) { y, rows, into -> bitmap.getPixels(into, 0, bitmap.width, 0, y, bitmap.width, rows) }
+        CaptionPicture(bitmap.asImageBitmap(), cue, ink)
+    }
 }
 
 /** 字幕の絵を映像の枠に重ねる。映像は枠いっぱいに伸ばして出している (`PlayerFrame`) ので、絵も枠いっぱいに伸ばす */
 @Composable
-fun RawCaptionLayer(state: RawCaptionState) {
+fun RawCaptionLayer(state: RawCaptionState, inset: () -> Float) {
     val picture = state.picture ?: return
-    Canvas(Modifier.fillMaxSize()) {
+    // 下に重ねたもの (帯・メニュー) があれば、字のある行がその上に来るまで持ち上げる
+    val lifted = Modifier.fillMaxSize().liftCaptions(inset) { _, height ->
+        picture.ink?.let { (top, bottom) ->
+            val scale = picture.cue.height.toFloat() / picture.bitmap.height * height / CANVAS_HEIGHT
+            val y = picture.cue.y * height / CANVAS_HEIGHT
+            y + top * scale to y + bottom * scale
+        }
+    }
+    Canvas(lifted) {
         val sx = size.width / CANVAS_WIDTH
         val sy = size.height / CANVAS_HEIGHT
         val cue = picture.cue
