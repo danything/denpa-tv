@@ -208,25 +208,3 @@ jobs:
             smoke-results/
             apks/app/build/outputs/mapping/minified/mapping.txt
 
-  # 一時: Gradle のヒープ・GC で R8 が速くなるか測る
-  apks-probe:
-    name: apks-probe (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: default, jvmargs: "-Xmx3g -Dfile.encoding=UTF-8" }
-          - { name: 6g-parallel, jvmargs: "-Xmx6g -XX:+UseParallelGC -Dfile.encoding=UTF-8" }
-          - { name: 8g-g1, jvmargs: "-Xmx8g -Dfile.encoding=UTF-8" }
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '25'
-      - uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-read-only: true
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-      - run: ./gradlew :app:assembleMinified :smoke:assembleMinified -x lintVitalMinified --console=plain "-Dorg.gradle.jvmargs=${{ matrix.jvmargs }}"
