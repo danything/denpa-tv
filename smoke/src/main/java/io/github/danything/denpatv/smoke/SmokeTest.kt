@@ -56,7 +56,8 @@ class SmokeTest {
 
     /**
      * ライブのキーとメニュー。**左右で局を送る** (右で次の局を、左で元の局を denpa に頼む)。**決定の長押しは局と番組を出す**
-     * (メニューは開かない。離しても決定にならない)。**上で、局の列のいま映している局に合わせてメニューが開く。** 決定で操作の列と局の列が開き、「録画」で denpa にいまの番組を予約する。**戻るでメニューだけが閉じ**
+     * (メニューは開かない。離しても決定にならない)。**上で、局の列のいま映している局に合わせてメニューが開く。**
+     * 局の列から上キーを押し続けても操作の列で止まり (閉じない)、**操作の列でもう一度上を押すと閉じて映像に戻る**。決定で操作の列と局の列が開き、「録画」で denpa にいまの番組を予約する。**戻るでメニューだけが閉じ**
      * (画面ごと戻らない。Android 12 以前では戻るキーが合いを外へ出すのに使われ、閉じずに合いだけが抜けていた)、
      * もう一度の戻るでいちばん上のメニューへ (「ライブ」に合う)。流している間は画面を点けたまま (スクリーンセーバーを出さない)、
      * ホームに出たら流れを閉じ、戻ったら頼み直す
@@ -90,8 +91,21 @@ class SmokeTest {
             "上で開いたメニューが、いま映している局に合っていません: ${focusedTexts()}",
             poll(TEXT_TIMEOUT_MS) { focusedTexts().any { FakeDenpa.SERVICE_NAME in it } },
         )
-        press(KeyEvent.KEYCODE_BACK)
-        assertTrue("戻るでメニューが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "地上波" !in texts() })
+        /*
+         * 局の列から上キーを押し続けて操作の列へ上がっても閉じない (操作の列に届くのは繰り返しと離しだけ。押しはじめを見ていない)。
+         * 合いが移ったかは画面の木では見ない (Compose の入力の合いは、局の札から札へ移っても古いまま返ることがある)。
+         * 続けて上をもう1回押して閉じれば、操作の列 (いちばん上) に居たことになる (局の列のままなら、上がるだけで閉じない)。
+         * メニューは 8 秒触らなければ閉じるので、待つのは MENU_WAIT_MS まで (勝手に閉じたのを上キーで閉じたと取り違えない)
+         */
+        holdKey(KeyEvent.KEYCODE_DPAD_UP, HOLD_REPEATS)
+        SystemClock.sleep(FOCUS_SETTLE_MS)
+        assertTrue("局の列から上キーを押し続けたら、メニューが閉じました: ${texts()}", "地上波" in texts())
+        // 操作の列でもう一度上を押すと閉じて、映像に戻る (閉じたあとの映像が上キーでメニューを開き直さない)
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertTrue("操作の列で上を押してもメニューが閉じません: ${texts()}", poll(MENU_WAIT_MS) { "地上波" !in texts() })
+        awaitVideo(LIVE_COLOR)
+        SystemClock.sleep(MENU_WAIT_MS)
+        assertTrue("上で閉じたメニューが開き直しました: ${texts()}", "地上波" !in texts())
 
         openMenu()
         val record = node { it.text?.toString() == "録画" }?.let(::clickable) ?: throw AssertionError("「録画」がありません: ${texts()}")
@@ -177,12 +191,42 @@ class SmokeTest {
     /** アプリが logcat に出した繋ぎ直しの記録 (タグ denpa) */
     private fun appLog(): String = shell("logcat -d -s denpa:I")
 
+    /**
+     * 録画を映す。帯は**上で操作の列に合って開き、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる**。
+     * 下で開いたシークバーからも上で閉じる。偽の録画は 10 秒しかないので、映ったらすぐ止めてから見る
+     * (止めている間は帯が勝手に閉じないので、上キーで閉じたのと取り違えない)
+     */
     @Test
     fun recording() = watching {
         open("denpa://recording/${FakeDenpa.RECORDING_ID}")
         awaitVideo(RECORDING_COLOR)
         assertRequested("GET /api/recordings/${FakeDenpa.RECORDING_ID}/file")
+
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue("決定で止まりません: ${texts()}", poll(TEXT_TIMEOUT_MS) { paused() })
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertTrue("上で操作の列に合いません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { barOpen() && "再生" in focusedTexts() })
+        // 操作の列から上でシークバーへ (閉じない)。シークバーに居たかは、次の上で閉じることで見る (画面の木の合いは古いことがある)
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        SystemClock.sleep(FOCUS_SETTLE_MS)
+        assertTrue("操作の列から上で帯が閉じました: ${texts()}", barOpen())
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertTrue("シークバーで上を押しても帯が閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { !barOpen() })
+        assertTrue("帯を閉じたら止めた位置の帯が出ていません (画面ごと戻った?): ${texts()}", paused())
+
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertTrue("下でシークバーが開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { barOpen() })
+        SystemClock.sleep(FOCUS_SETTLE_MS)
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertTrue("下で開いたシークバーで上を押しても帯が閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { !barOpen() })
+        assertTrue("帯を閉じたら止めた位置の帯が出ていません: ${texts()}", paused())
     }
+
+    /** 録画を止めている (止めた位置の帯が出ている) */
+    private fun paused() = texts().any { it.startsWith("一時停止  ") }
+
+    /** 録画の帯 (操作の列) が開いている */
+    private fun barOpen() = texts().any { it.startsWith("CM 飛ばし") }
 
     /** 録画の一覧から、左のメニュー (ナビゲーション ドロワー) で設定を開く */
     @Test
@@ -281,6 +325,21 @@ class SmokeTest {
             val event = KeyEvent(at, SystemClock.uptimeMillis(), action, code, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
             instrumentation.uiAutomation.injectInputEvent(event, true)
         }
+    }
+
+    /** 押し続ける: 押して、繰り返しを `repeats` 回送ってから離す (リモコンで押し続けたときと同じ並び) */
+    private fun holdKey(code: Int, repeats: Int) {
+        val at = SystemClock.uptimeMillis()
+        fun send(action: Int, repeat: Int) {
+            val event = KeyEvent(at, SystemClock.uptimeMillis(), action, code, repeat, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
+            instrumentation.uiAutomation.injectInputEvent(event, true)
+        }
+        send(KeyEvent.ACTION_DOWN, 0)
+        for (repeat in 1..repeats) {
+            SystemClock.sleep(REPEAT_MS)
+            send(KeyEvent.ACTION_DOWN, repeat)
+        }
+        send(KeyEvent.ACTION_UP, 0)
     }
 
     /** 長押し: 押して、長押しの印つきの繰り返しを送ってから離す (リモコンで押し続けたときと同じ並び) */
@@ -440,5 +499,10 @@ class SmokeTest {
         private const val TEST_TIMEOUT_S = 150L
         private const val MENU_WAIT_MS = 3_000L
         private const val LONG_PRESS_MS = 700L
+        /** 押し続けたときの繰り返しの数と間 (リモコンの繰り返しはおよそ 50 ミリ秒ごと) */
+        private const val HOLD_REPEATS = 6
+        private const val REPEAT_MS = 50L
+        /** キーで合いを移してから次のキーを送るまで (合わせる先が出来て合いが移り終えるのを待つ) */
+        private const val FOCUS_SETTLE_MS = 1_000L
     }
 }

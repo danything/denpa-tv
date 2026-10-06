@@ -101,6 +101,11 @@ fun BoxScope.ControlBar(
     holdFocus: Boolean = groups.any { it.second.isNotEmpty() },
     /** 操作の列の下に足すもの (ライブの局の列) */
     below: (@Composable ColumnScope.() -> Unit)? = null,
+    /**
+     * 操作の列で押した上キーで閉じる (`closeOnUp`)。**操作の列がいちばん上の列のときだけ渡す** (ライブのメニュー)。
+     * 上に合わせられるシークバーがある帯 (録画・追っかけ) では、上キーはシークバーへ上がるので渡さない (シークバーの `onUp` で閉じる)
+     */
+    onUp: (() -> Unit)? = null,
 ) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (focusActions) runCatching { first.requestFocus() } }
@@ -132,7 +137,11 @@ fun BoxScope.ControlBar(
          */
         Row(
             // 合わせた札は少し膨らむ (1.1 倍) ので、横に送る枠で切れないよう両脇を空けておく (左の端は帯の端に揃える)
-            Modifier.offset(x = (-10).dp).horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
+            Modifier
+                .offset(x = (-10).dp)
+                .closeOnUp(onUp)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(GROUP_GAP),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -235,7 +244,7 @@ private fun Chip(control: Control, modifier: Modifier) {
 
 /**
  * 進み具合の帯。`chapters` の CM は色を変えて出す。`onStep` を渡すと合わせられるシークバーになり、
- * 合っている間は左右で `onStep(-1 / 1)` (呼ぶ側が 10 秒ずつ動かす)。下で操作の列へ
+ * 合っている間は左右で `onStep(-1 / 1)` (呼ぶ側が 10 秒ずつ動かす)。下で操作の列へ、上で `onUp` (帯を閉じる。`closeOnUp`)
  */
 @Composable
 fun ProgressLine(
@@ -245,6 +254,8 @@ fun ProgressLine(
     focus: FocusRequester? = null,
     /** 下で合わせる先 (操作の列の最初。近いものに合うと、真ん中の札に飛んでしまう) */
     down: FocusRequester? = null,
+    /** シークバーで押した上キーで閉じる (帯のいちばん上の列なので) */
+    onUp: (() -> Unit)? = null,
     onStep: ((Int) -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -255,6 +266,7 @@ fun ProgressLine(
             .focusRequester(focus!!)
             .onFocusChanged { focused = it.isFocused }
             .focusProperties { down?.let { this.down = it } }
+            .closeOnUp(onUp)
             .onKeyEvent {
                 if (it.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (it.key) {
