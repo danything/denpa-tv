@@ -13,6 +13,7 @@ import java.net.SocketException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /**
@@ -27,6 +28,15 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
     private val pool = Executors.newCachedThreadPool()
     val requests = ConcurrentLinkedQueue<String>()
+
+    /**
+     * この数だけ、次のライブの要求に 503 を返す (denpa が入れ替わっている最中のつもり。アプリが待って頼み直すかを見る)。
+     * ライブの映像 (live.mp4) は 10 秒で終わる — denpa が流れを閉じた (番組の境目での焼き直し・再起動) のと同じに見える
+     */
+    val failLive = AtomicInteger(0)
+
+    /** この数だけ、次のライブの要求で映像を半分だけ送って黙る (チューナーのドライバが止まったつもり。アプリが見張りで気付くかを見る) */
+    val stallLive = AtomicInteger(0)
 
     /** アプリに覚えさせる繋ぐ先 */
     val url = "http://127.0.0.1:${server.localPort}/"
@@ -75,7 +85,15 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
             path == "/api/health" -> json(out, """{"ok":true}""")
             path == "/api/services" -> json(out, services())
             // 局送りの行き先も同じ映像を流す
-            live == SERVICE_ID || live == NEXT_SERVICE_ID -> media(out, "live.mp4", "video/mp4", range)
+            live == SERVICE_ID || live == NEXT_SERVICE_ID ->
+                // 黙るのが先 (黙らせてから 503 を返し続ける並びを作れるように)
+                if (stallLive.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) {
+                    stall(out, "live.mp4", "video/mp4")
+                } else if (failLive.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) {
+                    respond(out, 503, "text/plain", "restarting".toByteArray())
+                } else {
+                    media(out, "live.mp4", "video/mp4", range)
+                }
             path == "/api/services/$SERVICE_ID/record" && method == "POST" ->
                 json(out, """{"recorded":"$PROGRAM_TITLE","programId":1,"reserved":true}""")
             path == "/api/recordings" -> json(out, recordings())
@@ -83,6 +101,8 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
             recording != null && method == "POST" -> respond(out, 204, "text/plain", ByteArray(0))
             recording?.groupValues?.get(2) == "detail" -> json(out, """{"description":"偽の denpa の録画","extended":{}}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
+            // 追っかけはライブと同じ焼き方の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリは居た場所から頼み直す)
+            path == "/api/recordings/$CHASE_ID/chase" -> media(out, "live.mp4", "video/mp4", range)
             else -> respond(out, 404, "text/plain", "not found".toByteArray())
         }
     }
@@ -96,10 +116,14 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
         return "[${service(SERVICE_ID, SERVICE_NAME, 1, PROGRAM_TITLE)},${service(NEXT_SERVICE_ID, NEXT_SERVICE_NAME, 2, NEXT_PROGRAM_TITLE)}]"
     }
 
+    /** 録り終えた録画と、録っている最中の録画 (追っかけ。1時間後まで録る) */
     private fun recordings(): String {
-        val start = System.currentTimeMillis() - 86_400_000
+        val now = System.currentTimeMillis()
+        val start = now - 86_400_000
         return """[{"id":$RECORDING_ID,"title":"$RECORDING_TITLE","serviceName":"$SERVICE_NAME","startAt":$start,"durationMs":10000,
-            "files":[{"source":"encoded","codec":"h264","url":"api/recordings/$RECORDING_ID/file"}]}]"""
+            "files":[{"source":"encoded","codec":"h264","url":"api/recordings/$RECORDING_ID/file"}]},
+            {"id":$CHASE_ID,"title":"$CHASE_TITLE","serviceName":"$SERVICE_NAME","startAt":${now - 120_000},"endAt":${now + 3_600_000},
+            "recording":true,"chase":"api/recordings/$CHASE_ID/chase","files":[]}]"""
     }
 
     /** 知らせ (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る */
@@ -112,6 +136,18 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
                 out.write("event: ping\ndata: {}\n\n".toByteArray())
                 out.flush()
             }
+        } catch (_: InterruptedException) {
+        }
+    }
+
+    /** 長さを言わずに (denpa のライブと同じ) 半分だけ送り、閉じずに黙る */
+    private fun stall(out: OutputStream, asset: String, type: String) {
+        val bytes = assets.open(asset).use(InputStream::readBytes)
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\nConnection: close\r\n\r\n".toByteArray())
+        out.write(bytes, 0, bytes.size / 2)
+        out.flush()
+        try {
+            Thread.sleep(STALL_HOLD_MS)
         } catch (_: InterruptedException) {
         }
     }
@@ -167,6 +203,11 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
         const val NEXT_PROGRAM_TITLE = "偽の講座"
         const val RECORDING_ID = 1L
         const val RECORDING_TITLE = "偽の録画"
-        private val REASONS = mapOf(200 to "OK", 204 to "No Content", 206 to "Partial Content", 404 to "Not Found", 416 to "Range Not Satisfiable")
+        /** 録っている最中の録画 (追っかけで観る) */
+        const val CHASE_ID = 2L
+        const val CHASE_TITLE = "偽の録画中"
+        /** 黙っている長さ (アプリが見張りで気付いて頼み直すより十分長く) */
+        private const val STALL_HOLD_MS = 60_000L
+        private val REASONS = mapOf(200 to "OK", 204 to "No Content", 206 to "Partial Content", 404 to "Not Found", 503 to "Service Unavailable", 416 to "Range Not Satisfiable")
     }
 }

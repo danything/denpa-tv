@@ -48,6 +48,8 @@ import kotlinx.coroutines.launch
  *   8 秒触らなければ閉じる
  * - **録画** はいま観ている番組を denpa に予約する (ブラウザのライブの録画ボタンと同じ。何度押しても二重には録らない)
  * - 局を替えている間は前の局の絵を残し、長くかかったら (1.5 秒) 回るものと「選局しています」→「映像を待っています」を出す (PlayerFrame)
+ * - **切れたら (エラー・denpa が流れを閉じた・10 秒進まない) 同じ局を頼み直す** (`Recovery`)。前の絵を残し、1.5 秒たったら
+ *   回るものと「繋ぎ直しています」。待ちは 1 秒から倍々で 10 秒まで、回数の上限は無い。局が無い (404) などは理由を出して止める
  * - アプリが裏に回ったら (ホーム・別のアプリ) 止めて denpa から降りる (チューナーを空ける)。戻ったら同じ局を映し直す
  * - 情報キーと決定の長押しで、いまの局と番組を出す
  * - 何も開いていないときの戻るは、メニューの画面へ (「ライブ」に合う)
@@ -84,7 +86,17 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     var returns by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val clock = remember { TsClock() }
-    val (player, error, dualMono) = rememberPlayer(repo, buffering, onUnauthorized, clock)
+    /*
+     * **切れた・終わった・止まったら、同じ局を頼み直す** (`Recovery`。ブラウザのライブの `reconnect` と同じく何度でも、待ちを倍々に)。
+     * 頼み直すのは裏から戻ったときと同じ口 (`returns`)
+     */
+    val (player, error, dualMono, recovery) = rememberPlayer(
+        repo,
+        buffering,
+        onUnauthorized,
+        clock,
+        ReconnectPlan("live 局 ${playing?.id}", stream = true, endedIsLost = true) { returns++ },
+    )
     val (overlay, flash) = rememberFlash()
     // 生の TS の字幕は denpa が描いた絵を別の口で受け取る (焼いたものは映像に入っている)
     val captions = rememberRawCaptions(
@@ -138,6 +150,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         val service = playing ?: return@LaunchedEffect
         if (!baked.ready || background) return@LaunchedEffect
         val url = repo.url("${service.live}?codec=${quality.codec}${audioQuery(baked.audio)}") ?: return@LaunchedEffect
+        recovery.requested()
         player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
         player.prepare()
         player.playWhenReady = true
@@ -301,6 +314,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         progress = (stepping ?: current).now?.let { System.currentTimeMillis() - it.startAt to it.endAt - it.startAt },
         captions = captions,
         busyLabel = "選局しています",
+        recovery = recovery,
     ) {
         menu?.let { start ->
             val now = current.now

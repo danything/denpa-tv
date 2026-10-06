@@ -24,6 +24,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -74,6 +75,7 @@ import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.Http
 import io.github.danything.denpatv.data.LongPressGuard
 import io.github.danything.denpatv.data.LiveQuality
+import io.github.danything.denpatv.data.Reconnect
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -210,6 +212,8 @@ fun PlayerFrame(
     captions: RawCaptionState? = null,
     /** 映るまでの間に出す、何をしているか (ライブは「選局しています」)。流れが届いたら「映像を待っています」に替わる */
     busyLabel: String = "読み込んでいます",
+    /** 繋ぎ直しの様子 (`rememberPlayer` の `recovery`)。繋ぎ直している間は前の絵を残して「繋ぎ直しています」 */
+    recovery: Recovery? = null,
     above: @Composable BoxScope.() -> Unit = {},
 ) {
     val loading = rememberLoading(player)
@@ -278,7 +282,8 @@ fun PlayerFrame(
              * 画面を離れれば一緒に外れる (ComposeView に付けると、次の画面と取り合って消し合う)
              */
             update = { view ->
-                view.keepScreenOn = loading.awake
+                // 繋ぎ直している間も (点けっぱなしで戻ってきたときに映っていてほしい)
+                view.keepScreenOn = loading.awake || recovery?.active == true
                 view.setCues(cues)
             },
             // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
@@ -287,7 +292,7 @@ fun PlayerFrame(
             modifier = Modifier.fillMaxSize().liftCaptions(inset, captionSpan),
         )
         captions?.let { RawCaptionLayer(it, inset) }
-        if (error == null) LoadingVeil(loading, busyLabel)
+        if (error == null) LoadingVeil(loading, busyLabel, recovery)
         CompositionLocalProvider(LocalOverlayInsets provides insets) {
             Notice(error ?: overlay, if (error == null) progress else null)
             above()
@@ -364,15 +369,18 @@ private fun rememberLoading(player: ExoPlayer): LoadingState {
  * - 前の絵を残すのは `HOLD_MOST_MS` まで。それを過ぎたら暗くする (選局に失敗したのに前の局が止まって見えるのがいちばん悪い)
  * - まだ何も映していなければ (開いた直後)、すぐ回るものを出す
  *
- * 回るものの下に、いま何をしているかを1行 (「選局しています」→「映像を待っています」)
+ * 回るものの下に、いま何をしているかを1行 (「選局しています」→「映像を待っています」。切れて繋ぎ直している間は「繋ぎ直しています」)
  */
 @Composable
-private fun BoxScope.LoadingVeil(state: LoadingState, label: String) {
-    if (!state.busy) return
-    var elapsed by remember(state.since) { mutableLongStateOf(0L) }
-    LaunchedEffect(state.since) {
+private fun BoxScope.LoadingVeil(state: LoadingState, label: String, recovery: Recovery?) {
+    val reconnecting = recovery?.active == true
+    if (!state.busy && !reconnecting) return
+    // 繋ぎ直しは、切れたと見つけたときから数える (待っている間はプレーヤーが読み込んでいないので)
+    val since = if (reconnecting) recovery.since else state.since
+    var elapsed by remember(since) { mutableLongStateOf(0L) }
+    LaunchedEffect(since) {
         while (true) {
-            elapsed = SystemClock.uptimeMillis() - state.since
+            elapsed = SystemClock.uptimeMillis() - since
             if (elapsed > HOLD_MOST_MS) break
             delay(100)
         }
@@ -389,7 +397,15 @@ private fun BoxScope.LoadingVeil(state: LoadingState, label: String) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spinner()
-        Text(if (state.arrived) "映像を待っています" else label, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+        Text(
+            when {
+                reconnecting -> "繋ぎ直しています"
+                state.arrived -> "映像を待っています"
+                else -> label
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+        )
     }
 }
 
@@ -454,40 +470,100 @@ fun rememberFlash(): Pair<String?, (String) -> Unit> {
     }
 }
 
-/** `rememberPlayer` が返すもの。`val (player, error) = …` で受けられる。`dualMono` はデュアルモノの配り直し (`rememberTracks` に渡す) */
-data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono: DualMonoProcessor)
+/**
+ * `rememberPlayer` が返すもの。`val (player, error) = …` で受けられる。`dualMono` はデュアルモノの配り直し (`rememberTracks` に渡す)、
+ * `recovery` は繋ぎ直しの様子 (`PlayerFrame` に渡す。頼み直すたびに `requested` を呼ぶ)
+ */
+data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono: DualMonoProcessor, val recovery: Recovery)
 
 /**
  * ExoPlayer を画面の寿命に合わせる。エラーは文にして返す。
- * `clock` は生の TS の字幕を出す画面だけが渡す (`rememberRawCaptions` と同じものを)
+ * `clock` は生の TS の字幕を出す画面だけが渡す (`rememberRawCaptions` と同じものを)。
+ *
+ * `reconnect` を渡すと、**切れた・止まったら繋ぎ直す** (`Recovery`)。繋ぎ直している間はエラーを出さず、前の絵を残して幕が
+ * 「繋ぎ直しています」を出す。諦めたとき (直らないもの・回数を使い切った) だけエラーを返す
  */
+@OptIn(UnstableApi::class)
 @Composable
-fun rememberPlayer(repo: Repository, buffering: Buffering, onUnauthorized: () -> Unit = {}, clock: TsClock = remember { TsClock() }): PlayerHandle {
+fun rememberPlayer(
+    repo: Repository,
+    buffering: Buffering,
+    onUnauthorized: () -> Unit = {},
+    clock: TsClock = remember { TsClock() },
+    reconnect: ReconnectPlan? = null,
+): PlayerHandle {
     val context = LocalContext.current
     val dualMono = remember(buffering) { DualMonoProcessor() }
     val player = remember(buffering) { buildPlayer(context, repo.app.engineHttp, repo.token, buffering, clock, dualMono) }
+    val scope = rememberCoroutineScope()
+    val recovery = remember(player) { Recovery(player, scope) }
+    recovery.plan = reconnect
+    val unauthorized by rememberUpdatedState(onUnauthorized)
     var error by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
-            @OptIn(UnstableApi::class)
             override fun onPlayerError(e: PlaybackException) {
-                // トークンが外された・期限切れ。繋ぐ画面へ
                 val code = (e.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
-                if (code == 401) onUnauthorized()
-                error = "再生できません: ${e.errorCodeName}"
+                val verdict = Reconnect.verdict(e.errorCode, code)
+                // トークンが外された・期限切れ。繋ぐ画面へ
+                if (verdict == Reconnect.Verdict.Unauthorized) unauthorized()
+                val reason = "error=${e.errorCodeName}" + (code?.let { " HTTP $it" } ?: "") +
+                    (e.cause?.let { " (${it.javaClass.simpleName}: ${it.message})" } ?: "") +
+                    " 映して ${recovery.playedSeconds()} 秒"
+                if (verdict != Reconnect.Verdict.Unauthorized && recovery.retry(reason, verdict)) {
+                    error = null
+                    return
+                }
+                error = "再生できません: " + (code?.let { "denpa の答えが HTTP $it (${e.errorCodeName})" } ?: e.errorCodeName)
             }
+            override fun onPlaybackStateChanged(state: Int) {
+                val plan = recovery.plan ?: return
+                if (state != Player.STATE_ENDED || !plan.endedIsLost) return
+                // 映したあとに終わったのは denpa の入れ替え。映る前に終わったのは、焼くのを断られたのかもしれない (何度か)
+                val verdict = if (recovery.pictured) Reconnect.Verdict.Retry else Reconnect.Verdict.RetryFew
+                if (!recovery.retry("ended 流れが終わった (映して ${recovery.playedSeconds()} 秒)", verdict)) error = ENDED_EMPTY
+            }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = recovery.onPlayWhenReady(playWhenReady)
+            override fun onRenderedFirstFrame() = recovery.onPictured()
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) error = null
+                if (!isPlaying) return
+                error = null
+                recovery.onPictured()
             }
         }
         player.addListener(listener)
         onDispose {
+            recovery.cancel()
             player.removeListener(listener)
             player.release()
         }
     }
-    return PlayerHandle(player, error, dualMono)
+    // 止まったかの見張り
+    LaunchedEffect(recovery) {
+        while (true) {
+            delay(1_000)
+            recovery.watch()
+        }
+    }
+    // 裏に回っている間は繋ぎ直さない
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner, recovery) {
+        recovery.started = owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> recovery.started = false
+                Lifecycle.Event.ON_START -> recovery.started = true
+                else -> {}
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    return PlayerHandle(player, error, dualMono, recovery)
 }
+
+/** ライブが映る前に何度か終わった (denpa が焼くのを断った空の返事など) */
+private const val ENDED_EMPTY = "denpa が映像を送らずに閉じました (焼く数の上限かも)。少し待つか、画質・局を替えてください"
 
 fun MediaItem.Builder.uri(url: String, mime: String): MediaItem = setUri(url).setMimeType(mime).build()
 

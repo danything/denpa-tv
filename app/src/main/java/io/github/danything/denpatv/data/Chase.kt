@@ -21,6 +21,14 @@ object Chase {
     /** 最新の近く (ブラウザの追っかけの「最新」と同じく 20 秒以内) */
     fun atEdge(positionMs: Long, recordedMs: Long): Boolean = recordedMs - positionMs < 20_000
 
+    /**
+     * 映る前のエラーが、焼くのを断られた (空の 200) ものか。空の返事は、端末によっては形が分からないと言われる (HTTP の番号が無い)。
+     * 生の TS (`baked` でない) は断られない。**繋がらない・読めない (`Reconnect.Verdict.Retry`。denpa の入れ替えの最中) は
+     * 断られたのではない** ので、繋ぎ直しに任せる
+     */
+    fun refused(started: Boolean, baked: Boolean, httpStatus: Int?, errorCode: Int): Boolean =
+        !started && baked && httpStatus == null && Reconnect.verdict(errorCode, null) != Reconnect.Verdict.Retry
+
     /** `audio` は焼くときに頼む音声 (`bakedAudio`)。生では渡さない */
     fun url(chase: String, codec: String, fromMs: Long, audio: DenpaAudio? = null): String =
         "$chase?codec=$codec&from=${fromMs / 1000}${audioQuery(audio)}"

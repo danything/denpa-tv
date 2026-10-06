@@ -124,6 +124,59 @@ class SmokeTest {
         assertTrue("ライブを離れても画面を点けたままです", poll(TEXT_TIMEOUT_MS) { !keepsScreenOn() })
     }
 
+    /**
+     * **切れたら繋ぎ直す。** 偽の denpa のライブは 10 秒で流れを閉じる (denpa が番組の境目で焼き直した・入れ替わったのと同じ)。
+     * アプリは同じ局を頼み直す。流れが閉じずに黙ったら (チューナーのドライバが止まった)、10 秒進まないのに気付いて頼み直す。そこで 503 (入れ替わりの最中) が続いても、Media3 が中で読み直し尽くしたあと、アプリが待って
+     * 頼み直し続け、denpa が戻ればまた映す。その間「再生できません」は出さない (`watching`)。繋ぎ直した理由は logcat に1行ずつ (タグ denpa)
+     */
+    @Test
+    fun liveReconnect() = watching {
+        shell("logcat -c")
+        open("denpa://live/${FakeDenpa.SERVICE_ID}")
+        awaitVideo(LIVE_COLOR)
+        // 流れが閉じたら頼み直す。次の流れは途中で黙る (閉じない) ので、10 秒進まないのに気付いてまた頼み直す
+        denpa.stallLive.set(1)
+        assertTrue("流れが閉じても頼み直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "ended" in appLog() })
+        // 黙ったのに気付いたら、その頼み直しからは 503 (denpa の入れ替わりの最中) を返し続ける
+        denpa.failLive.set(Int.MAX_VALUE)
+        assertTrue("流れが黙っても頼み直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "stall" in appLog() })
+        // 503 が続いて Media3 が諦めても、アプリが頼み直す
+        assertTrue("503 が続くと頼み直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "HTTP 503" in appLog() })
+        // 繋ぎ直している間は、前の絵の上に回るものと「繋ぎ直しています」
+        assertTrue("「繋ぎ直しています」が出ません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "繋ぎ直しています" in texts() })
+        texts().firstOrNull { it.startsWith("再生できません") }?.let { fail(it) }
+        // denpa が戻ったら、また映す
+        val asked = denpa.requests.count { it == LIVE_REQUEST }
+        denpa.failLive.set(0)
+        assertTrue("denpa が戻っても頼み直しません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > asked })
+        // 映ったら幕を下ろす (地の色は前の絵でも同じなので、映ったかは幕で見る)
+        assertTrue("映り直しても「繋ぎ直しています」が消えません", poll(VIDEO_TIMEOUT_MS) { "繋ぎ直しています" !in texts() })
+        awaitVideo(LIVE_COLOR)
+    }
+
+    /**
+     * 追っかけも、録り終える前に流れが閉じたら (denpa の入れ替え) 居た場所から頼み直す。録り終えたのかは denpa に聞いて決めるので、
+     * 録画の一覧を読み直してから頼み直す。「最後まで観ました」にはしない
+     */
+    @Test
+    fun chaseReconnect() = watching {
+        shell("logcat -c")
+        open("denpa://recording/${FakeDenpa.CHASE_ID}")
+        awaitVideo(LIVE_COLOR)
+        val chase = "GET /api/recordings/${FakeDenpa.CHASE_ID}/chase"
+        val asked = denpa.requests.count { it == chase }
+        assertTrue("追っかけの流れが閉じても頼み直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == chase } > asked })
+        val log = appLog()
+        assertTrue("追っかけの繋ぎ直しが logcat にありません: $log", "chase" in log && "ended" in log)
+        assertTrue("録っている最中なのに「最後まで観ました」になりました", texts().none { it.startsWith("最後まで観ました") })
+        awaitVideo(LIVE_COLOR)
+        press(KeyEvent.KEYCODE_BACK)
+        awaitText { it == FakeDenpa.RECORDING_TITLE }
+    }
+
+    /** アプリが logcat に出した繋ぎ直しの記録 (タグ denpa) */
+    private fun appLog(): String = shell("logcat -d -s denpa:I")
+
     @Test
     fun recording() = watching {
         open("denpa://recording/${FakeDenpa.RECORDING_ID}")
