@@ -52,7 +52,8 @@ import kotlinx.serialization.Serializable
  */
 @Serializable data class Main(val link: Long = 0) : NavKey
 @Serializable data class Live(val link: Long = 0) : NavKey
-@Serializable data class Watch(val recordingId: Long) : NavKey
+/** 録画を観る。`fromStart` なら続きではなく頭から (詳しくの「最初から」) */
+@Serializable data class Watch(val recordingId: Long, val fromStart: Boolean = false) : NavKey
 
 @Composable
 fun DenpaTv(app: DenpaApp, link: MutableState<DeepLink?>) {
@@ -111,7 +112,7 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
                 MainScreen(
                     repo = repo,
                     onLive = { backStack.add(Live()) },
-                    onWatch = { backStack.add(Watch(it.id)) },
+                    onWatch = { recording, fromStart -> backStack.add(Watch(recording.id, fromStart)) },
                     onUnauthorized = unauthorized,
                 )
             }
@@ -119,9 +120,11 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
             entry<Watch> { key ->
                 val leave = { backStack.removeAt(backStack.lastIndex); Unit }
                 // 録画中は追っかけ (伸びている生TSを denpa に流してもらう)、録り終えたものはファイルで
-                val recording = remember(key) { repo.recordings.firstOrNull { it.id == key.recordingId } }
+                val recording = remember(key) {
+                    repo.recordings.firstOrNull { it.id == key.recordingId }?.let { if (key.fromStart) it.copy(resumeMs = null) else it }
+                }
                 if (recording?.chasing == true) ChasePlayerScreen(repo, recording, leave, unauthorized)
-                else RecordingPlayerScreen(repo, key.recordingId, onLeave = leave, onUnauthorized = unauthorized)
+                else RecordingPlayerScreen(repo, key.recordingId, onLeave = leave, onUnauthorized = unauthorized, fromStart = key.fromStart)
             }
         },
     )

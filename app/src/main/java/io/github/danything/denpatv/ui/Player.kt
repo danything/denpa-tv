@@ -17,6 +17,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -184,7 +185,8 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
 
 /**
  * 映像と字幕と、上に重ねる文字。キーは呼ぶ側が受ける (ライブは局送り、録画は送り戻し)。
- * **決定 (OK) は短押しと長押しを分けて `onCenter` に渡す** (録画・追っかけは長押しで番組の詳しいところ、ライブは長押しで局と番組。情報キーの無いリモコンが多いので)。
+ * **決定 (OK) は短押しと長押しを分けて `onCenter` に渡す** (録画・追っかけ・ライブとも長押しで番組の詳しいところ。情報キーの無いリモコンが多いので)。
+ * 長押しは繰り返しの印でも、押したままの長さでも決まる (`CenterPress`)。
  *
  * 上に重ねたもの (ライブのメニュー・操作の帯) を閉じたら、**必ず映像にキーを戻す** — 閉じたものに合っていたまま
  * 消えると、どこにも合わずリモコンが効かなくなる。`active` の間は**映像そのものに合っているか見張り、外れていたら
@@ -240,6 +242,17 @@ fun PlayerFrame(
             cues = emptyList()
         }
     }
+    /**
+     * 決定を押しはじめた押し (`CenterPress.press`)。**繰り返しが来なくても、押したまま `LONG_PRESS_MS` たったら長押し**
+     * (`CenterPress.held`)。離せば `CenterPress` が押しを終えるので、時間切れが来ても何もしない
+     */
+    var centerDown by remember { mutableIntStateOf(0) }
+    val latestOnCenter by rememberUpdatedState(onCenter)
+    LaunchedEffect(centerDown) {
+        if (centerDown == 0) return@LaunchedEffect
+        delay(CenterPress.LONG_PRESS_MS)
+        center.held(centerDown)?.let(latestOnCenter)
+    }
     LaunchedEffect(active) {
         center.reset()
         if (!active) return@LaunchedEffect
@@ -262,7 +275,12 @@ fun PlayerFrame(
                 if (!active) return@onKeyEvent false
                 if (event.nativeKeyEvent.keyCode in LongPressGuard.CENTER_KEYS) {
                     val action = when (event.type) {
-                        KeyEventType.KeyDown -> center.down(event.nativeKeyEvent.repeatCount, event.nativeKeyEvent.isLongPress)
+                        KeyEventType.KeyDown -> {
+                            val before = center.press
+                            center.down(event.nativeKeyEvent.repeatCount, event.nativeKeyEvent.isLongPress).also {
+                                if (center.press != before) centerDown = center.press
+                            }
+                        }
                         KeyEventType.KeyUp -> center.up()
                         else -> null
                     }

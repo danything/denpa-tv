@@ -64,7 +64,8 @@ import java.util.Locale
 @Composable
 fun RecordingsScreen(
     repo: Repository,
-    onWatch: (Recording) -> Unit,
+    /** 観る。true なら続きではなく頭から (詳しくの「最初から」) */
+    onWatch: (Recording, Boolean) -> Unit,
     onUnauthorized: () -> Unit,
     modifier: Modifier = Modifier,
     /** 開いたときにカードに合わせるか (ライブから戻ったときは左のメニューが合いを取るので false) */
@@ -215,7 +216,7 @@ fun RecordingsScreen(
                                     focusedCard = null
                                 }
                             },
-                            onClick = { onWatch(recording) },
+                            onClick = { onWatch(recording, false) },
                             onLongClick = { opened = recording },
                         )
                     }
@@ -240,7 +241,7 @@ fun RecordingsScreen(
         RecordingDetailDialog(
             repo,
             recording,
-            onPlay = { opened = null; onWatch(recording) },
+            onPlay = { fromStart -> opened = null; onWatch(recording, fromStart) },
             onDelete = {
                 opened = null
                 scope.launch {
@@ -277,7 +278,8 @@ private fun RecordingCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    Card(onClick = onClick, onLongClick = onLongClick, modifier = modifier.height(256.dp)) {
+    // 決定の長押しは繰り返しが来なくても押した長さで決める (`centerPresses`)。カードの onClick・onLongClick は手で触れたとき・読み上げ用
+    Card(onClick = onClick, onLongClick = onLongClick, modifier = modifier.centerPresses(onClick, onLongClick).height(256.dp)) {
         Box {
             RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(16f / 9f), repo.token)
             // 観た割合 (続きの位置があるときだけ)。ポスターの下の縁に

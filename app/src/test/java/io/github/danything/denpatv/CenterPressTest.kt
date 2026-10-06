@@ -45,4 +45,37 @@ class CenterPressTest {
         press.reset()
         assertNull(press.up())
     }
+
+    /** 繰り返しを送らないリモコン: 押したまま時間がたったら長押し (1度だけ)。離しても短押しにしない */
+    @Test
+    fun 繰り返しが来なくても押したままなら長押し() {
+        val press = CenterPress()
+        assertNull(press.down(0, false))
+        assertEquals(Action.Long, press.held(press.press))
+        assertNull(press.held(press.press))
+        assertNull(press.up())
+    }
+
+    /** 繰り返しで長押しになったあとの時間切れは何もしない。離したあと・押し直したあとの前の押しの時間切れも */
+    @Test
+    fun 時間切れはその押しのときだけ() {
+        val press = CenterPress()
+        press.down(0, false)
+        assertEquals(Action.Long, press.down(1, true))
+        assertNull(press.held(press.press))
+        press.up()
+
+        press.down(0, false)
+        val first = press.press
+        assertEquals(Action.Short, press.up())
+        assertNull(press.held(first))
+
+        press.down(0, false)
+        assertNull(press.held(first))
+        assertEquals(Action.Long, press.held(press.press))
+        press.reset()
+        press.down(0, false)
+        press.reset()
+        assertNull(press.held(press.press))
+    }
 }

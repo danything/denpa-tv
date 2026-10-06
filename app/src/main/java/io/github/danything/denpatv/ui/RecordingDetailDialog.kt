@@ -1,61 +1,71 @@
 package io.github.danything.denpatv.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.tv.material3.Button
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.OutlinedButton
-import androidx.tv.material3.Text
+import io.github.danything.denpatv.data.AudioSide
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingDetail
-import io.github.danything.denpatv.data.codecLabels
-import io.github.danything.denpatv.data.durationLabel
 import io.github.danything.denpatv.data.Unauthorized
-import java.util.Date
+import io.github.danything.denpatv.data.chasing
+import io.github.danything.denpatv.data.codecLabels
+import io.github.danything.denpatv.data.dualMonoLabels
+import io.github.danything.denpatv.data.programMeta
 
 /**
- * 録画の詳しいところ (カードの長押しで開く)。局・日時・長さ・形・続きの位置と、番組の説明。
+ * 録画の詳しく (カードの長押しで開く)。中身の並びは `ProgramDetailDialog` (ライブ・再生中と同じもの)。
  *
- * - **再生 (続きから) に合わせて開く** — 決定の押し間違いで消えないように。再生の画面の長押しで開いたときは、その札が「閉じる」
-   (`playLabel`。映像に戻るだけ)
+ * - 札は **「続きから再生 (0:14:22)」(続きがあれば) → 「最初から」→「削除」→「閉じる」**。開いたときは先頭に合う
+ *   (決定の押し間違いで消えないように)。続きが無ければ「再生」
  * - 削除はブラウザの denpa と同じ2回押し
- * - 説明は別の口 (`api/recordings/<id>/detail`) から開いたときに取る。古い denpa には無いので、そのときは出さない。
- *   説明の段落は1つずつ合わせられるようにしてあり、下キーで読み進められる (長い出演者の欄など)
+ * - 説明は別の口 (`api/recordings/<id>/detail`) から開いたときに取る。古い denpa には無いので、そのときは出さない
+ * - **録画は番組表の口 (`api/programs/<id>`) を引かない。** 番組表の行は終わると消え・入れ替わり、番組 ID も使い回されるので、
+ *   録り始めに写した録画自身の中身 (`detail`) だけを出す (番組表を引くのはライブの詳しくだけ)
  */
 @Composable
 fun RecordingDetailDialog(
     repo: Repository,
     recording: Recording,
-    onPlay: () -> Unit,
+    /** 観る。true なら続きではなく頭から */
+    onPlay: (fromStart: Boolean) -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
     onUnauthorized: () -> Unit,
-    /** 再生の札の名前。null なら「再生」(続きがあれば「続きから再生」) */
-    playLabel: String? = null,
 ) {
-    val play = remember { FocusRequester() }
     val delete = rememberTwoPress()
+    val resume = recording.resumeMs?.takeIf { it > 0 }
+    val play = if (recording.chasing) "追っかけ再生" else "再生"
+    val actions = buildList {
+        if (resume != null) {
+            add(DetailAction("続きから$play (${position(resume)})") { onPlay(false) })
+            add(DetailAction("最初から") { onPlay(true) })
+        } else {
+            add(DetailAction(play) { onPlay(false) })
+        }
+        add(DetailAction(deleteLabel(delete.armed)) { if (delete.press()) onDelete() })
+        add(DetailAction("閉じる", onDismiss))
+    }
+    ProgramDetailDialog(recordingFacts(recording, rememberRecordingDetail(repo, recording, onUnauthorized)), actions, onDismiss)
+}
+
+/**
+ * 再生の画面 (録画・追っかけ) の決定の長押しで開く詳しく。一覧のものと同じ中身で、札は **「閉じる」(映像に戻るだけ) が先頭**、
+ * 次に「削除」。映像は止めも動かしもしない。戻る・「閉じる」で閉じて映像に戻る (合いは PlayerFrame が取り戻す)
+ */
+@Composable
+fun PlayerDetailDialog(repo: Repository, recording: Recording, onDelete: () -> Unit, onClose: () -> Unit, onUnauthorized: () -> Unit) {
+    val delete = rememberTwoPress()
+    val actions = listOf(
+        DetailAction("閉じる", onClose),
+        DetailAction(deleteLabel(delete.armed)) { if (delete.press()) { onClose(); onDelete() } },
+    )
+    // 観た位置は出さない (一覧で読んだときのもので、観ているいまの位置とずれる)
+    ProgramDetailDialog(recordingFacts(recording, rememberRecordingDetail(repo, recording, onUnauthorized), watched = false), actions, onClose, overVideo = true)
+}
+
+/** 番組の中身を取る (開いたときに1度)。古い denpa・読めなければ null のまま */
+@Composable
+private fun rememberRecordingDetail(repo: Repository, recording: Recording, onUnauthorized: () -> Unit): RecordingDetail? {
     val detail by produceState<RecordingDetail?>(null, recording.id) {
         value = try {
             repo.api.recordingDetail(repo.base, recording.id)
@@ -64,76 +74,38 @@ fun RecordingDetailDialog(
             null
         }
     }
-    LaunchedEffect(Unit) { runCatching { play.requestFocus() } }
+    return detail
+}
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        // 長押しで開いたので、離すまでのキーがこの窓に来る。「再生」が押されないよう捨てる
-        Row(
-            Modifier
-                .ignoreHeldCenter()
-                .width(1200.dp)
-                .fillMaxHeight(0.86f)
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-                .padding(32.dp),
-            horizontalArrangement = Arrangement.spacedBy(32.dp),
-        ) {
-            Column(Modifier.width(400.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.width(400.dp).aspectRatio(16f / 9f), repo.token)
-                val resume = recording.resumeMs?.takeIf { it > 0 }
-                Button(onClick = onPlay, modifier = Modifier.focusRequester(play)) {
-                    Text(playLabel ?: if (resume != null) "続きから再生 (${position(resume)})" else "再生")
-                }
-                OutlinedButton(onClick = { if (delete.press()) onDelete() }) {
-                    // 押すと「もう一度押すと削除」と長くなる。1行のまま伸ばす (切れないように)
-                    Text(deleteLabel(delete.armed), maxLines = 1, softWrap = false)
-                }
-            }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(recording.title, style = MaterialTheme.typography.headlineSmall)
-                        Text(
-                            listOfNotNull(
-                                recording.serviceName,
-                                WHEN.format(Date(recording.startAt)),
-                                recording.durationMs?.let(::durationLabel),
-                            ).joinToString(" ・ "),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            if (recording.recording) "● 録画中 (追っかけ再生で観ます)" else recording.codecLabels.joinToString(" / "),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                }
-                val info = detail
-                if (info != null) {
-                    if (info.description.isNotBlank()) {
-                        item { Paragraph(null, info.description) }
-                    }
-                    info.extended.forEach { (heading, body) -> item { Paragraph(heading, body) } }
-                }
-            }
-        }
-    }
+/** 録画の詳しくの中身。札は形 (AV1 / H.264 / 生TS) と音声、録画中なら頭に「● 録画中」。観た位置があれば進みの帯 */
+internal fun recordingFacts(recording: Recording, detail: RecordingDetail?, watched: Boolean = true): DetailFacts {
+    val end = recording.durationMs?.let { recording.startAt + it } ?: recording.endAt
+    val length = recording.durationMs ?: end?.minus(recording.startAt)
+    val resume = recording.resumeMs?.takeIf { it > 0 && watched }
+    return DetailFacts(
+        title = recording.title,
+        meta = programMeta(recording.serviceName, recording.startAt, end),
+        chips = (if (recording.recording) emptyList() else recording.codecLabels) + recordingAudioLabels(recording),
+        badge = if (recording.recording) "● 録画中" else null,
+        progress = if (resume != null && length != null && length > 0) resume to length else null,
+        progressLabel = resume?.let { "${position(it)} まで観た" },
+        description = detail?.description.orEmpty(),
+        extended = detail?.extended?.toList().orEmpty(),
+    )
 }
 
 /**
- * 再生の画面 (録画・追っかけ) の決定の長押しで開く詳しく。一覧のものと同じで、いちばん上の札が「閉じる」(映像に戻るだけ)。
- * 映像は止めも動かしもしない。戻る・「閉じる」で閉じて映像に戻る (合いは PlayerFrame が取り戻す)
+ * 録画の音声の札。音声ごとに1つ (デュアルモノは「主音声 / 副音声」)。denpa が名前を言っていない既定の1本 (「音声」) は出さない
  */
-@Composable
-fun PlayerDetailDialog(repo: Repository, recording: Recording, onDelete: () -> Unit, onClose: () -> Unit, onUnauthorized: () -> Unit) {
-    RecordingDetailDialog(
-        repo,
-        recording,
-        onPlay = onClose,
-        onDelete = { onClose(); onDelete() },
-        onDismiss = onClose,
-        onUnauthorized = onUnauthorized,
-        playLabel = "閉じる",
-    )
-}
+private fun recordingAudioLabels(recording: Recording): List<String> =
+    recording.audios.map { it.stream }.distinct().mapNotNull { stream ->
+        val dual = dualMonoLabels(recording.audios, stream)
+        if (dual != null) {
+            "${dual[AudioSide.Main]} / ${dual[AudioSide.Sub]}"
+        } else {
+            recording.audios.firstOrNull { it.stream == stream && it.side == "both" }?.label?.takeIf { it.isNotBlank() && it != "音声" }
+        }
+    }.distinct()
 
 /** 再生の画面から録画を消す。消せたら一覧から抜き、戻ったときに隣の録画に合うようにして true。録画中などで断られたら false */
 suspend fun deleteFromPlayer(repo: Repository, id: Long): Boolean {
@@ -144,15 +116,6 @@ suspend fun deleteFromPlayer(repo: Repository, id: Long): Boolean {
 
 /** 再生の画面で消せなかったときの1行 */
 const val NOT_DELETED = "消せませんでした (録画中は消せません)"
-
-/** 説明の1段落。合わせると (下キーで) 読み進められるよう focusable にしてある */
-@Composable
-private fun Paragraph(heading: String?, body: String) {
-    Column(Modifier.focusable().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        heading?.let { Text(it, style = MaterialTheme.typography.titleSmall) }
-        Text(body, style = MaterialTheme.typography.bodyLarge)
-    }
-}
 
 /** 再生位置 (1:02:03) */
 fun position(ms: Long): String {

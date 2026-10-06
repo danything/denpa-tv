@@ -18,7 +18,7 @@ import org.junit.Test
 class RemoteTest {
     /**
      * ライブ: 左右とチャンネル送りで前・次の局。下と Menu はメニュー (操作の列と局の列)、上は局の列に合わせて開くメニュー。
-     * 決定は PlayerFrame が短押し・長押しに分け、短押しはメニュー、長押しは情報キーと同じ (いまの局と番組)
+     * 決定は PlayerFrame が短押し・長押しに分け、短押しはメニュー、長押しは情報キーと同じ (番組の詳しく)
      */
     @Test
     fun ライブのキー() {
@@ -29,12 +29,12 @@ class RemoteTest {
         assertEquals(LiveCommand.Menu, liveCommand(KeyEvent.KEYCODE_DPAD_DOWN))
         assertEquals(LiveCommand.Menu, liveCommand(KeyEvent.KEYCODE_MENU))
         assertEquals(LiveCommand.Channels, liveCommand(KeyEvent.KEYCODE_DPAD_UP))
-        assertEquals(LiveCommand.Info, liveCommand(KeyEvent.KEYCODE_INFO))
+        assertEquals(LiveCommand.Details, liveCommand(KeyEvent.KEYCODE_INFO))
         assertNull(liveCommand(KeyEvent.KEYCODE_DPAD_CENTER))
         // 戻るは受けない (何も開いていなければメニューの画面へ戻る)
         assertNull(liveCommand(KeyEvent.KEYCODE_BACK))
         assertEquals(LiveCommand.Menu, liveCenter(CenterPress.Action.Short))
-        assertEquals(LiveCommand.Info, liveCenter(CenterPress.Action.Long))
+        assertEquals(LiveCommand.Details, liveCenter(CenterPress.Action.Long))
     }
 
     @Test

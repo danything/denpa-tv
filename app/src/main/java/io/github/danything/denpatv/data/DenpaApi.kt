@@ -1,5 +1,6 @@
 package io.github.danything.denpatv.data
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -17,7 +18,12 @@ import java.net.URI
  * **家の LAN からはトークン無しで通る** (denpa の TRUSTED_NETWORKS)。家の外の denpa (OIDC でログインする構成) では、
  * テレビを denpa に登録して受け取ったトークンを `Authorization: Bearer` で付ける (`token`、README の「繋ぐ」)
  */
-class DenpaApi(private val token: () -> String? = { null }) {
+class DenpaApi(
+    /** 答えの形が思っていたのと違うとき (denpa の版のずれ)。止めずに言うだけ */
+    private val warn: (String) -> Unit = { Log.w(TAG, it) },
+    /** 後ろに置く (`DenpaApi { token }` と書けるように) */
+    private val token: () -> String? = { null },
+) {
     suspend fun health(base: URI): Boolean = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/health") ?: return@withContext false
         val response = try {
@@ -82,6 +88,23 @@ class DenpaApi(private val token: () -> String? = { null }) {
         if (res.code == 401) throw Unauthorized(url)
         if (!res.ok) return@withContext null
         runCatching { lenientJson.decodeFromString(RecordingDetail.serializer(), res.text()) }.getOrNull()
+    }
+
+    /**
+     * 番組表の番組の中身 (`GET api/programs/<id>`。ライブの詳しく)。`id` は局の `now.id`。
+     * 番組表から消えた (404)・口の無い古い denpa・届かない・読めないは `Missing` (呼ぶ側は `now` のぶんだけを出す)。
+     * 形がずれていても読めるところは読む (`parseProgramInfo`)
+     */
+    suspend fun program(base: URI, id: Long): ProgramLookup = withContext(Dispatchers.IO) {
+        val url = BaseUrl.resolve(base, "api/programs/$id") ?: return@withContext ProgramLookup.Missing
+        val res = try {
+            Http.request(url, token = token())
+        } catch (_: IOException) {
+            return@withContext ProgramLookup.Missing
+        }
+        if (res.code == 401) throw Unauthorized(url)
+        if (!res.ok) return@withContext ProgramLookup.Missing
+        parseProgramInfo(res.text(), warn)?.let { ProgramLookup.Found(it) } ?: ProgramLookup.Missing
     }
 
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。消せたら true */
@@ -149,6 +172,8 @@ class DenpaApi(private val token: () -> String? = { null }) {
         lenientJson.decodeFromString<T>(Http.get(url, token()))
     }
 }
+
+private const val TAG = "DenpaApi"
 
 @Serializable
 private data class DeviceCodeRequest(val name: String)

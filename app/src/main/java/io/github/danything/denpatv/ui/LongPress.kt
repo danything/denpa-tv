@@ -1,11 +1,20 @@
 package io.github.danything.denpatv.ui
 
+import android.view.KeyEvent
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.LongPressGuard
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import io.github.danything.denpatv.data.UpKey
 import io.github.danything.denpatv.data.UpToClose
 
@@ -31,5 +40,53 @@ fun Modifier.closeOnUp(onClose: (() -> Unit)?): Modifier = if (onClose == null) 
             UpKey.Hold -> true
             UpKey.Close -> { onClose(); true }
         }
+    }
+}
+
+/**
+ * 決定の短押しと長押しを、**押した・離したの時間でも分ける** (`CenterPress`)。録画の一覧のカードに付ける。
+ *
+ * TV の Material の `Card` の長押しは、押し続けたときのキーの繰り返し (長押しの印) でしか決まらない。繰り返しを送らない
+ * リモコン・端末 (キーの繰り返しを切ってある、離すまで何も送らない BT のリモコン) では、長く押しても離したときに短押し
+ * (再生) になっていた。決定のキーはここで受けてしまい (カードには渡さない)、繰り返しの印か、押したまま
+ * `CenterPress.LONG_PRESS_MS` たったら `onLongClick`、その前に離したら `onClick`。合いが外れたら押しを忘れる
+ */
+fun Modifier.centerPresses(onClick: () -> Unit, onLongClick: () -> Unit): Modifier = composed {
+    val center = remember { CenterPress() }
+    val scope = rememberCoroutineScope()
+    val click by rememberUpdatedState(onClick)
+    val longClick by rememberUpdatedState(onLongClick)
+    val timer = remember { arrayOfNulls<Job>(1) }
+    fun run(action: CenterPress.Action) = when (action) {
+        CenterPress.Action.Short -> click()
+        CenterPress.Action.Long -> longClick()
+    }
+    onFocusChanged {
+        if (!it.hasFocus) {
+            timer[0]?.cancel()
+            center.reset()
+        }
+    }.onPreviewKeyEvent { event ->
+        val native = event.nativeKeyEvent
+        if (native.keyCode !in LongPressGuard.CENTER_KEYS) return@onPreviewKeyEvent false
+        when (native.action) {
+            KeyEvent.ACTION_DOWN -> {
+                val before = center.press
+                center.down(native.repeatCount, native.isLongPress)?.let(::run)
+                if (center.press != before) {
+                    val press = center.press
+                    timer[0]?.cancel()
+                    timer[0] = scope.launch {
+                        delay(CenterPress.LONG_PRESS_MS)
+                        center.held(press)?.let(::run)
+                    }
+                }
+            }
+            KeyEvent.ACTION_UP -> {
+                timer[0]?.cancel()
+                center.up()?.let(::run)
+            }
+        }
+        true
     }
 }
