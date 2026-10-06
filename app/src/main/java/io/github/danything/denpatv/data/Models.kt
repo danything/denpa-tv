@@ -65,6 +65,8 @@ data class NowProgram(
      */
     val reserved: Boolean = false,
     val recording: Boolean = false,
+    /** 番組 ID (`GET api/programs/<id>` で中身を引く。ライブの詳しく)。denpa#461 から。古い denpa には無いので null */
+    val id: Long? = null,
 ) {
     /** 進み具合 (0..1) */
     fun progress(at: Long): Float =

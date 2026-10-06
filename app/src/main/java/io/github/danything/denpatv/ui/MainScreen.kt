@@ -58,7 +58,7 @@ private enum class Destination(val label: String, val icon: Int) {
 fun MainScreen(
     repo: Repository,
     onLive: () -> Unit,
-    onWatch: (Recording) -> Unit,
+    onWatch: (Recording, Boolean) -> Unit,
     onUnauthorized: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf(Destination.Recordings) }

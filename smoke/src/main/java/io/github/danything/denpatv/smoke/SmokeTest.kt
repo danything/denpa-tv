@@ -56,8 +56,9 @@ class SmokeTest {
     }
 
     /**
-     * ライブのキーとメニュー。**左右で局を送る** (右で次の局を、左で元の局を denpa に頼む)。**決定の長押しは局と番組を出す**
-     * (メニューは開かない。離しても決定にならない)。**上で、局の列のいま映している局に合わせてメニューが開く。**
+     * ライブのキーとメニュー。**左右で局を送る** (右で次の局を、左で元の局を denpa に頼む)。**決定の長押しで番組の詳しく**
+     * (`api/programs/<now.id>` の説明が出る。メニューは開かない。離しても決定にならない)。**繰り返しを送らずに押したままでも
+     * 長押しになる** (押した・離したの2つだけを送るリモコン)。戻るで詳しくだけが閉じる。**上で、局の列のいま映している局に合わせてメニューが開く。**
      * 局の列から上キーを押し続けても操作の列で止まり (閉じない)、**操作の列でもう一度上を押すと閉じて映像に戻る**。決定で操作の列と局の列が開き、「録画」で denpa にいまの番組を予約する。**戻るでメニューだけが閉じ**
      * (画面ごと戻らない。Android 12 以前では戻るキーが合いを外へ出すのに使われ、閉じずに合いだけが抜けていた)、
      * もう一度の戻るでいちばん上のメニューへ (「ライブ」に合う)。流している間は画面を点けたまま (スクリーンセーバーを出さない)、
@@ -80,11 +81,18 @@ class SmokeTest {
         assertTrue("左で前の局を頼みません: ${denpa.requests.filter { it.endsWith("/live") }}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > before })
         awaitVideo(LIVE_COLOR)
 
-        // 決定の長押しは情報と同じ (局と番組に、キーの手引きを添える)。メニューは開かず、離しても決定にならない
+        // 決定の長押しで番組の詳しく (ダイアログ。別の窓なので windowTexts で見る)。メニューは開かず、離しても決定にならない
         longPress(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertTrue("決定の長押しで局と番組が出ません: ${texts()}", poll(TEXT_TIMEOUT_MS) { texts().any { "長押しで番組" in it } })
+        assertTrue("決定の長押しで番組の詳しくが開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { liveDetailOpen() })
+        assertRequested("GET /api/programs/${FakeDenpa.PROGRAM_ID}")
         SystemClock.sleep(MENU_WAIT_MS)
-        assertTrue("決定の長押しでメニューが開きました: ${texts()}", "地上波" !in texts())
+        assertTrue("決定の長押しでメニューが開きました: ${windowTexts()}", "地上波" !in windowTexts())
+        closeLiveDetail()
+        // 繰り返しを送らずに押したまま (押した・離したの2つだけ) でも長押し
+        holdWithoutRepeat(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue("繰り返し無しの長押しで番組の詳しくが開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { liveDetailOpen() })
+        assertTrue("繰り返し無しの長押しでメニューが開きました: ${windowTexts()}", "地上波" !in windowTexts())
+        closeLiveDetail()
 
         // 上で、局の列のいま映している局に合わせて開く。戻るで閉じる
         pressUntil(KeyEvent.KEYCODE_DPAD_UP, "上でメニューが開きません") { "地上波" in texts() }
@@ -235,6 +243,19 @@ class SmokeTest {
         )
     }
 
+    /** ライブの詳しくが開いている (番組の説明と「閉じる」) */
+    private fun liveDetailOpen() = windowTexts().let { "閉じる" in it && FakeDenpa.PROGRAM_DESCRIPTION in it }
+
+    /**
+     * ライブの詳しくを戻るで閉じて、映像に戻ったのを見る。映像だけのライブの窓には字が無い (知らせが消えていれば空) ので、
+     * 閉じたかは映像の色で見る (詳しくが開いたままなら画面の多くを覆っている。画面ごと戻ったならライブの色は出ない)
+     */
+    private fun closeLiveDetail() {
+        press(KeyEvent.KEYCODE_BACK)
+        assertTrue("戻るで番組の詳しくが閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in windowTexts() })
+        awaitVideo(LIVE_COLOR)
+    }
+
     /** 録画を止めている (止めた位置の帯が出ている) */
     private fun paused() = texts().any { it.startsWith("一時停止  ") }
 
@@ -353,6 +374,18 @@ class SmokeTest {
             send(KeyEvent.ACTION_DOWN, repeat)
         }
         send(KeyEvent.ACTION_UP, 0)
+    }
+
+    /** 繰り返しを送らずに押し続ける: 押して、`HELD_MS` たってから離す (繰り返しを送らないリモコンと同じ並び) */
+    private fun holdWithoutRepeat(code: Int) {
+        val at = SystemClock.uptimeMillis()
+        fun send(action: Int) {
+            val event = KeyEvent(at, SystemClock.uptimeMillis(), action, code, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
+            instrumentation.uiAutomation.injectInputEvent(event, true)
+        }
+        send(KeyEvent.ACTION_DOWN)
+        SystemClock.sleep(HELD_MS)
+        send(KeyEvent.ACTION_UP)
     }
 
     /** 長押し: 押して、長押しの印つきの繰り返しを送ってから離す (リモコンで押し続けたときと同じ並び) */
@@ -528,6 +561,8 @@ class SmokeTest {
         private const val STOP_WAIT_MS = 3_000L
         private const val TEST_TIMEOUT_S = 150L
         private const val MENU_WAIT_MS = 3_000L
+        /** 繰り返し無しで押し続ける長さ (アプリが長押しとみなす 0.7 秒より十分長く) */
+        private const val HELD_MS = 1_500L
         private const val LONG_PRESS_MS = 700L
         /** 押し続けたときの繰り返しの数と間 (リモコンの繰り返しはおよそ 50 ミリ秒ごと) */
         private const val HOLD_REPEATS = 6

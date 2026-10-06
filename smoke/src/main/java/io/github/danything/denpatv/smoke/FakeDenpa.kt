@@ -96,6 +96,8 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
                 }
             path == "/api/services/$SERVICE_ID/record" && method == "POST" ->
                 json(out, """{"recorded":"$PROGRAM_TITLE","programId":1,"reserved":true}""")
+            path == "/api/programs/$PROGRAM_ID" ->
+                json(out, """{"name":"$PROGRAM_TITLE[字]","service_name":"$SERVICE_NAME","description":"$PROGRAM_DESCRIPTION","extended":{"出演者":"偽の人"},"genre_detail":[{"lv1":0,"lv2":0}],"audios":[{"componentType":3,"langs":["jpn"]}],"video_type":"mpeg2","video_resolution":"1080i","is_free":true}""")
             path == "/api/recordings" -> json(out, recordings())
             path == "/api/events" -> events(out)
             recording != null && method == "POST" -> respond(out, 204, "text/plain", ByteArray(0))
@@ -112,7 +114,7 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
         val now = System.currentTimeMillis()
         fun service(id: Long, name: String, key: Int, title: String) =
             """{"id":$id,"type":"GR","name":"$name","remoteControlKey":$key,"live":"api/services/$id/live",
-            "now":{"title":"$title","startAt":${now - 600_000},"endAt":${now + 3_000_000}}}"""
+            "now":{"id":${id * 10},"title":"$title","startAt":${now - 600_000},"endAt":${now + 3_000_000}}}"""
         return "[${service(SERVICE_ID, SERVICE_NAME, 1, PROGRAM_TITLE)},${service(NEXT_SERVICE_ID, NEXT_SERVICE_NAME, 2, NEXT_PROGRAM_TITLE)}]"
     }
 
@@ -197,6 +199,9 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
         const val SERVICE_ID = 3273601024L
         const val SERVICE_NAME = "偽の総合"
         const val PROGRAM_TITLE = "偽の番組"
+        /** いまの番組の番組 ID (`now.id`。局の id × 10) と、その説明 (`api/programs/<id>`。ライブの詳しくに出る) */
+        const val PROGRAM_ID = SERVICE_ID * 10
+        const val PROGRAM_DESCRIPTION = "偽の番組の説明"
         /** 局送りで次に来る局 */
         const val NEXT_SERVICE_ID = 3273601032L
         const val NEXT_SERVICE_NAME = "偽の教育"

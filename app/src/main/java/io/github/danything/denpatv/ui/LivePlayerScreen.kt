@@ -53,7 +53,7 @@ import kotlinx.coroutines.launch
  * - **切れたら (エラー・denpa が流れを閉じた・10 秒進まない) 同じ局を頼み直す** (`Recovery`)。前の絵を残し、1.5 秒たったら
  *   回るものと「繋ぎ直しています」。待ちは 1 秒から倍々で 10 秒まで、回数の上限は無い。局が無い (404) などは理由を出して止める
  * - アプリが裏に回ったら (ホーム・別のアプリ) 止めて denpa から降りる (チューナーを空ける)。戻ったら同じ局を映し直す
- * - 情報キーと決定の長押しで、いまの局と番組を出す
+ * - **決定の長押しと情報キーで、いま放送中の番組の詳しく** (`LiveDetailDialog`。録画の詳しくと同じもの)。そこからも録画できる
  * - 何も開いていないときの戻るは、メニューの画面へ (「ライブ」に合う)
  */
 @Composable
@@ -80,6 +80,10 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         delay(MENU_IDLE_MS)
         menu = null
     }
+    /** 番組の詳しくを開いているか (決定の長押し・情報キー) */
+    var detail by remember { mutableStateOf(false) }
+    /** 詳しくの「録画」を押した結果 (詳しくの札の下に出す) */
+    var recordNote by remember { mutableStateOf<String?>(null) }
     /** キーの手引きを出したか (開いて最初の1回だけ) */
     var hinted by remember { mutableStateOf(false) }
     /** 裏に回っている (ホーム・別のアプリ)。その間は流さない (`OnBackground`) */
@@ -278,25 +282,28 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         touched = System.nanoTime()
         menu = start
     }
-    /** いまの番組を録る (ブラウザのライブの録画ボタンと同じ口)。結果は1行で知らせ、局を取り直して印を合わせる */
-    fun record() {
+    /**
+     * いまの番組を録る (ブラウザのライブの録画ボタンと同じ口)。結果は1行で知らせ (メニューからは下の知らせ、詳しくからは札の下)、
+     * 局を取り直して印を合わせる
+     */
+    fun record(fromDetail: Boolean) {
         val service = current
         menu = null
+        if (fromDetail) recordNote = "録画を頼んでいます…"
         scope.launch {
             val result = try {
                 repo.api.recordNow(repo.base, service.id)
             } catch (_: Unauthorized) {
                 return@launch onUnauthorized()
             }
-            flash(
-                when (result) {
-                    is RecordResult.Recorded ->
-                        if (result.reserved) "録画を始めます: ${result.title}"
-                        else "予約しましたが、チューナーが足りず録れません (競合): ${result.title}"
-                    is RecordResult.Failed -> "録画できません: ${result.message}"
-                    RecordResult.Unsupported -> "この denpa はアプリからの録画に対応していません (denpa を新しくしてください)"
-                },
-            )
+            val message = when (result) {
+                is RecordResult.Recorded ->
+                    if (result.reserved) "録画を始めます: ${result.title}"
+                    else "予約しましたが、チューナーが足りず録れません (競合): ${result.title}"
+                is RecordResult.Failed -> "録画できません: ${result.message}"
+                RecordResult.Unsupported -> "この denpa はアプリからの録画に対応していません (denpa を新しくしてください)"
+            }
+            if (fromDetail) recordNote = message else flash(message)
             if (result is RecordResult.Recorded) refresh()
         }
     }
@@ -305,19 +312,27 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         LiveCommand.NextChannel -> zap(1)
         LiveCommand.Menu -> openMenu(MenuStart.Controls)
         LiveCommand.Channels -> openMenu(MenuStart.Channels)
-        LiveCommand.Info -> flash(describe(stepping ?: current, codec.label) + "\n$LIVE_HINT")
+        LiveCommand.Details -> {
+            // 送っている途中なら、待たずにそこへ替えてから (詳しくの番組と映しているものを揃える)
+            stepping?.let { playing = it }
+            stepping = null
+            held = false
+            menu = null
+            recordNote = null
+            detail = true
+        }
     }
     val currentCard = remember { FocusRequester() }
     PlayerFrame(
         player,
         // メニューを開いている間は1行の知らせを出さない (メニューの帯の下から透けて重なる)
-        overlay.takeUnless { menu != null },
+        overlay.takeUnless { menu != null || detail },
         error,
-        active = menu == null && !leaving,
+        active = menu == null && !detail && !leaving,
         // `::run` (関数の参照) にしない。Compose が参照を覚えたままにして、前の局から送ってしまう
         onKey = { event -> liveCommand(event.nativeKeyEvent.keyCode)?.let { run(it) } != null },
         onKeyUp = { held = false },
-        // 決定の短押しはメニュー、長押しは情報キーと同じ (いまの局と番組)
+        // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳しく)
         onCenter = { press -> run(liveCenter(press)) },
         // 送っている途中は行き先の番組の進み (知らせの文と揃える)
         progress = (stepping ?: current).now?.let { System.currentTimeMillis() - it.startAt to it.endAt - it.startAt },
@@ -337,7 +352,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                         }
                     },
                     "" to tracks.controls() + baked.controls(),
-                    "" to listOf(recordControl(now) { record() }),
+                    "" to listOf(recordControl(now) { record(fromDetail = false) }),
                 ),
                 // 上で開いたときは、操作の列ではなく局の列のいま映している局に合わせる (下の LaunchedEffect)
                 focusActions = start == MenuStart.Controls,
@@ -366,17 +381,24 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             }
         }
     }
+    if (detail) {
+        LiveDetailDialog(
+            repo,
+            current,
+            onRecord = { record(fromDetail = true) },
+            note = recordNote,
+            onClose = { detail = false },
+            onUnauthorized = onUnauthorized,
+        )
+    }
 }
 
 /** メニューを開いたときにどこに合わせるか。下・決定・Menu は操作の列、上は局の列のいま映している局 */
 private enum class MenuStart { Controls, Channels }
 
 /** 録画の札。録っている・録る予定ならそう出す (押しても二重には録らない。denpa が番組ごとに1本にまとめる) */
-private fun recordControl(now: NowProgram?, onClick: () -> Unit): Control = when {
-    now?.recording == true -> Control("録画中", on = true, icon = R.drawable.ic_record, onClick = onClick)
-    now?.reserved == true -> Control("録画予約済み", on = true, icon = R.drawable.ic_record, onClick = onClick)
-    else -> Control("録画", icon = R.drawable.ic_record, onClick = onClick)
-}
+private fun recordControl(now: NowProgram?, onClick: () -> Unit): Control =
+    Control(recordLabel(now), on = now?.recording == true || now?.reserved == true, icon = R.drawable.ic_record, onClick = onClick)
 
 /** 1行目に局と画質 (`CodecSwitch.label`)、2行目にいま放送中の番組と残り */
 private fun describe(service: Service, quality: String): String {

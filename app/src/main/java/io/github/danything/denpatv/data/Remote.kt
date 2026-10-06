@@ -9,27 +9,27 @@ import android.view.KeyEvent
  * ライブ: **左右で前・次の局** (チャンネル送りも同じ。Fire TV のリモコンにはチャンネル送りが無いので十字キーだけで替えられる)。
  * **下・決定・Menu でメニュー** (操作の列と局の列。YouTube・Prime Video・ABEMA などのテレビのアプリと同じく、下でメニューが出る)。
  * **上は同じメニューを、局の列のいま映している局に合わせて開く** (局を一覧から選ぶ近道)。
- * **決定の長押しは情報キーと同じく、いまの局と番組を出す** (`liveCenter`)。
+ * **決定の長押しは情報キーと同じく、いま放送中の番組の詳しくを開く** (`liveCenter`。録画の詳しくと同じもの)。
  * 録画: 左右で 10 秒戻す・送る、決定で止める・動かす、下でシークバーと操作の列、上・Menu で操作の列。
- * **決定の長押しは番組の詳しいところ** (`recordingCenter`。ライブの長押しの情報・録画の一覧のカードの長押しと揃える)。
+ * **決定の長押しは番組の詳しいところ** (`recordingCenter`。ライブの長押し・録画の一覧のカードの長押しと揃える)。
  * 開いたメニュー・帯は、いちばん上の段 (ライブは操作の列、録画はシークバー) で上を押すと閉じる (`UpToClose`)。
  * 決定の短押し・長押しは PlayerFrame が分ける (CenterPress)
  */
-enum class LiveCommand { PreviousChannel, NextChannel, Menu, Channels, Info }
+enum class LiveCommand { PreviousChannel, NextChannel, Menu, Channels, Details }
 
 fun liveCommand(keyCode: Int): LiveCommand? = when (keyCode) {
     KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_CHANNEL_UP -> LiveCommand.PreviousChannel
     KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_CHANNEL_DOWN -> LiveCommand.NextChannel
     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_MENU -> LiveCommand.Menu
     KeyEvent.KEYCODE_DPAD_UP -> LiveCommand.Channels
-    KeyEvent.KEYCODE_INFO -> LiveCommand.Info
+    KeyEvent.KEYCODE_INFO -> LiveCommand.Details
     else -> null
 }
 
-/** ライブの決定。短押しはメニュー、長押しは情報キーと同じ (いまの局と番組)。長押しのあとの離しは CenterPress が捨てる */
+/** ライブの決定。短押しはメニュー、長押しは情報キーと同じ (いま放送中の番組の詳しく)。長押しのあとの離しは CenterPress が捨てる */
 fun liveCenter(press: CenterPress.Action): LiveCommand = when (press) {
     CenterPress.Action.Short -> LiveCommand.Menu
-    CenterPress.Action.Long -> LiveCommand.Info
+    CenterPress.Action.Long -> LiveCommand.Details
 }
 
 enum class RecordingCommand { Back, Forward, SeekBar, Actions, NextChapter, PreviousChapter, PlayPause, NextSpeed }

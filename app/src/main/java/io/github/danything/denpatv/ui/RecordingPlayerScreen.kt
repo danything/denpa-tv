@@ -57,12 +57,13 @@ import kotlinx.coroutines.launch
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
+fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Unit, onUnauthorized: () -> Unit, fromStart: Boolean = false) {
     /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
     var leaving by remember { mutableStateOf(false) }
     // 戻るを続けて押しても、1つだけ戻る (2回目は受けない)
     val leave = { if (!leaving) { leaving = true; onLeave() } }
-    val recording = remember { repo.recordings.firstOrNull { it.id == recordingId } }
+    // 「最初から」は続きの位置を持たないものとして開く (頭から流し、観た位置はいつもどおり預ける)
+    val recording = remember { repo.recordings.firstOrNull { it.id == recordingId }?.let { if (fromStart) it.copy(resumeMs = null) else it } }
     if (recording == null) {
         Centered("録画が見つかりません")
         return
