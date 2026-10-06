@@ -186,6 +186,11 @@ class Updater(private val app: DenpaApp) {
         val state = _state.value as? UpdateState.NeedsPermission ?: return
         // 許可の画面を開けなかった: ほかのアプリ・ホームから戻っただけなので、勝手に始めない
         if (!state.opened) return
+        // 許可が見えない・送ってから長い (ホームへ出て、ずっと後に開いた): 許可の画面を勝手に開き直さず、押すのを待つ
+        if (installStep(allowedToInstall(), asked, state.update.version, System.currentTimeMillis()) != InstallStep.Install) {
+            Log.i(TAG, "許可の画面から戻りましたが、送ってから時間がたったので押すのを待ちます")
+            return
+        }
         Log.i(TAG, "許可の画面から戻りました")
         start(state.update, state.file?.takeIf { it.exists() })
     }
