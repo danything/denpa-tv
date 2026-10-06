@@ -216,6 +216,25 @@ class UpdateTest {
         assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update, file), request, at - 1))
     }
 
+    /** 許可しても canRequestPackageInstalls が false のままのテレビで、許可の画面と行き来し続けない (denpa-tv#32 の BRAVIA) */
+    @Test
+    fun 許可が見えなくても_一度許可の画面へ送ったら入れてみる() {
+        val at = 1_000_000L
+        val asked = InstallRequest("0.8.0", at)
+        // 許可が見える: いつでも入れる
+        assertEquals(InstallStep.Install, installStep(true, null, "0.8.0", at))
+        assertEquals(InstallStep.Install, installStep(true, asked, "0.8.0", at))
+        // 見えない: 初めは許可の画面を開く
+        assertEquals(InstallStep.AskPermission, installStep(false, null, "0.8.0", at))
+        // この版で一度送ったあと (戻ってきた・押し直した): 見えなくても入れてみる (本当に無ければ OS が尋ねる)
+        assertEquals(InstallStep.Install, installStep(false, asked, "0.8.0", at + 5_000))
+        assertEquals(InstallStep.Install, installStep(false, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS))
+        // ほかの版・古い頼み・時計が戻った: もう一度許可の画面を開く
+        assertEquals(InstallStep.AskPermission, installStep(false, asked, "0.8.1", at))
+        assertEquals(InstallStep.AskPermission, installStep(false, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS + 1))
+        assertEquals(InstallStep.AskPermission, installStep(false, asked, "0.8.0", at - 1))
+    }
+
     @Test
     fun 許可を待つ間の1行() {
         val update = Update("0.4.0", "denpa-tv-0.4.0.apk", "", null)
