@@ -75,11 +75,11 @@ sealed interface UpdateState {
 
 /** 押せる1行に出す文。出さないときは null (裏で取ってきている間も出さない) */
 fun UpdateState.notice(): String? = when (this) {
-    is UpdateState.Available -> "${update.label} があります"
-    is UpdateState.Ready -> "${update.label} を入れられます (押すと入れます)"
-    is UpdateState.Downloading -> "${update.label} を取ってきています $percent%"
+    is UpdateState.Available -> "アップデート (${update.label})"
+    is UpdateState.Ready -> "アップデート (${update.label})"
+    is UpdateState.Downloading -> "ダウンロード中 $percent%"
     is UpdateState.Installing ->
-        if (confirming) "${update.label}: 出てきた確認の画面で入れてください" else "${update.label} を入れています…"
+        if (confirming) "確認画面で「インストール」を選んでください" else "インストール中…"
     is UpdateState.NeedsPermission -> message
     is UpdateState.Failed -> message
     else -> null
@@ -138,7 +138,7 @@ fun installStep(allowed: Boolean, asked: InstallRequest?, version: String, now: 
  * 押すと PackageInstaller のセッションで入れる (リリースは同じ鍵で署名しているので上書きで入る)。
  * 照らした APK は cache に版ごとに置き、開き直しても (ハッシュを計り直して合えば) 取り直さない。
  * 開いたときの確かめと裏の取り込みは、届かなくても黙っている (ログだけ。次に確かめたときに取り直す)。
- * 何度も取れなければ前のとおり「新しい版があります」を出し、押したら取ってくる。設定の「確かめる」は出す
+ * 何度も取れなければ「アップデート (v0.4.0)」を出し、押したら取ってくる。設定の「確かめる」は出す
  */
 class Updater(private val app: DenpaApp) {
     val current: String = BuildConfig.VERSION_NAME
@@ -235,7 +235,7 @@ class Updater(private val app: DenpaApp) {
 
     private val requestWriter = Dispatchers.IO.limitedParallelism(1)
 
-    /** 設定の「アップデートを確かめる」。取ってきている・入れている間は何もしない */
+    /** 設定の「アップデートを確認」。取ってきている・入れている間は何もしない */
     fun checkNow() {
         val busy = _state.value.let {
             it is UpdateState.Checking || it is UpdateState.Preparing || it is UpdateState.Downloading || it is UpdateState.Installing
@@ -256,7 +256,7 @@ class Updater(private val app: DenpaApp) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "新しい版を確かめられませんでした", e)
-                _state.value = UpdateState.CheckFailed("確かめられませんでした (${e.message ?: e.javaClass.simpleName})")
+                _state.value = UpdateState.CheckFailed("確認できませんでした (${e.message ?: e.javaClass.simpleName})")
             }
         }
     }
@@ -364,11 +364,11 @@ class Updater(private val app: DenpaApp) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: UpdateRejected) {
-                _state.value = UpdateState.Failed(update, e.message ?: "入れません")
+                _state.value = UpdateState.Failed(update, e.message ?: "インストールできません")
                 return@launch
             } catch (e: Exception) {
                 Log.w(TAG, "APK を取れませんでした", e)
-                _state.value = UpdateState.Failed(update, "${update.label} を取れませんでした (押すとやり直します)")
+                _state.value = UpdateState.Failed(update, "ダウンロードに失敗しました")
                 return@launch
             }
             install(update, file)
@@ -439,11 +439,11 @@ class Updater(private val app: DenpaApp) {
         Log.i(TAG, "許可の画面を開きました: ${if (opened) "開けた" else "開けない"}")
         // 頭の1行に収まる長さで。開けなければ、どこで許可するかを足す
         // 開けなければ戻っても勝手に始めない (`resume`) ので、押してもらう
-        val then = if (opened) "して戻ると、続けて入れます" else "してから押すと入れます"
+        val then = if (opened) "して戻ってください" else "してから、もう一度押してください"
         return opened to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            (if (opened) "" else "テレビの設定で ") + "「不明なアプリのインストール」を許可$then"
+            (if (opened) "" else "テレビの設定で") + "「不明なアプリのインストール」を許可$then"
         } else {
-            (if (opened) "" else "テレビの設定の「セキュリティ」で ") + "「提供元不明のアプリ」を許可$then"
+            (if (opened) "" else "テレビの設定の「セキュリティ」で") + "「提供元不明のアプリ」を許可$then"
         }
     }
 
@@ -494,9 +494,9 @@ class Updater(private val app: DenpaApp) {
             _state.value = if (e is SecurityException && !allowedToInstall()) {
                 // セッションを作れない・渡せない: 許可が無いせい。次に押すと許可の画面を開き直す (頼みを忘れて AskPermission に)
                 remember(null)
-                UpdateState.Failed(update, "${update.label}: 許可が効いていません。押すと許可の画面を開きます ($TWO_ENTRIES)", file)
+                UpdateState.Failed(update, "インストールの許可がありません。もう一度押して許可してください ($TWO_ENTRIES)", file)
             } else {
-                UpdateState.Failed(update, "${update.label} を入れられませんでした (${e.message ?: e.javaClass.simpleName})", file)
+                UpdateState.Failed(update, "インストールに失敗しました (${e.message ?: e.javaClass.simpleName})", file)
             }
         }
     }
@@ -511,7 +511,7 @@ class Updater(private val app: DenpaApp) {
             val now = _state.value
             // その間に結果が来た・押し直した (ほかの状態・ほかのセッションになった) ら何もしない
             if (now is UpdateState.Installing && !now.confirming && session == id &&
-                _state.compareAndSet(now, UpdateState.Failed(update, "${update.label}: テレビから返事がありません (押すともう一度)", file))
+                _state.compareAndSet(now, UpdateState.Failed(update, "インストールの応答がありません", file))
             ) {
                 Log.w(TAG, "セッション $id の結果が ${STATUS_TIMEOUT_MS / 1000} 秒来ません")
             }
@@ -563,7 +563,7 @@ class Updater(private val app: DenpaApp) {
                     Log.i(TAG, "確認の画面を出しました: ${confirm.action}")
                     _state.value = installing.copy(confirming = true)
                 } else {
-                    failed("${installing.update.label} の確認の画面を出せませんでした")
+                    failed("確認画面を開けませんでした")
                 }
             }
             // 入ると、このアプリは OS に閉じられる (ここにはまず来ない)
@@ -571,14 +571,14 @@ class Updater(private val app: DenpaApp) {
             // 許可が見えないときにやめたのは、OS の「このアプリからは入れられません」かもしれない。ただ確認の画面を閉じても同じ
             // (User rejected permissions) で見分けられないので、許可の画面へは戻さず (押すとまた OS が尋ねる)、2つ並ぶことだけ添える
             PackageInstaller.STATUS_FAILURE_ABORTED -> failed(
-                "${installing.update.label} を入れるのをやめました (押すともう一度" + (if (allowedToInstall()) ")" else "。$TWO_ENTRIES)"),
+                "インストールを中止しました" + (if (allowedToInstall()) "" else " ($TWO_ENTRIES)"),
             )
             PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
-                failed("署名が違うので上書きできません (docs/install.md の「署名について」)")
-            PackageInstaller.STATUS_FAILURE_STORAGE -> failed("空きが足りないので入れられません")
+                failed("署名が違うため上書きできません (docs/install.md)")
+            PackageInstaller.STATUS_FAILURE_STORAGE -> failed("空き容量が足りません")
             else -> {
                 Log.w(TAG, "入れられませんでした: $status $detail")
-                failed("${installing.update.label} を入れられませんでした" + (detail?.let { " ($it)" } ?: ""))
+                failed("インストールに失敗しました" + (detail?.let { " ($it)" } ?: ""))
             }
         }
     }
@@ -590,7 +590,7 @@ class Updater(private val app: DenpaApp) {
         const val STATUS_TIMEOUT_MS = 30_000L
         const val ACTION_STATUS = "io.github.danything.denpatv.UPDATE_STATUS"
         /** テレビの設定に同じアプリが2つ並ぶことがあり (denpa-tv#32)、片方だけ許可しても効かないことがある */
-        const val TWO_ENTRIES = "設定に denpa が2つ並んでいたら両方を許可"
+        const val TWO_ENTRIES = "denpa が2つあれば両方を許可"
         /** AppOpsManager の OPSTR_REQUEST_INSTALL_PACKAGES (SDK には出ていない名前) */
         const val OPSTR_REQUEST_INSTALL_PACKAGES = "android:request_install_packages"
     }

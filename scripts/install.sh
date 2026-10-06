@@ -25,7 +25,7 @@ usage() {
     cat >&2 <<'EOF'
 使い方: install.sh <テレビの IP>[:ポート] [--pair <IP>:<ポート> <コード>] [--version v0.2.1]
   --pair     Android 11 以降の「ワイヤレス デバッグ」で、先にペア設定する
-  --version  入れる版 (既定は最新のリリース。試し版も含む)
+  --version  インストールする版 (既定は最新のリリース。プレリリースを含む)
 EOF
 }
 die() { printf 'エラー: %s\n' "$*" >&2; exit 1; }
@@ -33,16 +33,16 @@ die() { printf 'エラー: %s\n' "$*" >&2; exit 1; }
 target='' pair='' code='' version=''
 while [ $# -gt 0 ]; do
     case "$1" in
-        --pair) [ $# -ge 3 ] || die '--pair には <IP>:<ポート> と <コード> を渡してください'
+        --pair) [ $# -ge 3 ] || die '--pair には <IP>:<ポート> と <コード> を指定してください'
             pair=$2 code=$3; shift 3 ;;
-        --version) [ $# -ge 2 ] || die '--version には版 (v0.2.0 など) を渡してください'
+        --version) [ $# -ge 2 ] || die '--version には版を指定してください (例: v0.2.0)'
             version=$2; shift 2 ;;
         -h | --help) usage; exit 0 ;;
-        -*) die "知らない引数です: $1" ;;
+        -*) die "不明な引数です: $1" ;;
         *) target=$1; shift ;;
     esac
 done
-[ -n "$target" ] || die 'テレビの IP を渡してください (例: bash -s -- 192.168.1.20)'
+[ -n "$target" ] || die 'テレビの IP を指定してください (例: bash -s -- 192.168.1.20)'
 case "$target" in *:*) ;; *) target="$target:5555" ;; esac
 
 # --- adb (無ければ platform-tools を取ってくる) ---
@@ -52,11 +52,11 @@ else
     case "$(uname -s)" in
         Darwin) os=darwin ;;
         Linux) os=linux ;;
-        *) die "この OS には対応していません: $(uname -s) (Windows は scripts/install.ps1)" ;;
+        *) die "未対応の OS です: $(uname -s) (Windows は scripts/install.ps1)" ;;
     esac
     adb="$CACHE/platform-tools/adb"
     if [ ! -x "$adb" ]; then
-        say "adb が無いので、Google の platform-tools を $CACHE に取ってきます"
+        say "platform-tools をダウンロード中 ($CACHE)"
         mkdir -p "$CACHE"
         curl -fsSL --retry 3 -o "$CACHE/platform-tools.zip" \
             "https://dl.google.com/android/repository/platform-tools-latest-$os.zip"
@@ -85,7 +85,7 @@ sums_url=$(printf '%s\n' "$urls" | grep '/SHA256SUMS$' | head -n1 || true)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 apk="$work/$(basename "$apk_url")"
-say "$(basename "$apk_url") を取ってきます"
+say "$(basename "$apk_url") をダウンロード中"
 curl -fsSL --retry 3 -o "$apk" "$apk_url"
 # ハッシュの無いリリースは入れない (壊れた APK を黙って入れない)
 [ -n "$sums_url" ] || die 'リリースに SHA256SUMS がありません'
@@ -96,17 +96,17 @@ curl -fsSL --retry 3 -o "$apk" "$apk_url"
     else
         actual=$(shasum -a 256 "$apk" | cut -d' ' -f1)
     fi
-    [ -n "$expected" ] && [ "$expected" = "$actual" ] || die 'APK のハッシュが合いません (取り直してください)'
+    [ -n "$expected" ] && [ "$expected" = "$actual" ] || die 'APK のハッシュが一致しません。もう一度実行してください'
 }
 
 # --- テレビに繋ぐ ---
 # adb には標準入力を渡さない。curl | bash で流すと、標準入力はこのスクリプトの続きで、
 # adb (とくに shell) がそれを読むと残りが食われる
 if [ -n "$pair" ]; then
-    say "$pair とペア設定します"
-    "$adb" pair "$pair" "$code" </dev/null || die 'ペア設定できませんでした (コードとポートはペア設定の画面に出ているものです)'
+    say "$pair とペア設定中"
+    "$adb" pair "$pair" "$code" </dev/null || die 'ペア設定に失敗しました。ペア設定の画面のポートとコードを確認してください'
 fi
-say "$target に繋ぎます"
+say "$target に接続中"
 # 届かない宛先への adb connect はなかなか返らないので、10秒で見切る (macOS には timeout が無い)
 connect() {
     "$adb" connect "$target" </dev/null >/dev/null 2>&1 &
@@ -125,22 +125,22 @@ done
 for _ in $(seq 1 30); do
     case "$(state)" in
         device) break ;;
-        *unauthorized*) [ "${asked:-}" ] || say 'テレビに出ている「USB デバッグを許可」を押してください'; asked=1 ;;
+        *unauthorized*) [ "${asked:-}" ] || say 'テレビで「USB デバッグを許可」を選んでください'; asked=1 ;;
         *) break ;;
     esac
     sleep 2
 done
 [ "$(state)" = device ] ||
-    die "$target に繋がりません。テレビの開発者向けオプションでデバッグが入っているか、同じネットワークかを確かめてください (docs/install.md)"
+    die "$target に接続できません。テレビのデバッグが有効か、同じネットワークかを確認してください (docs/install.md)"
 
 # --- 入れて起こす ---
-say 'インストールします'
+say 'インストール中'
 if ! out=$("$adb" -s "$target" install -r "$apk" </dev/null 2>&1); then
     case "$out" in
         *INSTALL_FAILED_UPDATE_INCOMPATIBLE*)
-            die "入っている denpa TV と署名が違うので上書きできません。テレビで denpa TV を消してから流し直してください ($adb -s $target uninstall $PACKAGE で消せます。設定は消えます)" ;;
-        *) die "インストールできませんでした: $out" ;;
+            die "署名が違うため上書きできません。アンインストールしてから、もう一度実行してください: $adb -s $target uninstall $PACKAGE (設定も消えます)" ;;
+        *) die "インストールに失敗しました: $out" ;;
     esac
 fi
 "$adb" -s "$target" shell am start -n "$PACKAGE/.MainActivity" </dev/null >/dev/null
-say '入れて起動しました。終わったら、テレビのデバッグは切っておくのがおすすめです (docs/install.md)'
+say 'インストールしました。使い終わったら、テレビのデバッグをオフに戻してください (docs/install.md)'

@@ -238,9 +238,9 @@ class UpdateTest {
     @Test
     fun 許可を待つ間の1行() {
         val update = Update("0.4.0", "denpa-tv-0.4.0.apk", "", null)
-        val message = "「不明なアプリのインストール」を許可して戻ると、続けて入れます"
+        val message = "「不明なアプリのインストール」を許可して戻ってください"
         assertEquals(message, UpdateState.NeedsPermission(update, message).notice())
-        assertEquals("v0.4.0 があります", UpdateState.Available(update).notice())
+        assertEquals("アップデート (v0.4.0)", UpdateState.Available(update).notice())
     }
 
     @Test

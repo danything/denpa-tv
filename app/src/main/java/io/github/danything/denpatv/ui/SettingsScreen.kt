@@ -60,19 +60,19 @@ fun SettingsScreen(repo: Repository) {
         val updater = app.updater
         val state by updater.state.collectAsState()
         Text(
-            "この版: v${updater.current}" + if (updater.dev) " (手元で焼いた版)" else "",
+            "バージョン v${updater.current}" + if (updater.dev) " (開発版)" else "",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(top = 20.dp),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = { updater.checkNow() }) { Text("アップデートを確かめる") }
+            Button(onClick = { updater.checkNow() }) { Text("アップデートを確認") }
             when (val s = state) {
-                UpdateState.Checking -> Text("確かめています…")
+                UpdateState.Checking -> Text("確認中…")
                 is UpdateState.UpToDate -> Text(s.latest?.let { "最新です ($it)" } ?: "リリースがまだありません")
-                is UpdateState.DevBuild -> Text("手元で焼いた版なので上げません" + (s.latest?.let { " (最新は $it)" } ?: ""))
+                is UpdateState.DevBuild -> Text("開発版はアップデートしません" + (s.latest?.let { " (最新 $it)" } ?: ""))
                 is UpdateState.CheckFailed -> Text(s.message)
                 // 裏で取ってきている (録画の一覧の頭には出さない)
-                is UpdateState.Preparing -> Text("${s.update.label} を取ってきています ${s.percent}%")
+                is UpdateState.Preparing -> Text("${s.update.label} をダウンロード中 ${s.percent}%")
                 // 新しい版がある・入れられる・取ってきている・入れている・失敗した: 録画の一覧の頭と同じ1行 (押すと入れる)
                 else -> UpdateNotice(updater)
             }
