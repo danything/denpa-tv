@@ -18,6 +18,8 @@ class BaseUrlTest {
         assertEquals("http://192.168.1.10:3000/", BaseUrl.normalize("http://http://192.168.1.10:3000").toString())
         assertEquals("https://tv.example.jp/denpa/", BaseUrl.normalize("http://https://tv.example.jp/denpa").toString())
         assertEquals("https://tv.example.jp/", BaseUrl.normalize("HTTP://http://https://tv.example.jp").toString())
+        // 貼った URL の頭が大文字
+        assertEquals("https://tv.example.jp/", BaseUrl.normalize("http://Https://tv.example.jp").toString())
     }
 
     @Test
@@ -30,6 +32,8 @@ class BaseUrlTest {
             listOf("http://nas.local/denpa/", "http://nas.local:3000/denpa/"),
             BaseUrl.candidates(BaseUrl.normalize("nas.local/denpa")!!).map { it.toString() },
         )
+        // 接頭辞の % はそのまま
+        assertEquals("http://nas.local:3000/tv%2541/", BaseUrl.candidates(BaseUrl.normalize("nas.local/tv%2541")!!)[1].toString())
         // ポートを書いた・https なら、そのまま
         assertEquals(1, BaseUrl.candidates(BaseUrl.normalize("192.168.1.10:8080")!!).size)
         assertEquals(1, BaseUrl.candidates(BaseUrl.normalize("https://tv.example.jp")!!).size)

@@ -250,7 +250,7 @@ fun RecordingsScreen(
                             lastFocused = repo.forgetRecording(recording.id)
                         } else {
                             // 再生の画面と同じ知らせ
-                            notify("消せませんでした (録画中は消せません)")
+                            notify(NOT_DELETED)
                         }
                     }
                     lastFocused?.let { focus(it) }

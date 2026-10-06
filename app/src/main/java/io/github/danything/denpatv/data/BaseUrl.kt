@@ -22,10 +22,12 @@ object BaseUrl {
         } catch (_: URISyntaxException) {
             return null
         }
-        if (url.scheme != "http" && url.scheme != "https") return null
+        // スキームは小文字にそろえる (貼った URL の頭が大文字になっていることがある)
+        val scheme = url.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") return null
         if (url.host.isNullOrEmpty()) return null
         val path = url.rawPath.orEmpty().ifEmpty { "/" }
-        return URI(url.scheme, null, url.host, url.port, null, null, null)
+        return URI(scheme, null, url.host, url.port, null, null, null)
             .resolve(if (path.endsWith("/")) path else "$path/")
     }
 
@@ -35,7 +37,7 @@ object BaseUrl {
      */
     fun candidates(base: URI, fallbackPort: Int = DENPA_PORT): List<URI> =
         if (base.scheme == "http" && base.port == -1) {
-            listOf(base, URI(base.scheme, null, base.host, fallbackPort, base.path, null, null))
+            listOf(base, URI(base.scheme, null, base.host, fallbackPort, null, null, null).resolve(base.rawPath))
         } else {
             listOf(base)
         }

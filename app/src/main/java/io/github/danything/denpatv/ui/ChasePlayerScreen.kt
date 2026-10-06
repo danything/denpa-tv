@@ -154,10 +154,11 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
      * 画質を選んだときの位置。**画質が替わってから**、ここから頼み直す — 押したときに `from` を替えると、新しい画質が届く前に
      * 古い画質で一度頼み直してしまう (denpa に焼き直しを2回させる)。MPEG-2 との行き来ではプレーヤーごと作り直すので、押したときに覚えておく
      */
-    val switchedAt = remember { mutableStateOf<Long?>(null) }
+    val switchedAt = remember { mutableStateOf<Pair<Long, LiveQuality>?>(null) }
     LaunchedEffect(from, quality, attempt, baked.ready, baked.audio?.id) {
         if (!baked.ready) return@LaunchedEffect
-        switchedAt.value?.let { at ->
+        // 選んだ画質の頼みでだけ使う (ほかの頼み直し — 左右で動かした・繋ぎ直した — の位置を巻き戻さない)
+        switchedAt.value?.takeIf { it.second == quality }?.let { (at, _) ->
             switchedAt.value = null
             // 位置を替えると、この頼みをやり直す (そちらで頼む)
             if (at != from) {
@@ -369,7 +370,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                     "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
                         // 選んだらすぐ入れて、居た場所から頼み直す (映るまでは前の絵のまま「… に切り替え中」)
                         Control(choice.label, on = choice == codec.chosen) {
-                            codec.choose(choice) { switchedAt.value = position() }
+                            codec.choose(choice) { switchedAt.value = position() to choice }
                         }
                     },
                     "" to tracks.controls() + baked.controls(),

@@ -13,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.ServerSocket
 import java.net.URI
 
 /** URL を入れてもらったあと: 家の LAN ならそのまま、家の外なら登録へ */
@@ -32,19 +33,34 @@ class ConnectTest {
         assertEquals(ConnectStep.Open(URI(denpa.url("/denpa/"))), step)
     }
 
-    /** ポートを書かずに打ったら、80 に繋がらなければ denpa の既定のポートも試し、繋がったほうを使う */
+    /** 閉じたポート (開いてすぐ閉じる) */
+    private fun closedPort(): Int = ServerSocket(0).use { it.localPort }
+
+    /** 前の候補 (ポートを省いた 80 にあたる) に繋がらなければ、次の候補 (3000 にあたる) を使う */
     @Test
-    fun ポートが無く_80_に繋がらなければ既定のポートも試す() = runTest {
+    fun 前の候補に繋がらなければ次の候補を使う() = runTest {
         denpa.enqueue("ok")
         denpa.enqueue("[]")
-        val port = URI(denpa.url()).port
-        val step = connect(DenpaApi(), "http://http://127.0.0.1/denpa", "tv", fallbackPort = port)
-        assertEquals(ConnectStep.Open(URI("http://127.0.0.1:$port/denpa/")), step)
+        val closed = URI("http://127.0.0.1:${closedPort()}/denpa/")
+        val step = connect(DenpaApi(), "http://http://127.0.0.1/denpa", "tv") { listOf(closed, URI(denpa.url("/denpa/"))) }
+        assertEquals(ConnectStep.Open(URI(denpa.url("/denpa/"))), step)
+    }
+
+    /** 前の候補が HTML を返す (NAS やルータの画面) なら denpa ではない */
+    @Test
+    fun HTML_を返す候補は選ばない() = runTest {
+        FakeDenpa().use { other ->
+            other.enqueue("<!doctype html><title>router</title>")
+            denpa.enqueue("{\"ok\":true}")
+            denpa.enqueue("[]")
+            val step = connect(DenpaApi(), "127.0.0.1", "tv") { listOf(URI(other.url()), URI(denpa.url())) }
+            assertEquals(ConnectStep.Open(URI(denpa.url())), step)
+        }
     }
 
     @Test
     fun どこにも繋がらなければそう言う() = runTest {
-        val step = connect(DenpaApi(), "127.0.0.1", "tv", fallbackPort = 9) as ConnectStep.Failed
+        val step = connect(DenpaApi(), "127.0.0.1", "tv") { listOf(URI("http://127.0.0.1:${closedPort()}/")) } as ConnectStep.Failed
         assertEquals("http://127.0.0.1/ に接続できません。URL を確認してください", step.message)
     }
 

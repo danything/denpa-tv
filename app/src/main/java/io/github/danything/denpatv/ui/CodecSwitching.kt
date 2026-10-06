@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import io.github.danything.denpatv.data.CodecSwitch
@@ -42,14 +43,18 @@ class CodecSwitching internal constructor(
     /** 札で入っているもの。選んだものをすぐ入れる */
     val chosen: LiveQuality get() = state.value.pending ?: state.value.shown
 
-    /** 札で選んだ。同じものなら何もしない。`before` は切り替えるときだけ (追っかけは居た場所を覚える) */
+    /** 札で選んだ。同じものなら何もしない。`before` は別の画質へ切り替えるときだけ (追っかけは居た場所を覚える) */
     fun choose(next: LiveQuality, before: () -> Unit = {}) {
         val switched = state.value.choose(next) ?: return
-        before()
         state.value = switched
         note.value = null
-        // 切り替え中に映っている画質を選び直したら、切り替えをやめるだけ (見出しは元の画質に戻る)
-        if (switched.pending != null) say()("${next.label} に切り替え中")
+        if (switched.pending != null) {
+            before()
+            say()("${next.label} に切り替え中")
+        } else {
+            // 切り替え中に映っている画質を選び直した: 切り替えをやめる (「… に切り替え中」の1行を残さない)
+            say()("${next.label} のまま")
+        }
         scope.launch { repo.app.settings.setLiveQuality(next) }
     }
 
@@ -94,9 +99,9 @@ fun rememberCodecSwitching(
         }
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() = pictured()
-            // 絵の無い局 (ラジオ) では最初の絵の知らせが来ないので、流れはじめたことでも済ませる (`Recovery.onPictured` と同じ)
+            // 絵の無い局 (ラジオ) では最初の絵の知らせが来ないので、流れはじめたことで済ませる。映像のある流れでは、音だけでは済ませない
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) pictured()
+                if (isPlaying && !player.currentTracks.containsType(C.TRACK_TYPE_VIDEO)) pictured()
             }
         }
         player.addListener(listener)

@@ -25,6 +25,20 @@ class DenpaApi(private val token: () -> String? = { null }) {
         }
     }
 
+    /**
+     * 繋ぐ先として denpa らしいか。`api/health` が通り、返事が HTML でない (denpa は JSON を返す)。
+     * 同じ機械の 80 で NAS やルータの画面がどのパスにも 200 の HTML を返していても、そちらを選ばない (`firstReachable`)
+     */
+    suspend fun looksLikeDenpa(base: URI): Boolean = withContext(Dispatchers.IO) {
+        val url = BaseUrl.resolve(base, "api/health") ?: return@withContext false
+        try {
+            val response = Http.request(url)
+            response.ok && !response.text().trimStart().startsWith("<")
+        } catch (_: IOException) {
+            false
+        }
+    }
+
     suspend fun services(base: URI): List<Service> = get(base, "api/services")
 
     /** 録画を新しい順に、全部 (画面は一番古い録画から開くので) */

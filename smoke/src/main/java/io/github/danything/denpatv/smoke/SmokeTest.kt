@@ -227,7 +227,8 @@ class SmokeTest {
         longPress(KeyEvent.KEYCODE_DPAD_CENTER)
         assertTrue("決定の長押しで詳しくが開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().let { "閉じる" in it && FakeDenpa.RECORDING_DESCRIPTION in it } })
         press(KeyEvent.KEYCODE_BACK)
-        assertTrue("戻るで詳しくが閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in windowTexts() })
+        // 窓が取れずに空なのを「閉じた」と取り違えない
+        assertTrue("戻るで詳しくが閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } })
         assertTrue(
             "詳しくを閉じたら止めた位置の帯が出ていません (動き出した・画面ごと戻った?): ${windowTexts()}",
             poll(TEXT_TIMEOUT_MS) { windowTexts().any { it.startsWith("一時停止  ") } },
