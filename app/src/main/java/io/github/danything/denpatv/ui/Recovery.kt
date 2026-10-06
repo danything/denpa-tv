@@ -85,10 +85,14 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope)
         pictured = false
     }
 
-    /** 次の絵が出た。数え直す */
+    /**
+     * 次の絵が出た・流れはじめた。数え直す。絵が出たこと (`onRenderedFirstFrame`) と流れはじめたこと (`onIsPlayingChanged`) の
+     * どちらでも呼ぶ — `prepare` し直しただけ (録画のファイル) や絵の無い局 (ラジオ) では、絵の知らせが来ないことがある
+     */
     fun onPictured() {
+        if (!pictured) picturedAt = SystemClock.uptimeMillis()
         pictured = true
-        picturedAt = SystemClock.uptimeMillis()
+        firing = false
         attempts = 0
         few = 0
         active = false

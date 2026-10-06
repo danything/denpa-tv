@@ -528,8 +528,7 @@ fun rememberPlayer(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isPlaying) return
                 error = null
-                // 絵の無いもの (ラジオの局) は、鳴りはじめたのを映ったことにする (絵が出るのを待つと、数え直さないまま)
-                if (!player.currentTracks.isTypeSupported(C.TRACK_TYPE_VIDEO)) recovery.onPictured()
+                recovery.onPictured()
             }
         }
         player.addListener(listener)
