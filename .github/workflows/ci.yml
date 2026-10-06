@@ -185,7 +185,7 @@ jobs:
           emulator-boot-timeout: 300
           emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
           disable-animations: true
-          script: bash scripts/smoke-run.sh apks/app/build/outputs/apk/minified/app-minified.apk apks/smoke/build/outputs/apk/minified/smoke-minified.apk smoke-results
+          script: SMOKE_STOP_EMULATOR=1 bash scripts/smoke-run.sh apks/app/build/outputs/apk/minified/app-minified.apk apks/smoke/build/outputs/apk/minified/smoke-minified.apk smoke-results
       # 通っても落ちても切られても残す (logcat・JUnit の出力・止まったところの画面)
       - if: always() && env.RUN == 'true'
         uses: actions/upload-artifact@v7

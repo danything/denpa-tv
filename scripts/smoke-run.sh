@@ -21,7 +21,22 @@ adb logcat -c || true
 # logcat は走らせている間ずっと書き出す (途中で止められても、そこまでの記録が残る)
 adb logcat -v threadtime > "$out/logcat.txt" 2>&1 &
 logcat=$!
-trap 'kill $logcat 2>/dev/null || true' EXIT
+# CI (`SMOKE_STOP_EMULATOR=1`) では、終わったらエミュレータもここで止める。API 28 の像は `adb emu kill` を受けても
+# 閉じきらず (「removeAll」で止まる)、android-emulator-runner がその終わりを待ったまま手順の上限まで固まった。
+# 頼んで 30 秒待ち、閉じなければ qemu を殺す (スナップショットは保存しない手順なので、殺しても困らない)
+stop_emulator() {
+    [ "${SMOKE_STOP_EMULATOR:-}" = 1 ] || return 0
+    timeout 10 adb emu kill || true
+    for _ in $(seq 1 15); do
+        pgrep -f qemu-system > /dev/null || return 0
+        sleep 2
+    done
+    echo "エミュレータが閉じないので止めます"
+    # 子の crashpad_handler も出力を握ったまま残ると、やはり終わりを待たれる
+    pkill -9 -f qemu-system || true
+    pkill -9 -f emulator/crashpad_handler || true
+}
+trap 'kill $logcat 2>/dev/null || true; stop_emulator' EXIT
 # am instrument は失敗しても 0 で戻るので、JUnit の締めの行 (OK (3 tests) / FAILURES!!!) で見る。
 # テストの APK ごと起き上がれないと 0 件のまま終わるので、1件以上通ったことも見る。-r でテストごとの始まり・終わりも出す。
 #
