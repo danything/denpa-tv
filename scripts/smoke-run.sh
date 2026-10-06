@@ -33,7 +33,7 @@ stop_emulator() {
     pkill -9 -f emulator/crashpad_handler || true
 }
 logcat=""
-trap '[ -n "$logcat" ] && kill "$logcat" 2>/dev/null; stop_emulator' EXIT
+trap '{ [ -z "$logcat" ] || kill "$logcat" 2>/dev/null || true; }; stop_emulator' EXIT
 # CI (`SMOKE_WAIT_APKS=<置く先>`) では、エミュレータを起こしてから apks の列が焼き終わるのを待って APK を取ってくる
 # (scripts/wait-apks.sh)。取れなくてもエミュレータは上で止める
 if [ -n "${SMOKE_WAIT_APKS:-}" ]; then

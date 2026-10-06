@@ -23,20 +23,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      # cache-encryption-key は構成のキャッシュ (configuration cache) を暗号化する鍵。GRADLE_ENCRYPTION_KEY として後の手順に渡る
       - uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-      # 構成のキャッシュを前の走りから持ち越す (構成の 10 秒ほどを飛ばす)。setup-gradle (v6) が持ち越すのは Gradle の家だけで、
-      # プロジェクトの .gradle/configuration-cache は Develocity の契約が無いと持ち越さないので、ここで持つ。
-      # 使えるかは Gradle が入力 (build スクリプト・properties・JDK・依存) を見て決める (合わなければ構成し直して入れ替える)。
-      # 毎回いちばん新しいものを取って、新しく置く。鍵の無い走り (fork の PR) では使わない (暗号を解けない)
-      - if: env.GRADLE_ENCRYPTION_KEY != ''
-        uses: actions/cache@v6
-        with:
-          path: .gradle/configuration-cache
-          key: gradle-cc-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: gradle-cc-${{ github.job }}-
       # Android SDK はランナーに入っている。足りない platform は AGP が取ってくる
       - name: Lint / unit tests / debug APK
         run: ./gradlew lintDebug testDebugUnitTest assembleDebug --console=plain
@@ -93,19 +80,10 @@ jobs:
           java-version: '25'
       - if: needs.changes.outputs.code == 'true'
         uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-      # build の列と同じ (構成のキャッシュを持ち越す)
-      - if: needs.changes.outputs.code == 'true' && env.GRADLE_ENCRYPTION_KEY != ''
-        uses: actions/cache@v6
-        with:
-          path: .gradle/configuration-cache
-          key: gradle-cc-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: gradle-cc-${{ github.job }}-
       - if: needs.changes.outputs.code == 'true'
         name: Build APKs
-        # lintVital (縮める版に付く lint の致命の分だけ) は外す。同じ検査は build の列の lintDebug が全部やっていて、
-        # ここで R8 と CPU を取り合うと、emulator の列が待つ APK が遅れる
+        # lintVital (縮める版に付く lint の致命の分) は外して焼くだけにする。lint は build の列の lintDebug が全部の検査でやっている。
+        # ここで走らせると R8 と並んで 1 分ほど CPU を使い、emulator の列が待つ APK を遅らせうる
         run: ./gradlew :app:assembleMinified :smoke:assembleMinified -x lintVitalMinified --console=plain
       - if: needs.changes.outputs.code == 'true'
         uses: actions/upload-artifact@v7
@@ -194,7 +172,7 @@ jobs:
           emulator-options: ${{ env.EMULATOR_OPTIONS }}
           disable-animations: false
           script: echo "AVD のスナップショットを作りました"
-      # 固まっても 40 分待たずに切る (wait-apks.sh は APK を 15 分まで待ち、smoke-run.sh は am instrument を 8 分で切って記録を残す)
+      # 固まっても待ちすぎない (wait-apks.sh は APK を 15 分まで待ち、smoke-run.sh は am instrument を 8 分で切って記録を残す)
       - if: env.RUN == 'true'
         name: Smoke test
         timeout-minutes: 27
@@ -222,4 +200,3 @@ jobs:
           path: |
             smoke-results/
             apks/app/build/outputs/mapping/minified/mapping.txt
-
