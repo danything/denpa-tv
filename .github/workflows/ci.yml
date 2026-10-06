@@ -206,3 +206,45 @@ jobs:
             smoke-results/
             apks/app/build/outputs/mapping/minified/mapping.txt
 
+  # 一時: 像だけ戻して素で起こす (-no-snapshot-load) と何秒かかるか測る
+  avd-probe:
+    name: avd-probe (API ${{ matrix.api-level }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { api-level: 24, arch: x86 }
+          - { api-level: 28, arch: x86 }
+          - { api-level: 31, arch: x86 }
+          - { api-level: 34, arch: x86 }
+          - { api-level: 36, arch: x86_64 }
+    steps:
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+            /usr/local/lib/android/sdk/system-images/android-${{ matrix.api-level }}/android-tv/${{ matrix.arch }}
+          key: avd-android-tv-${{ matrix.api-level }}-${{ matrix.arch }}-4c-2g-img
+      - run: |
+          du -sh ~/.android/avd /usr/local/lib/android/sdk/system-images/android-${{ matrix.api-level }}/android-tv/${{ matrix.arch }}
+          du -sh ~/.android/avd/*/* | sort -h | tail
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: android-tv
+          arch: ${{ matrix.arch }}
+          profile: tv_1080p
+          cores: 4
+          ram-size: 2048M
+          force-avd-creation: false
+          emulator-boot-timeout: 600
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: echo booted
