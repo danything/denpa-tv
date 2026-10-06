@@ -36,7 +36,18 @@ android {
         }
     }
 
+    /*
+     * 新しい版を引く GitHub のリリース (Updater)。**debug だけ** 焼くときに `DENPA_TV_UPDATE_API` で差し替えられる
+     * (手元のエミュレータで、偽のリリースから上げる流れを確かめる。docs/release.md の「アプリの中のアップデートを確かめる」)。
+     * release・minified は差し替えない
+     */
+    val githubReleases = "https://api.github.com/repos/danything/denpa-tv"
+    defaultConfig.buildConfigField("String", "UPDATE_API", "\"$githubReleases\"")
+
     buildTypes {
+        debug {
+            System.getenv("DENPA_TV_UPDATE_API")?.let { buildConfigField("String", "UPDATE_API", "\"$it\"") }
+        }
         release {
             if (keystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true

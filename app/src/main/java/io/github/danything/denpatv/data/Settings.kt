@@ -18,7 +18,7 @@ data class Connection(val server: String, val token: String?)
 
 /**
  * 覚えておくもの: 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・
- * アップデートを確かめた時刻。
+ * アップデートを確かめた時刻と、押して許可の画面へ送った版。
  *
  * **トークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
  * 2025 年に全部非推奨になった。アプリの領域は他のアプリから読めず、トークンは denpa の画面からいつでも外せる
@@ -37,6 +37,8 @@ class Settings(private val context: Context) {
     private val dualMonoKey = stringPreferencesKey("dual_mono_side")
     private val updateCheckedKey = longPreferencesKey("update_checked_at")
     private val updateKey = stringPreferencesKey("update")
+    private val installRequestKey = stringPreferencesKey("update_install_requested")
+    private val installRequestAtKey = longPreferencesKey("update_install_requested_at")
 
     /** 繋ぐ先。まだ無ければ null */
     val connection: Flow<Connection?> = context.dataStore.data.map { prefs ->
@@ -126,6 +128,23 @@ class Settings(private val context: Context) {
         context.dataStore.edit {
             it[updateCheckedKey] = at
             if (update == null) it.remove(updateKey) else it[updateKey] = update
+        }
+    }
+
+    /** 押して許可の画面へ送った版 (`InstallRequest`)。無ければ null */
+    suspend fun installRequest(): InstallRequest? = context.dataStore.data.first().let { prefs ->
+        prefs[installRequestKey]?.let { InstallRequest(it, prefs[installRequestAtKey] ?: 0L) }
+    }
+
+    suspend fun setInstallRequest(request: InstallRequest?) {
+        context.dataStore.edit {
+            if (request == null) {
+                it.remove(installRequestKey)
+                it.remove(installRequestAtKey)
+            } else {
+                it[installRequestKey] = request.version
+                it[installRequestAtKey] = request.at
+            }
         }
     }
 }

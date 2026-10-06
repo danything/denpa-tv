@@ -4,6 +4,8 @@ import io.github.danything.denpatv.data.ApkCache
 import io.github.danything.denpatv.data.GitHubAsset
 import io.github.danything.denpatv.data.GitHubRelease
 import io.github.danything.denpatv.data.HashMismatch
+import io.github.danything.denpatv.data.INSTALL_REQUEST_TTL_MS
+import io.github.danything.denpatv.data.InstallRequest
 import io.github.danything.denpatv.data.MAX_SILENT_FAILURES
 import io.github.danything.denpatv.data.Prefetch
 import io.github.danything.denpatv.data.Update
@@ -189,6 +191,30 @@ class UpdateTest {
         assertTrue(offerAfterFailure(MAX_SILENT_FAILURES, manual = false))
         // 設定で「確かめる」を押したときは出す
         assertTrue(offerAfterFailure(1, manual = true))
+    }
+
+    /** 許可の画面へ送って戻ったとき・開き直したとき (denpa-tv#32) */
+    @Test
+    fun 許可の画面へ送った版を_続けて入れるか() {
+        val at = 1_000_000L
+        val request = InstallRequest("0.4.0", at)
+        val update = Update("0.4.0", "denpa-tv-0.4.0.apk", "", null)
+        assertTrue(request.resumes(update, at))
+        assertTrue(request.resumes(update, at + INSTALL_REQUEST_TTL_MS))
+        // 頼んでからずっと後 (許可せずに戻って、何日も後に開いた) は勝手に入れ始めない。時計が戻ったときも
+        assertFalse(request.resumes(update, at + INSTALL_REQUEST_TTL_MS + 1))
+        assertFalse(request.resumes(update, at - 1))
+        // その間にもっと新しい版が出た・新しい版が無くなった (入れ終えた) ときは、頼まれた版ではないので続けない
+        assertFalse(request.resumes(update.copy(version = "0.4.1"), at))
+        assertFalse(request.resumes(null, at))
+    }
+
+    @Test
+    fun 許可を待つ間の1行() {
+        val update = Update("0.4.0", "denpa-tv-0.4.0.apk", "", null)
+        val message = "「不明なアプリのインストール」を許可して戻ると、続けて入れます"
+        assertEquals(message, UpdateState.NeedsPermission(update, message).notice())
+        assertEquals("v0.4.0 があります", UpdateState.Available(update).notice())
     }
 
     @Test
