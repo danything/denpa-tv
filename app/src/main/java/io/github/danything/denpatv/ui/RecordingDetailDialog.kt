@@ -19,6 +19,8 @@ import io.github.danything.denpatv.data.programMeta
  *   (決定の押し間違いで消えないように)。続きが無ければ「再生」
  * - 削除はブラウザの denpa と同じ2回押し
  * - 説明は別の口 (`api/recordings/<id>/detail`) から開いたときに取る。古い denpa には無いので、そのときは出さない
+ * - **録画は番組表の口 (`api/programs/<id>`) を引かない。** 番組表の行は終わると消え・入れ替わり、番組 ID も使い回されるので、
+ *   録り始めに写した録画自身の中身 (`detail`) だけを出す (番組表を引くのはライブの詳しくだけ)
  */
 @Composable
 fun RecordingDetailDialog(
