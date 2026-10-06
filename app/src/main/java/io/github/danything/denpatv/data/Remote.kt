@@ -11,6 +11,7 @@ import android.view.KeyEvent
  * **上は同じメニューを、局の列のいま映している局に合わせて開く** (局を一覧から選ぶ近道)。
  * **決定の長押しは情報キーと同じく、いまの局と番組を出す** (`liveCenter`)。
  * 録画: 左右で 10 秒戻す・送る、決定で止める・動かす、下でシークバーと操作の列、上・決定の長押し・Menu で操作の列。
+ * 開いたメニュー・帯は、いちばん上の段 (ライブは操作の列、録画はシークバー) で上を押すと閉じる (`UpToClose`)。
  * 決定の短押し・長押しは PlayerFrame が分ける (CenterPress)
  */
 enum class LiveCommand { PreviousChannel, NextChannel, Menu, Channels, Info }
@@ -49,3 +50,38 @@ fun recordingCommand(keyCode: Int): RecordingCommand? = when (keyCode) {
  * 押し続けるとキーが繰り返し来るので、そのぶん速く動く
  */
 const val SEEK_STEP_MS = 10_000L
+
+/**
+ * 開いているもの (ライブのメニュー・録画と追っかけの帯) の**いちばん上の列で上キーを押したら閉じて映像に戻る** (戻ると同じ)。
+ * いちばん上の列 (ライブは操作の列、録画・追っかけはシークバー) に付ける。
+ *
+ * **閉じるのは、その列に合っている間に押しはじめた上キーを離したとき** (DOWN の repeat 0 を見た押しの UP。押しの区別は downTime)。
+ * 下の列 (局の列・操作の列) から上キーを押し続けて上がってきたときは、繰り返し (repeat 1〜) と離しがこの列に届くが、
+ * 押しはじめを見ていないので閉じない。DOWN で閉じないのは、押し続けた繰り返しが閉じたあとの映像に届いて、
+ * メニュー・帯を開き直してしまうため (映像の上キーはメニュー・帯を開く)
+ */
+class UpToClose {
+    /** この列に合っている間に押しはじめた上キーの downTime (無ければ null) */
+    private var pressedAt: Long? = null
+
+    fun key(action: Int, keyCode: Int, repeatCount: Int, downTime: Long): UpKey {
+        if (keyCode != KeyEvent.KEYCODE_DPAD_UP) return UpKey.Pass
+        return when (action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (repeatCount == 0) pressedAt = downTime
+                // いちばん上の列なので、上へ動かす先は無い (受けて、合いを動かさない)
+                UpKey.Hold
+            }
+            KeyEvent.ACTION_UP -> if (pressedAt == downTime) {
+                pressedAt = null
+                UpKey.Close
+            } else {
+                UpKey.Pass
+            }
+            else -> UpKey.Pass
+        }
+    }
+}
+
+/** `UpToClose` の答え。Pass は受けない、Hold は受けて何もしない、Close は受けて閉じる */
+enum class UpKey { Pass, Hold, Close }

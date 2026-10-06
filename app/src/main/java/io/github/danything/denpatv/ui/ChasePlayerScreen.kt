@@ -356,7 +356,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                     "" to tracks.controls() + baked.controls(),
                 ),
                 header = { actions ->
-                    ProgressLine(at, length, focus = seekFocus, down = actions) { direction -> step(direction) }
+                    // シークバーが帯のいちばん上の列。そこで上キーを押すと閉じて映像に戻る (録画と同じ)
+                    ProgressLine(at, length, focus = seekFocus, down = actions, onUp = { bar = null }) { direction -> step(direction) }
                 },
                 focusActions = which == Bar.Actions,
                 onActivity = { touched = System.nanoTime() },
