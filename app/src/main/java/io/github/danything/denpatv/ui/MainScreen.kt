@@ -82,15 +82,17 @@ fun MainScreen(
      * 戻ってきたときに合いを取りにいくので、そちらには取らせない (`takeFocus`)。合うまで何こまか試す —
      * 合わせ損ねると、どこにも合わずにリモコンが効かなくなる
      */
-    val toMenu = remember { repo.menuOnReturn.also { repo.menuOnReturn = false } }
-    LaunchedEffect(toMenu) {
+    var toMenu by remember { mutableStateOf(repo.menuOnReturn.also { repo.menuOnReturn = false }) }
+    LaunchedEffect(Unit) {
         if (!toMenu) return@LaunchedEffect
         val live = items.getValue(Destination.Live)
-        repeat(MENU_FOCUS_TRIES) {
+        for (attempt in 0 until MENU_FOCUS_TRIES) {
             withFrameNanos { }
-            if (runCatching { live.requestFocus() }.getOrDefault(false) && liveFocused) return@LaunchedEffect
+            if (runCatching { live.requestFocus() }.getOrDefault(false) && liveFocused) break
             delay(MENU_FOCUS_WAIT_MS)
         }
+        // 合わせ終えたら (合わせ損ねても) 元どおり。このあと録画の一覧を開き直したときは、一覧がカードに合わせる
+        toMenu = false
     }
     // メニューが開いているときの戻るは、右の画面へ戻す (右キーと同じ)。何もしないと戻るが効かないように見える
     BackHandler(enabled = drawer.currentValue == DrawerValue.Open) { focusManager.moveFocus(FocusDirection.Right) }

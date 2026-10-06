@@ -186,7 +186,11 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         }
     }
     DisposableEffect(Unit) {
-        onDispose { if (!ended && position() > 0) save(position(), stopped = true) }
+        onDispose {
+            // 裏に回ったまま閉じたときは、止めた位置 (止めたあとのプレーヤーの位置には頼らない)
+            val at = stoppedAt ?: position()
+            if (!ended && at > 0) save(at, stopped = true)
+        }
     }
     /*
      * **裏に回ったら止めて denpa から降り、観た位置を預ける** (ホーム・別のアプリ。焼いている追っかけなら denpa の焼く手も空く)。

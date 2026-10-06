@@ -76,6 +76,9 @@ class DenpaApiTest {
         assertEquals(RecordResult.Failed("この番組は放送が終わっています"), api.recordNow(base, 1))
         denpa.enqueue("""{"message":"Not Found"}""", code = 404)
         assertEquals(RecordResult.Unsupported, api.recordNow(base, 1))
+        // 通ったのに答えが読めない (版のずれ)。予約できたとは言わない
+        denpa.enqueue("<html></html>")
+        assertEquals(RecordResult.Failed("denpa の答えを読めません (200)"), api.recordNow(base, 1))
     }
 
     /** 局の now に録画の印 (denpa の新しい版)。古い denpa には無いので false */

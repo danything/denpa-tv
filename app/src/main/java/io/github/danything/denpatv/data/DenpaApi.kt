@@ -61,6 +61,8 @@ class DenpaApi(private val token: () -> String? = { null }) {
             res.ok && body?.recorded != null -> RecordResult.Recorded(body.recorded, body.reserved)
             // 口の無い古い denpa は SvelteKit の「Not Found」(断りの文言は日本語で来る)
             res.code == 404 && (body?.message == null || body.message == "Not Found") -> RecordResult.Unsupported
+            // 通ったのに答えが読めない (版のずれ?)。予約できたかは分からない
+            res.ok -> RecordResult.Failed("denpa の答えを読めません (${res.code})")
             else -> RecordResult.Failed(body?.message ?: "${res.code}")
         }
     }
