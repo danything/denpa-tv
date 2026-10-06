@@ -25,6 +25,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
 
@@ -193,20 +194,26 @@ class UpdateTest {
         assertTrue(offerAfterFailure(1, manual = true))
     }
 
-    /** 許可の画面へ送って戻ったとき・開き直したとき (denpa-tv#32) */
+    /** 許可の画面へ送ったあと、アプリが閉じられて開き直したとき (denpa-tv#32) */
     @Test
-    fun 許可の画面へ送った版を_続けて入れるか() {
+    fun 許可の画面へ送った版を_開き直したときに続けて入れるか() {
         val at = 1_000_000L
         val request = InstallRequest("0.4.0", at)
         val update = Update("0.4.0", "denpa-tv-0.4.0.apk", "", null)
-        assertTrue(request.resumes(update, at))
-        assertTrue(request.resumes(update, at + INSTALL_REQUEST_TTL_MS))
-        // 頼んでからずっと後 (許可せずに戻って、何日も後に開いた) は勝手に入れ始めない。時計が戻ったときも
-        assertFalse(request.resumes(update, at + INSTALL_REQUEST_TTL_MS + 1))
-        assertFalse(request.resumes(update, at - 1))
-        // その間にもっと新しい版が出た・新しい版が無くなった (入れ終えた) ときは、頼まれた版ではないので続けない
-        assertFalse(request.resumes(update.copy(version = "0.4.1"), at))
-        assertFalse(request.resumes(null, at))
+        val file = File("denpa-tv-0.4.0.apk")
+        // 頼まれた版を入れられる
+        assertEquals(Resume.Start, resumePlan(UpdateState.Ready(update, file), request, at))
+        assertEquals(Resume.Start, resumePlan(UpdateState.Available(update), request, at + INSTALL_REQUEST_TTL_MS))
+        // 確かめられなかった・裏で取れなかった (Idle に戻る)・取ってきている: 頼みは残す (期限で切れる)
+        for (state in listOf(UpdateState.Idle, UpdateState.Checking, UpdateState.CheckFailed("x"), UpdateState.Preparing(update, 10))) {
+            assertEquals(state.toString(), Resume.Wait, resumePlan(state, request, at))
+        }
+        // その間にもっと新しい版が出たら、頼まれた版ではないので忘れる
+        assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update.copy(version = "0.4.1"), file), request, at))
+        // ずっと後 (許可せずに戻って、何日も後に開いた)・時計が戻った: 勝手に入れ始めない
+        assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update, file), request, at + INSTALL_REQUEST_TTL_MS + 1))
+        assertEquals(Resume.Forget, resumePlan(UpdateState.Idle, request, at + INSTALL_REQUEST_TTL_MS + 1))
+        assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update, file), request, at - 1))
     }
 
     @Test

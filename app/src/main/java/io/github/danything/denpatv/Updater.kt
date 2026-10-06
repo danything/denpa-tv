@@ -25,6 +25,7 @@ import io.github.danything.denpatv.data.offerAfterFailure
 import io.github.danything.denpatv.data.prefetchPlan
 import io.github.danything.denpatv.data.selectUpdate
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -73,6 +74,30 @@ fun UpdateState.notice(): String? = when (this) {
     is UpdateState.NeedsPermission -> message
     is UpdateState.Failed -> message
     else -> null
+}
+
+/** 許可の画面へ送ったあとに開き直したとき、覚えておいた頼み (`InstallRequest`) をどうするか */
+enum class Resume {
+    /** 頼まれた版を入れられる (許可してあれば続けて入れる) */
+    Start,
+    /** まだ分からない (確かめられなかった・取ってきている・裏で取れなかった)。頼みは残し、期限で切れる */
+    Wait,
+    /** 古い頼み・ほかの版になった (もっと新しい版が出た)。忘れる */
+    Forget,
+}
+
+/**
+ * 開き直して確かめ終えたときの `state` で、頼み `request` をどうするか。**確かめられなかったときに頼みを捨てない**
+ * (許可の画面にいる間に閉じられ、開き直したときにたまたま届かなくても、次に開いたときに続けられるように)
+ */
+fun resumePlan(state: UpdateState, request: InstallRequest, now: Long): Resume {
+    if (!request.fresh(now)) return Resume.Forget
+    val update = when (state) {
+        is UpdateState.Ready -> state.update
+        is UpdateState.Available -> state.update
+        else -> return Resume.Wait
+    }
+    return if (update.version == request.version) Resume.Start else Resume.Forget
 }
 
 /**
@@ -136,20 +161,24 @@ class Updater(private val app: DenpaApp) {
      */
     private suspend fun resumeRequest() {
         val request = app.settings.installRequest() ?: return
-        val (update, file) = when (val state = _state.value) {
-            is UpdateState.Ready -> state.update to state.file
-            is UpdateState.Available -> state.update to null
-            // 確かめている・取ってきている・入れている (先に押された) ときは任せる
-            is UpdateState.Checking, is UpdateState.Preparing, is UpdateState.Downloading, is UpdateState.Installing,
-            is UpdateState.NeedsPermission, is UpdateState.Failed -> return
-            else -> null to null
+        val state = _state.value
+        when (resumePlan(state, request, System.currentTimeMillis())) {
+            Resume.Start -> if (allowedToInstall()) when (state) {
+                is UpdateState.Ready -> start(state.update, state.file.takeIf { it.exists() })
+                is UpdateState.Available -> start(state.update, null)
+                else -> Unit
+            }
+            Resume.Wait -> Unit
+            Resume.Forget -> remember(null)
         }
-        if (!request.resumes(update, System.currentTimeMillis())) {
-            app.settings.setInstallRequest(null)
-            return
-        }
-        if (update != null && allowedToInstall()) start(update, file?.takeIf { it.exists() })
     }
+
+    /** 許可の画面へ送った版を覚える・忘れる。書いた順に効くよう1本ずつ書く (続けて書くと後のほうが先に効くことがある) */
+    private fun remember(request: InstallRequest?) {
+        app.scope.launch(requestWriter) { app.settings.setInstallRequest(request) }
+    }
+
+    private val requestWriter = Dispatchers.IO.limitedParallelism(1)
 
     /** 設定の「アップデートを確かめる」。取ってきている・入れている間は何もしない */
     fun checkNow() {
@@ -257,11 +286,11 @@ class Updater(private val app: DenpaApp) {
         // 先に「不明なアプリのインストール」を確かめる (取ってきてから断られると無駄になる)
         // 許可して戻ったら続けて入れる (`resume`)。アプリが閉じられても開き直したときに続けられるよう、先に覚えておく
         if (!allowedToInstall()) {
-            app.scope.launch { app.settings.setInstallRequest(InstallRequest(update.version, System.currentTimeMillis())) }
+            remember(InstallRequest(update.version, System.currentTimeMillis()))
             _state.value = UpdateState.NeedsPermission(update, askPermission(), downloaded)
             return
         }
-        app.scope.launch { app.settings.setInstallRequest(null) }
+        remember(null)
         // 続けて押されても2本取らないよう、先に「取ってきている」にする
         _state.value = if (downloaded == null) UpdateState.Downloading(update, 0) else UpdateState.Installing(update, downloaded)
         app.scope.launch {
@@ -376,13 +405,12 @@ class Updater(private val app: DenpaApp) {
     private fun waitForStatus(update: Update, file: File, id: Int) {
         app.scope.launch {
             delay(STATUS_TIMEOUT_MS)
-            _state.update {
-                if (it is UpdateState.Installing && !it.confirming && session == id) {
-                    Log.w(TAG, "セッション $id の結果が ${STATUS_TIMEOUT_MS / 1000} 秒来ません")
-                    UpdateState.Failed(update, "${update.label}: テレビから返事がありません (押すともう一度)", file)
-                } else {
-                    it
-                }
+            val now = _state.value
+            // その間に結果が来た・押し直した (ほかの状態・ほかのセッションになった) ら何もしない
+            if (now is UpdateState.Installing && !now.confirming && session == id &&
+                _state.compareAndSet(now, UpdateState.Failed(update, "${update.label}: テレビから返事がありません (押すともう一度)", file))
+            ) {
+                Log.w(TAG, "セッション $id の結果が ${STATUS_TIMEOUT_MS / 1000} 秒来ません")
             }
         }
     }

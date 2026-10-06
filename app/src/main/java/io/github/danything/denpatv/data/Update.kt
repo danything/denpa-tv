@@ -165,9 +165,8 @@ const val MAX_SILENT_FAILURES = 3
  * 古い頼み (許可せずに戻って、ずっと後に開いた) では勝手に入れ始めない
  */
 data class InstallRequest(val version: String, val at: Long) {
-    /** いま見えている版 `update` を、頼まれたとおりに続けて入れてよいか */
-    fun resumes(update: Update?, now: Long): Boolean =
-        update != null && update.version == version && now - at in 0..INSTALL_REQUEST_TTL_MS
+    /** 頼んでから間もない (時計が戻ったときは古いとみなす) */
+    fun fresh(now: Long): Boolean = now - at in 0..INSTALL_REQUEST_TTL_MS
 }
 
 const val INSTALL_REQUEST_TTL_MS = 30 * 60 * 1000L
