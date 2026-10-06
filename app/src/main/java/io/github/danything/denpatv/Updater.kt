@@ -1,5 +1,6 @@
 package io.github.danything.denpatv
 
+import android.app.AppOpsManager
 import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
@@ -8,6 +9,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageInstaller
 import android.os.Build
+import android.os.Process
+import android.os.UserManager
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -56,8 +59,8 @@ sealed interface UpdateState {
     /** 確かめた APK を入れている。`confirming` はテレビに確認の画面を出したところ */
     data class Installing(val update: Update, val file: File, val confirming: Boolean = false) : UpdateState
     /**
-     * 「不明なアプリのインストール」の許可の画面を開いた。**許可して戻れば、押さなくても続けて入れる** (`resume`)。
-     * 押すともう一度確かめる (許可していなければ、また許可の画面を開く)
+     * 「不明なアプリのインストール」の許可の画面を開いた。**戻れば、押さなくても続けて入れる** (`resume`)。
+     * 許可が見えなくても入れてみる (テレビによっては許可しても見えない。本当に無ければ OS が尋ねるか断る。`installStep`)
      */
     data class NeedsPermission(val update: Update, val message: String, val file: File? = null) : UpdateState
     /** 取れない・合わない・入らない。押すとやり直す (取れた APK があればそれを入れ直す) */
@@ -103,6 +106,36 @@ fun resumePlan(state: UpdateState, request: InstallRequest, now: Long): Resume {
     }
     return if (update.version == request.version) Resume.Start else Resume.Forget
 }
+
+/** 押した (許可の画面から戻った) ときに、どう進めるか */
+enum class InstallStep {
+    /** PackageInstaller のセッションで入れる (許可が要れば、OS が自分で尋ねる) */
+    Install,
+    /** 「不明なアプリのインストール」の許可の画面を開く */
+    AskPermission,
+}
+
+/**
+ * 許可が見えるか (`allowed` = `canRequestPackageInstalls()`) と、この版でもう許可の画面へ送ったか (`asked`) から決める。
+ * **許可が見えなくても、一度送ったあとはセッションで入れてみる**: テレビによっては許可しても false のまま (denpa-tv#32 の
+ * BRAVIA。設定に denpa が2つ並ぶ)、許可の画面と行き来するだけになる。本当に許可されていなければ、OS が確認の画面で尋ねるか断る
+ */
+fun installStep(allowed: Boolean, asked: InstallRequest?, version: String, now: Long): InstallStep = when {
+    allowed -> InstallStep.Install
+    asked != null && asked.version == version && asked.fresh(now) -> InstallStep.Install
+    else -> InstallStep.AskPermission
+}
+
+/**
+ * セッションが断られた (`status`) とき、許可が見えなければ (`allowed`) 許可が無いせいとみなす。次に押すと許可の画面を開き直す。
+ * 許可が無いと OS は「このアプリからは入れられません」の画面を出し、そこでやめると `STATUS_FAILURE_ABORTED`
+ * (User rejected permissions) が来る。署名・空き・入れられない APK は許可のせいではない
+ */
+fun deniedForPermission(status: Int, allowed: Boolean): Boolean = !allowed && status in setOf(
+    PackageInstaller.STATUS_FAILURE,
+    PackageInstaller.STATUS_FAILURE_ABORTED,
+    PackageInstaller.STATUS_FAILURE_BLOCKED,
+)
 
 /**
  * アプリの中から新しい版に上げる (README の「アップデート」)。**設定は増やさない**: 開いたとき (12 時間に1回まで) に
@@ -151,12 +184,13 @@ class Updater(private val app: DenpaApp) {
     }
 
     /**
-     * 画面に戻った (MainActivity の onResume)。許可の画面から戻って**許可されていれば、もう一度押さなくても続けて入れる**
-     * (denpa-tv#32。前は「もう一度押してください」と出したまま待っていた)
+     * 画面に戻った (MainActivity の onResume)。許可の画面から戻ったら**もう一度押さなくても続けて入れる**
+     * (denpa-tv#32。前は「もう一度押してください」と出したまま待っていた)。許可が見えなくても入れてみる (`installStep`)
      */
     fun resume() {
         val state = _state.value as? UpdateState.NeedsPermission ?: return
-        if (allowedToInstall()) start(state.update, state.file?.takeIf { it.exists() })
+        Log.i(TAG, "許可の画面から戻りました")
+        start(state.update, state.file?.takeIf { it.exists() })
     }
 
     /**
@@ -165,8 +199,12 @@ class Updater(private val app: DenpaApp) {
      */
     private suspend fun resumeRequest() {
         val request = app.settings.installRequest() ?: return
+        // 開き直す前に許可の画面へ送っていた。押したときにまた送らないよう覚えておく (`installStep`)
+        if (asked == null) asked = request
         val state = _state.value
-        when (resumePlan(state, request, System.currentTimeMillis())) {
+        val plan = resumePlan(state, request, System.currentTimeMillis())
+        Log.i(TAG, "開き直しました。v${request.version} を頼まれていました: $plan (${permissionReport()})")
+        when (plan) {
             Resume.Start -> if (allowedToInstall()) when (state) {
                 is UpdateState.Ready -> start(state.update, state.file.takeIf { it.exists() })
                 is UpdateState.Available -> start(state.update, null)
@@ -179,8 +217,12 @@ class Updater(private val app: DenpaApp) {
 
     /** 許可の画面へ送った版を覚える・忘れる。書いた順に効くよう1本ずつ書く (続けて書くと後のほうが先に効くことがある) */
     private fun remember(request: InstallRequest?) {
+        asked = request
         app.scope.launch(requestWriter) { app.settings.setInstallRequest(request) }
     }
+
+    /** 許可の画面へ送った版 (書いたもの・開き直したときに読んだもの)。押したときにすぐ見る */
+    @Volatile private var asked: InstallRequest? = null
 
     private val requestWriter = Dispatchers.IO.limitedParallelism(1)
 
@@ -288,13 +330,18 @@ class Updater(private val app: DenpaApp) {
 
     private fun start(update: Update, downloaded: File?) {
         // 先に「不明なアプリのインストール」を確かめる (取ってきてから断られると無駄になる)
-        // 許可して戻ったら続けて入れる (`resume`)。アプリが閉じられても開き直したときに続けられるよう、先に覚えておく
-        if (!allowedToInstall()) {
+        // 許可して戻ったら続けて入れる (`resume`)。アプリが閉じられても開き直したときに続けられるよう、先に覚えておく。
+        // 一度送ったあとは、許可が見えなくても入れてみる (`installStep`。denpa-tv#32)
+        val allowed = allowedToInstall()
+        val step = installStep(allowed, asked, update.version, System.currentTimeMillis())
+        Log.i(TAG, "${update.label} を入れます: $step (${permissionReport()}、APK ${if (downloaded == null) "なし" else "あり"})")
+        if (step == InstallStep.AskPermission) {
             remember(InstallRequest(update.version, System.currentTimeMillis()))
             _state.value = UpdateState.NeedsPermission(update, askPermission(), downloaded)
             return
         }
-        remember(null)
+        // 許可が見えないまま入れるときは、頼みを残す (確認の画面を閉じて押し直しても、許可の画面へ戻さない)
+        if (allowed) remember(null)
         // 続けて押されても2本取らないよう、先に「取ってきている」にする
         _state.value = if (downloaded == null) UpdateState.Downloading(update, 0) else UpdateState.Installing(update, downloaded)
         app.scope.launch {
@@ -331,6 +378,34 @@ class Updater(private val app: DenpaApp) {
         return (Version.parse(update.version) ?: return false) > mine
     }
 
+    /**
+     * 許可まわりをログに書くための1行 (denpa-tv#32: 許可したのに canRequestPackageInstalls が false のテレビがある)。
+     * `appop` は REQUEST_INSTALL_PACKAGES の mode (0 許可・1 無視・2 断る・3 既定)、`制限` はユーザーの制限
+     */
+    private fun permissionReport(): String = buildString {
+        append("canRequestPackageInstalls=").append(allowedToInstall())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val mode = runCatching {
+                val ops = app.getSystemService(AppOpsManager::class.java)
+                val uid = Process.myUid()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ops.unsafeCheckOpNoThrow(OPSTR_REQUEST_INSTALL_PACKAGES, uid, app.packageName)
+                } else {
+                    @Suppress("DEPRECATION")
+                    ops.checkOpNoThrow(OPSTR_REQUEST_INSTALL_PACKAGES, uid, app.packageName)
+                }
+            }
+            append(" appop=").append(mode.getOrElse { it.javaClass.simpleName })
+        }
+        val users = app.getSystemService(UserManager::class.java)
+        if (users?.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) == true) append(" 制限=DISALLOW_INSTALL_UNKNOWN_SOURCES")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            users?.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY) == true
+        ) {
+            append(" 制限=DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY")
+        }
+    }
+
     private fun allowedToInstall(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             app.packageManager.canRequestPackageInstalls()
@@ -348,6 +423,7 @@ class Updater(private val app: DenpaApp) {
             Intent(Settings.ACTION_SECURITY_SETTINGS)
         }
         val opened = open(intent) || open(Intent(Settings.ACTION_SETTINGS))
+        Log.i(TAG, "許可の画面を開きました: ${if (opened) "開けた" else "開けない"}")
         // 頭の1行に収まる長さで。開けなければ、どこで許可するかを足す
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             (if (opened) "" else "テレビの設定で ") + "「不明なアプリのインストール」を許可して戻ると、続けて入れます"
@@ -382,6 +458,7 @@ class Updater(private val app: DenpaApp) {
             }
             id = installer.createSession(params)
             session = id
+            Log.i(TAG, "セッション $id に ${file.length()} バイト書きます")
             installer.openSession(id).use { session ->
                 session.openWrite("base.apk", 0, file.length()).use { out ->
                     file.inputStream().use { it.copyTo(out) }
@@ -393,13 +470,27 @@ class Updater(private val app: DenpaApp) {
                 val pending = PendingIntent.getBroadcast(app, id, Intent(ACTION_STATUS).setPackage(app.packageName), flags)
                 session.commit(pending.intentSender)
             }
+            Log.i(TAG, "セッション $id を渡しました")
             waitForStatus(update, file, id)
         } catch (e: Exception) {
-            Log.w(TAG, "入れられませんでした", e)
+            Log.w(TAG, "入れられませんでした (${permissionReport()})", e)
             abandon(installer, id)
             if (session == id) session = NO_SESSION
-            _state.value = UpdateState.Failed(update, "${update.label} を入れられませんでした (${e.message ?: e.javaClass.simpleName})", file)
+            _state.value = if (e is SecurityException && !allowedToInstall()) {
+                deniedPermission(update, file)
+            } else {
+                UpdateState.Failed(update, "${update.label} を入れられませんでした (${e.message ?: e.javaClass.simpleName})", file)
+            }
         }
+    }
+
+    /**
+     * 許可が無いせいで入らなかった。次に押すと許可の画面を開き直す (`installStep` が AskPermission になるよう頼みを忘れる)。
+     * テレビの設定に同じアプリが2つ並ぶことがあり (denpa-tv#32)、片方だけ許可しても効かないので、そう添える
+     */
+    private fun deniedPermission(update: Update, file: File): UpdateState {
+        remember(null)
+        return UpdateState.Failed(update, "${update.label}: 許可が効いていません。押すと許可の画面を開きます (denpa が2つ並んでいたら両方を許可)", file)
     }
 
     /**
@@ -449,7 +540,13 @@ class Updater(private val app: DenpaApp) {
         // 前に作って捨てたセッションの結果は見ない
         if (intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, NO_SESSION) != session) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val detail = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+        Log.i(TAG, "セッション $session の結果: $status $detail (${permissionReport()})")
         val failed = { message: String -> _state.value = UpdateState.Failed(installing.update, message, installing.file) }
+        if (deniedForPermission(status, allowedToInstall())) {
+            _state.value = deniedPermission(installing.update, installing.file)
+            return
+        }
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -459,6 +556,7 @@ class Updater(private val app: DenpaApp) {
                     intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 }
                 if (confirm != null && open(confirm)) {
+                    Log.i(TAG, "確認の画面を出しました: ${confirm.action}")
                     _state.value = installing.copy(confirming = true)
                 } else {
                     failed("${installing.update.label} の確認の画面を出せませんでした")
@@ -471,7 +569,6 @@ class Updater(private val app: DenpaApp) {
                 failed("署名が違うので上書きできません (docs/install.md の「署名について」)")
             PackageInstaller.STATUS_FAILURE_STORAGE -> failed("空きが足りないので入れられません")
             else -> {
-                val detail = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
                 Log.w(TAG, "入れられませんでした: $status $detail")
                 failed("${installing.update.label} を入れられませんでした" + (detail?.let { " ($it)" } ?: ""))
             }
@@ -484,5 +581,7 @@ class Updater(private val app: DenpaApp) {
         const val CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000L
         const val STATUS_TIMEOUT_MS = 30_000L
         const val ACTION_STATUS = "io.github.danything.denpatv.UPDATE_STATUS"
+        /** AppOpsManager の OPSTR_REQUEST_INSTALL_PACKAGES (SDK には出ていない名前) */
+        const val OPSTR_REQUEST_INSTALL_PACKAGES = "android:request_install_packages"
     }
 }

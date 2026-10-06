@@ -1,5 +1,6 @@
 package io.github.danything.denpatv
 
+import android.content.pm.PackageInstaller
 import io.github.danything.denpatv.data.ApkCache
 import io.github.danything.denpatv.data.GitHubAsset
 import io.github.danything.denpatv.data.GitHubRelease
@@ -214,6 +215,41 @@ class UpdateTest {
         assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update, file), request, at + INSTALL_REQUEST_TTL_MS + 1))
         assertEquals(Resume.Forget, resumePlan(UpdateState.Idle, request, at + INSTALL_REQUEST_TTL_MS + 1))
         assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update, file), request, at - 1))
+    }
+
+    /** 許可しても canRequestPackageInstalls が false のままのテレビで、許可の画面と行き来し続けない (denpa-tv#32 の BRAVIA) */
+    @Test
+    fun 許可が見えなくても_一度許可の画面へ送ったら入れてみる() {
+        val at = 1_000_000L
+        val asked = InstallRequest("0.8.0", at)
+        // 許可が見える: いつでも入れる
+        assertEquals(InstallStep.Install, installStep(true, null, "0.8.0", at))
+        assertEquals(InstallStep.Install, installStep(true, asked, "0.8.0", at))
+        // 見えない: 初めは許可の画面を開く
+        assertEquals(InstallStep.AskPermission, installStep(false, null, "0.8.0", at))
+        // この版で一度送ったあと (戻ってきた・押し直した): 見えなくても入れてみる (本当に無ければ OS が尋ねる)
+        assertEquals(InstallStep.Install, installStep(false, asked, "0.8.0", at + 5_000))
+        assertEquals(InstallStep.Install, installStep(false, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS))
+        // ほかの版・古い頼み・時計が戻った: もう一度許可の画面を開く
+        assertEquals(InstallStep.AskPermission, installStep(false, asked, "0.8.1", at))
+        assertEquals(InstallStep.AskPermission, installStep(false, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS + 1))
+        assertEquals(InstallStep.AskPermission, installStep(false, asked, "0.8.0", at - 1))
+    }
+
+    @Test
+    fun 入らなかったのが許可のせいか() {
+        // 許可が見えず、OS に断られた: 許可の画面を開き直す
+        assertTrue(deniedForPermission(PackageInstaller.STATUS_FAILURE, allowed = false))
+        assertTrue(deniedForPermission(PackageInstaller.STATUS_FAILURE_BLOCKED, allowed = false))
+        // OS の「このアプリからは入れられません」でやめた (User rejected permissions)
+        assertTrue(deniedForPermission(PackageInstaller.STATUS_FAILURE_ABORTED, allowed = false))
+        // 許可が見える (確認の画面でやめた)・署名・空き: 許可のせいではない
+        assertFalse(deniedForPermission(PackageInstaller.STATUS_FAILURE, allowed = true))
+        assertFalse(deniedForPermission(PackageInstaller.STATUS_FAILURE_ABORTED, allowed = true))
+        assertFalse(deniedForPermission(PackageInstaller.STATUS_FAILURE_CONFLICT, allowed = false))
+        assertFalse(deniedForPermission(PackageInstaller.STATUS_FAILURE_STORAGE, allowed = false))
+        assertFalse(deniedForPermission(PackageInstaller.STATUS_SUCCESS, allowed = false))
+        assertFalse(deniedForPermission(PackageInstaller.STATUS_PENDING_USER_ACTION, allowed = false))
     }
 
     @Test
