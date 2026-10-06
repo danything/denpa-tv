@@ -1,29 +1,28 @@
 package io.github.danything.denpatv.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.res.painterResource
-import androidx.tv.material3.Icon
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,12 +33,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -48,16 +48,19 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
+import androidx.tv.material3.Border
+import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.OutlinedButtonDefaults
 import androidx.tv.material3.Text
 import io.github.danything.denpatv.data.ChapterMark
+import kotlinx.coroutines.delay
 
 /** 操作の帯の押すもの1つ。`on` は入っているか (塗って出す)。`icon` は札の頭の印 (drawable) */
 data class Control(
@@ -106,6 +109,8 @@ fun BoxScope.ControlBar(
      * 上に合わせられるシークバーがある帯 (録画・追っかけ) では、上キーはシークバーへ上がるので渡さない (シークバーの `onUp` で閉じる)
      */
     onUp: (() -> Unit)? = null,
+    /** 題の左に置くもの (ライブの局ロゴ) */
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (focusActions) runCatching { first.requestFocus() } }
@@ -126,7 +131,14 @@ fun BoxScope.ControlBar(
             .ignoreHeldCenter(),
         spacing = 6.dp,
     ) {
-        TitleLines(title)
+        if (leading == null) {
+            TitleLines(title)
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                leading()
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { TitleLines(title) }
+            }
+        }
         header?.invoke(this, first)
         /** 開いたときに合わせる札を、もう決めたか (組み直すたびに数え直す) */
         var focused = false
@@ -223,21 +235,28 @@ private fun Chip(control: Control, modifier: Modifier) {
         Text(control.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
     }
     // 入れ切りで部品を替えない (Button と OutlinedButton を替えると、押した札から合いが外れて列の頭に飛ぶ・
-    // どこにも合わなくなる)。色だけ変える
-    val colors = if (control.on) {
-        OutlinedButtonDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-        )
-    } else {
-        OutlinedButtonDefaults.colors()
-    }
+    // どこにも合わなくなる)。色だけ変える。入っているものは azure で塗り、合わせたら白く (字は入っていれば azure)
+    val colors = OutlinedButtonDefaults.colors(
+        containerColor = if (control.on) Palette.Accent else Color(0x33000000),
+        contentColor = Color.White,
+        focusedContainerColor = Color.White,
+        focusedContentColor = if (control.on) Palette.Accent else Palette.Background,
+        pressedContainerColor = Palette.Text,
+        pressedContentColor = Palette.Background,
+    )
+    val border = OutlinedButtonDefaults.border(
+        border = Border(BorderStroke(1.dp, if (control.on) Palette.Accent else Color(0x99FFFFFF)), shape = CircleShape),
+        focusedBorder = Focus.border(CircleShape, 2f),
+        pressedBorder = Focus.border(CircleShape, 2f),
+    )
     val named = control.description?.let { name -> Modifier.semantics { contentDescription = name } } ?: Modifier
     OutlinedButton(
         onClick = control.onClick,
         modifier = modifier.heightIn(min = 32.dp).wrapContentWidth(unbounded = true).then(named),
         contentPadding = padding,
         colors = colors,
+        border = border,
+        glow = OutlinedButtonDefaults.glow(focusedGlow = Focus.glow),
         content = content,
     )
 }

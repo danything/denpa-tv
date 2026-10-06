@@ -1,11 +1,10 @@
 package io.github.danything.denpatv.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,29 +17,30 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
@@ -49,6 +49,7 @@ import io.github.danything.denpatv.data.SERVICE_TYPES
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.airing
 import io.github.danything.denpatv.data.number
+import kotlinx.coroutines.launch
 
 /**
  * ライブのメニューの、操作の列の下に並べる局。**ブラウザの denpa のライブの局の一覧と同じく、種別 (地上波 / BS / CS) ごとに分け、
@@ -129,6 +130,8 @@ fun ChannelRows(
                     CompositionLocalProvider(LocalBringIntoViewSpec provides Keyline) {
                         LazyRow(
                             state = state,
+                            // 枠は幅いっぱい (局の少ない列でも、合わせて膨らんだ札の縁と光が枠で切れないように)
+                            modifier = Modifier.fillMaxWidth(),
                             /*
                              * 上下で列を移ったときは、**真上・真下の札へ** (どの列も合わせた札が `KEYLINE` に居るので、目を動かさずに済む)。
                              * 最後に合わせていた札へ戻す (`focusRestorer`) のはやめた。枠の外に出て捨てられた列では覚えが消え、
@@ -164,39 +167,71 @@ private val Keyline = object : BringIntoViewSpec {
     }
 }
 
-/** 局の札1枚。番号・ロゴ・局名、いま放送中の番組、印 (視聴中・録画中・予約済み) */
+/**
+ * 局の札1枚。番号・ロゴ・局名、いま放送中の番組、印 (視聴中・録画中・予約済み)。
+ * ロゴはブラウザの denpa と同じく番号の右に (ロゴがまだ無い局は、そこに種別の札)。
+ * いま映している局は azure の縁と淡い azure の地 (ブラウザの視聴中の行と同じ)。合わせると膨らみ、明るい azure の縁と光 (`Focus`)
+ */
 @Composable
 private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val shape = CardShape
     Surface(
         onClick = onClick,
         modifier = modifier.width(CARD_WIDTH).height(CARD_HEIGHT),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (tuned) Color(0x66FFFFFF) else Color(0x33FFFFFF),
-            contentColor = Color.White,
-            focusedContainerColor = Color.White,
-            focusedContentColor = Color.Black,
+            containerColor = if (tuned) Palette.Accent.copy(alpha = 0.35f) else Palette.Surface.copy(alpha = 0.72f),
+            contentColor = Palette.Text,
+            focusedContainerColor = Palette.SurfaceRaised,
+            focusedContentColor = Color.White,
+            pressedContainerColor = Palette.SurfaceRaised,
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
+        border = ClickableSurfaceDefaults.border(
+            border = if (tuned) Border(BorderStroke(1.5.dp, Palette.Accent), shape = shape) else Border.None,
+            focusedBorder = Focus.border(shape),
+        ),
+        glow = ClickableSurfaceDefaults.glow(focusedGlow = Focus.glow),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = Focus.CARD_SCALE),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(service.number?.toString() ?: "", style = MaterialTheme.typography.labelLarge)
-                repo.url(service.logo)?.let { logo ->
-                    RemoteImage(logo, ContentScale.Fit, Modifier.width(40.dp).height(22.dp), repo.token)
-                }
+                ChannelLogo(repo, service, Modifier.width(LOGO_WIDTH).height(LOGO_HEIGHT))
                 Spacer(Modifier.weight(1f))
                 val now = service.now
                 when {
-                    now?.recording == true -> Mark("録画中", Color(0xFFE53935))
-                    now?.reserved == true -> Mark("予約済み", Color(0xFFFFB300))
+                    now?.recording == true -> Mark("録画中", Palette.Recording)
+                    now?.reserved == true -> Mark("予約済み", Palette.Reserved)
                 }
-                if (tuned) Text("視聴中", style = MaterialTheme.typography.labelSmall)
+                if (tuned) {
+                    Text(
+                        "視聴中",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Palette.OnAccent,
+                        modifier = Modifier.background(Palette.Accent, TagShape).padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
             }
             Text(service.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             service.now?.title?.takeIf { it.isNotBlank() }?.let { title ->
-                Text(title, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+    }
+}
+
+/**
+ * 局ロゴ (denpa が放送波から拾ったもの。`api/services/<id>/logo`)。放送のロゴは 64x36 ほどの小さな絵なので、そのくらいの大きさで。
+ * **まだ拾えていない局は、ブラウザの denpa と同じく種別 (GR・BS・CS) の札**を同じ大きさで置く (局名の頭を揃える)
+ */
+@Composable
+fun ChannelLogo(repo: Repository, service: Service, modifier: Modifier) {
+    val logo = repo.url(service.logo)
+    if (logo != null) {
+        RemoteImage(logo, ContentScale.Fit, modifier, repo.token, placeholder = Color.Transparent)
+    } else {
+        Box(modifier.background(Color(0x26FFFFFF), TagShape), contentAlignment = Alignment.Center) {
+            Text(service.type, style = MaterialTheme.typography.labelSmall, color = Palette.TextMuted, maxLines = 1)
         }
     }
 }
@@ -209,6 +244,10 @@ private fun Mark(label: String, color: Color) {
         Text(label, style = MaterialTheme.typography.labelSmall)
     }
 }
+
+/** 札の中のロゴの大きさ (放送のロゴと同じ 16:9 ほど) */
+private val LOGO_WIDTH = 48.dp
+private val LOGO_HEIGHT = 27.dp
 
 private val CARD_WIDTH = 220.dp
 private val CARD_HEIGHT = 84.dp

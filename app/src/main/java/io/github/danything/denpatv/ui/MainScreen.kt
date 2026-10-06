@@ -1,26 +1,33 @@
 package io.github.danything.denpatv.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.runtime.withFrameNanos
-import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -31,12 +38,15 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.DrawerValue
 import androidx.tv.material3.Icon
+import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.NavigationDrawer
 import androidx.tv.material3.NavigationDrawerItem
+import androidx.tv.material3.NavigationDrawerItemDefaults
 import androidx.tv.material3.Text
 import androidx.tv.material3.rememberDrawerState
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.Recording
+import kotlinx.coroutines.delay
 
 /** 横のメニューの行き先 */
 private enum class Destination(val label: String, val icon: Int) {
@@ -103,11 +113,18 @@ fun MainScreen(
             false
         },
         drawerState = drawer,
-        drawerContent = {
+        drawerContent = { value ->
+            val open = value == DrawerValue.Open
             Column(
-                Modifier.fillMaxHeight().padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+                Modifier
+                    .fillMaxHeight()
+                    // 開いたら右の画面の上に重なるので、左から地の色で覆って字を読めるように
+                    .then(if (open) Modifier.background(DRAWER_SCRIM) else Modifier)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                Brand(open)
+                Spacer(Modifier.weight(1f))
                 Destination.entries.forEach { destination ->
                     NavigationDrawerItem(
                         selected = selected == destination,
@@ -115,11 +132,19 @@ fun MainScreen(
                             if (destination == Destination.Live) onLive() else selected = destination
                         },
                         leadingContent = { Icon(painterResource(destination.icon), contentDescription = null) },
+                        colors = drawerItemColors(),
+                        border = NavigationDrawerItemDefaults.border(
+                            focusedBorder = Focus.border(DRAWER_ITEM_SHAPE, 2f),
+                            focusedSelectedBorder = Focus.border(DRAWER_ITEM_SHAPE, 2f),
+                        ),
+                        glow = NavigationDrawerItemDefaults.glow(focusedGlow = Focus.glow, focusedSelectedGlow = Focus.glow),
+                        shape = NavigationDrawerItemDefaults.shape(DRAWER_ITEM_SHAPE),
                         modifier = Modifier
                             .focusRequester(items.getValue(destination))
                             .onFocusChanged { if (destination == Destination.Live) liveFocused = it.isFocused },
                     ) { Text(destination.label) }
                 }
+                Spacer(Modifier.weight(1f))
             }
         },
     ) {
@@ -134,3 +159,37 @@ fun MainScreen(
 /** ライブから戻ったとき「ライブ」に合わせるのを試す回数と間 (ミリ秒)。画面の入れ替えが終わるまで */
 private const val MENU_FOCUS_TRIES = 20
 private const val MENU_FOCUS_WAIT_MS = 50L
+
+/**
+ * メニューの頭の印。**denpa の電波塔を azure で**、開いているときは名前も (アプリのアイコン・バナーと同じ)。
+ * 合わせるものではない (左のメニューの行き先だけを上下で辿る)
+ */
+@Composable
+private fun Brand(open: Boolean) {
+    Row(
+        Modifier.padding(start = 12.dp, top = 12.dp).height(40.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(painterResource(R.drawable.ic_brand), contentDescription = "denpa", tint = Palette.AccentBright, modifier = Modifier.size(32.dp))
+        if (open) Text("denpa", style = MaterialTheme.typography.titleLarge, color = Palette.Text)
+    }
+}
+
+/** 行き先の色。選んでいるものは azure で塗り、合わせたものは白 (札と同じ) */
+@Composable
+private fun drawerItemColors() = NavigationDrawerItemDefaults.colors(
+    contentColor = Palette.TextMuted,
+    inactiveContentColor = Palette.TextMuted,
+    selectedContainerColor = Palette.Accent,
+    selectedContentColor = Palette.OnAccent,
+    focusedContainerColor = Color.White,
+    focusedContentColor = Palette.Background,
+    focusedSelectedContainerColor = Color.White,
+    focusedSelectedContentColor = Palette.Accent,
+)
+
+private val DRAWER_ITEM_SHAPE = RoundedCornerShape(50)
+
+/** 開いたメニューの下地。左は地の色、右へ行くほど透かす */
+private val DRAWER_SCRIM = Brush.horizontalGradient(0f to Palette.Background, 0.75f to Palette.Background.copy(alpha = 0.92f), 1f to Palette.Background.copy(alpha = 0f))

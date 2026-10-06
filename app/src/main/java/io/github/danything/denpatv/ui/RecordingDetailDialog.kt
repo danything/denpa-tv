@@ -45,7 +45,9 @@ fun RecordingDetailDialog(
         add(DetailAction(deleteLabel(delete.armed)) { if (delete.press()) onDelete() })
         add(DetailAction("閉じる", onDismiss))
     }
-    ProgramDetailDialog(recordingFacts(recording, rememberRecordingDetail(repo, recording, onUnauthorized)), actions, onDismiss)
+    // 後ろに録画の絵をうすく敷く (一覧の上で開くとき。映像の上で開くときは映像が見えるので敷かない)
+    val facts = recordingFacts(recording, rememberRecordingDetail(repo, recording, onUnauthorized))
+    ProgramDetailDialog(facts, actions, onDismiss, backdrop = repo.url(recording.poster), token = repo.token)
 }
 
 /**

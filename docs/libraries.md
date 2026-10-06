@@ -109,6 +109,12 @@ OkHttp (と Retrofit / Ktor) を採らない理由:
 やり方 (`inSampleSize` で 2 の冪に縮める) と `LruCache` で 60 行ほどに収まる (`data/Images.kt`、
 `ui/RemoteImage.kt`)。Coil 3.6.3 / Glide 5 の持つディスクキャッシュ・変換・GIF などは使わない。
 
+録画の一覧の上に敷く大きな絵 (合わせている録画のポスター) と、詳しくの後ろのうすい絵も同じもので出す。
+どちらもぼかして暗くするので、**小さく読んで (320×180・160×90) 引き伸ばす**。ぼかしは Compose の `Modifier.blur`
+(Android 12 からの RenderEffect。それより前はぼかさず暗くするだけ) で、絵を変える部品も要らない。
+一覧の上の段の組み方は Google TV の「没入型の一覧」に倣ったが、その部品 (`ImmersiveList`) は
+tv-material 1.1.0 には無い (alpha の頃にあって外された) ので、Box に絵と見出しと格子を重ねて組んだ (`ui/RecordingsScreen.kt`)
+
 ### QR コード: Project Nayuki の QR Code generator を同梱する (MIT)
 
 繋ぐ画面で、スマホに読ませる QR を出すのに使う (2026-10-04 に決めた)。
@@ -129,7 +135,7 @@ OkHttp (と Retrofit / Ktor) を採らない理由:
 EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta01 (2025-06) で**全部非推奨**になり、
 「プラットフォームの API と Android Keystore を直に使え」とされている
 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/security))。アプリの領域は他のアプリから読めず、
-トークンは denpa の画面から (またはこのアプリの「サーバーから外す」で) いつでも無効にできるので、暗号化の仕組みは足さない。
+トークンは denpa の画面から (またはこのアプリの設定の「繋ぐ先」の札で) いつでも無効にできるので、暗号化の仕組みは足さない。
 
 ### ホームの「続きを視聴」: 入れない (OS の `TvContract.WatchNextPrograms`)
 

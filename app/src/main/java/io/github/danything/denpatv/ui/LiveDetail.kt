@@ -58,7 +58,7 @@ fun LiveDetailDialog(
         DetailAction(recordLabel(now), onRecord),
         DetailAction("閉じる", onClose),
     )
-    ProgramDetailDialog(liveFacts(service, info, clock), actions, onClose, note, overVideo = true)
+    ProgramDetailDialog(liveFacts(service, info, clock).copy(logo = repo.url(service.logo)), actions, onClose, note, overVideo = true, token = repo.token)
 }
 
 /** 録画の札の名前 (メニューの「録画」の札と同じ) */

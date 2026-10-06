@@ -7,7 +7,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import io.github.danything.denpatv.Updater
@@ -22,7 +21,7 @@ import io.github.danything.denpatv.notice
 fun UpdateNotice(updater: Updater, modifier: Modifier = Modifier) {
     val state by updater.state.collectAsState()
     val text = state.notice() ?: return
-    Button(
+    DenpaButton(
         onClick = { updater.act() },
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
