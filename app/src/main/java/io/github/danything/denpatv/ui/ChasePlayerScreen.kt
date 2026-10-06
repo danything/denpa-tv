@@ -300,7 +300,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                             scope.launch { repo.app.settings.setPlaybackSpeed(nextSpeed(speed)) }
                         },
                     ),
-                    "画質 (コーデック)" to LiveQuality.available(repo.app.decoders).map { choice ->
+                    "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
                         Control(choice.label, on = choice == quality) {
                             if (choice == quality) return@Control
                             from = position()

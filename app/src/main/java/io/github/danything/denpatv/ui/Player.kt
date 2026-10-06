@@ -27,7 +27,11 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.media3.common.text.Cue
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -187,7 +191,8 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
  * 取り戻す** (閉じたものが消える間・帯が勝手に消えたとき・端末によって遅れて合いが外れる場合も)。
  * 開いている間と、画面を離れるとき (一覧に戻る間に一覧が合いを取るので、取り返さない) は `active = false`
  *
- * 字幕は `SubtitleView` (View) で出す。焼いたものの字幕は PGS (絵) で、Compose の部品はまだ絵の字幕を描けない
+ * 字幕は `SubtitleView` (View) で出す。焼いたものの字幕は PGS (絵) で、Compose の部品はまだ絵の字幕を描けない。
+ * **字幕は、下に重ねたもの (知らせ・`above` の帯やメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -212,6 +217,14 @@ fun PlayerFrame(
     val center = remember { CenterPress() }
     /** 映像そのものに合っているか */
     var focused by remember { mutableStateOf(false) }
+    /** 下に重ねたものの高さ。字幕をその上へ逃がす */
+    val insets = remember { OverlayInsets() }
+    val covered = insets.bottom.toFloat()
+    // 出したときは重ならないようすぐ上へ (`max`)、閉じたときは滑らかに下ろす
+    val easing by animateFloatAsState(covered, tween(CAPTION_EASE_MS), label = "captionInset")
+    val inset = { maxOf(insets.bottom.toFloat(), easing) }
+    /** いま `SubtitleView` に出している字幕 (どこまで逃がすかを見るため) */
+    var cues by remember { mutableStateOf(emptyList<Cue>()) }
     LaunchedEffect(active) {
         center.reset()
         if (!active) return@LaunchedEffect
@@ -250,7 +263,10 @@ fun PlayerFrame(
             factory = { context ->
                 SubtitleView(context).also { view ->
                     player.addListener(object : Player.Listener {
-                        override fun onCues(cueGroup: CueGroup) = view.setCues(cueGroup.cues)
+                        override fun onCues(cueGroup: CueGroup) {
+                            view.setCues(cueGroup.cues)
+                            cues = cueGroup.cues
+                        }
                     })
                 }
             },
@@ -262,34 +278,44 @@ fun PlayerFrame(
             // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
             onReset = { view -> view.keepScreenOn = false },
             onRelease = { view -> view.keepScreenOn = false },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().liftCaptions(inset) { width, height -> cueSpan(cues, width, height) },
         )
-        captions?.let { RawCaptionLayer(it) }
+        captions?.let { RawCaptionLayer(it, inset) }
         if (error == null) LoadingVeil(loading, busyLabel)
-        val text = error ?: overlay
-        if (text != null) {
-            // 操作の帯と同じく、下の端に小さく (下から薄く暗くするだけ)
-            Column(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .background(SCRIM)
-                    .padding(start = 48.dp, end = 48.dp, top = 48.dp, bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                text.lines().forEachIndexed { index, line ->
-                    Text(
-                        line,
-                        style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
-                        color = if (index == 0) Color.White else Color(0xFFD0D0D0),
-                    )
-                }
-                if (error == null) progress?.let { (at, length) -> ProgressLine(at, length) }
-            }
+        CompositionLocalProvider(LocalOverlayInsets provides insets) {
+            Notice(error ?: overlay, if (error == null) progress else null)
+            above()
         }
-        above()
     }
 }
+
+/** 下の端に出す知らせ。操作の帯と同じく、下の端に小さく (下から薄く暗くするだけ) */
+@Composable
+private fun BoxScope.Notice(text: String?, progress: Pair<Long, Long>?) {
+    if (text == null) return
+    val cover = rememberCoverReport(skipTop = SCRIM_TOP)
+    Column(
+        Modifier
+            .align(Alignment.BottomStart)
+            .fillMaxWidth()
+            .background(SCRIM)
+            .onSizeChanged(cover)
+            .padding(start = 48.dp, end = 48.dp, top = SCRIM_TOP, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        text.lines().forEachIndexed { index, line ->
+            Text(
+                line,
+                style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
+                color = if (index == 0) Color.White else Color(0xFFD0D0D0),
+            )
+        }
+        progress?.let { (at, length) -> ProgressLine(at, length) }
+    }
+}
+
+/** 字幕を戻すのにかける時間 (ミリ秒) */
+private const val CAPTION_EASE_MS = 250
 
 /** 映像に合っているか見張る間 (ミリ秒) */
 private const val FOCUS_WATCH_MS = 250L
