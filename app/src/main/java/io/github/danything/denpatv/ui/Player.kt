@@ -526,7 +526,10 @@ fun rememberPlayer(
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = recovery.onPlayWhenReady(playWhenReady)
             override fun onRenderedFirstFrame() = recovery.onPictured()
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) error = null
+                if (!isPlaying) return
+                error = null
+                // 絵の無いもの (ラジオの局) は、鳴りはじめたのを映ったことにする (絵が出るのを待つと、数え直さないまま)
+                if (!player.currentTracks.isTypeSupported(C.TRACK_TYPE_VIDEO)) recovery.onPictured()
             }
         }
         player.addListener(listener)
