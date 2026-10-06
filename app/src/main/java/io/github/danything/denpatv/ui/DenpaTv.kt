@@ -17,6 +17,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
@@ -50,7 +57,8 @@ import kotlinx.serialization.Serializable
 @Composable
 fun DenpaTv(app: DenpaApp, link: MutableState<DeepLink?>) {
     MaterialTheme(colorScheme = darkColorScheme()) {
-        Surface(modifier = Modifier.fillMaxSize()) {
+        val back = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+        Surface(modifier = Modifier.fillMaxSize().backKeyGoesBack(back)) {
             // 未設定 (null) と読み込み中を分ける。読み込み中は何も出さない
             val connection by app.settings.connection.collectAsState(initial = LOADING)
             val saved = connection
@@ -196,6 +204,21 @@ fun Centered(text: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(text, style = MaterialTheme.typography.titleLarge)
     }
+}
+
+/**
+ * **戻るキーは、合いを動かすのに使わせず、そのまま「戻る」にする** (`BackHandler` が受ける)。
+ *
+ * Android 12 以前 (予測型の戻るが無い) では、戻るキーはまず画面の部品に届き、Compose は合いのあるところから
+ * **合いを外へ出す** (FocusDirection.Exit) のに使ってしまう。そうなると、ライブのメニューや操作の帯を開いて戻るを押しても
+ * 帯は閉じず、合いだけが帯の外へ抜けて (どこにも合わずに) リモコンが効かなくなったり、帯を飛ばして画面ごと戻ったりした。
+ * Android 13 以降の予測型の戻るでは、もともと戻るキーは部品に届かない。どちらでも同じ動きにする。
+ * 押し続けた繰り返しは捨て、離したときに1回だけ戻る
+ */
+private fun Modifier.backKeyGoesBack(dispatcher: OnBackPressedDispatcher?): Modifier = onPreviewKeyEvent { event ->
+    if (event.key != Key.Back || dispatcher == null) return@onPreviewKeyEvent false
+    if (event.type == KeyEventType.KeyUp && !event.nativeKeyEvent.isCanceled) dispatcher.onBackPressed()
+    true
 }
 
 /** DataStore を読み終えるまでの印 */

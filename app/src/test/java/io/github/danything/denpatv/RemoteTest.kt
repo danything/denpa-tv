@@ -10,15 +10,20 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RemoteTest {
-    /** ライブ: 上下とチャンネル送りで前・次の局、左で局の一覧。決定は PlayerFrame が短押し・長押しに分ける */
+    /**
+     * ライブ: 上下とチャンネル送りで前・次の局。ほかの十字キー (左右) と Menu はメニュー (操作の列と局の列)。
+     * 決定は PlayerFrame が短押し・長押しに分ける (どちらもメニュー)
+     */
     @Test
     fun ライブのキー() {
         assertEquals(LiveCommand.PreviousChannel, liveCommand(KeyEvent.KEYCODE_DPAD_UP))
         assertEquals(LiveCommand.PreviousChannel, liveCommand(KeyEvent.KEYCODE_CHANNEL_UP))
         assertEquals(LiveCommand.NextChannel, liveCommand(KeyEvent.KEYCODE_DPAD_DOWN))
         assertEquals(LiveCommand.NextChannel, liveCommand(KeyEvent.KEYCODE_CHANNEL_DOWN))
-        assertEquals(LiveCommand.ChannelList, liveCommand(KeyEvent.KEYCODE_DPAD_LEFT))
-        assertEquals(LiveCommand.Actions, liveCommand(KeyEvent.KEYCODE_MENU))
+        assertEquals(LiveCommand.Menu, liveCommand(KeyEvent.KEYCODE_DPAD_LEFT))
+        assertEquals(LiveCommand.Menu, liveCommand(KeyEvent.KEYCODE_DPAD_RIGHT))
+        assertEquals(LiveCommand.Menu, liveCommand(KeyEvent.KEYCODE_MENU))
+        assertEquals(LiveCommand.Info, liveCommand(KeyEvent.KEYCODE_INFO))
         assertNull(liveCommand(KeyEvent.KEYCODE_DPAD_CENTER))
         // 戻るは受けない (何も開いていなければメニューの画面へ戻る)
         assertNull(liveCommand(KeyEvent.KEYCODE_BACK))

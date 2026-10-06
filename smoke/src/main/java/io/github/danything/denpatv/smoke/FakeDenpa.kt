@@ -74,6 +74,8 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
             path == "/api/health" -> json(out, """{"ok":true}""")
             path == "/api/services" -> json(out, services())
             path == "/api/services/$SERVICE_ID/live" -> media(out, "live.mp4", "video/mp4", range)
+            path == "/api/services/$SERVICE_ID/record" && method == "POST" ->
+                json(out, """{"recorded":"$PROGRAM_TITLE","programId":1,"reserved":true}""")
             path == "/api/recordings" -> json(out, recordings())
             path == "/api/events" -> events(out)
             recording != null && method == "POST" -> respond(out, 204, "text/plain", ByteArray(0))
@@ -87,7 +89,7 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
         val now = System.currentTimeMillis()
         return """[{"id":$SERVICE_ID,"type":"GR","name":"$SERVICE_NAME","remoteControlKey":1,
             "live":"api/services/$SERVICE_ID/live",
-            "now":{"title":"偽の番組","startAt":${now - 600_000},"endAt":${now + 3_000_000}}}]"""
+            "now":{"title":"$PROGRAM_TITLE","startAt":${now - 600_000},"endAt":${now + 3_000_000}}}]"""
     }
 
     private fun recordings(): String {
@@ -154,6 +156,7 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
     companion object {
         const val SERVICE_ID = 3273601024L
         const val SERVICE_NAME = "偽の総合"
+        const val PROGRAM_TITLE = "偽の番組"
         const val RECORDING_ID = 1L
         const val RECORDING_TITLE = "偽の録画"
         private val REASONS = mapOf(200 to "OK", 204 to "No Content", 206 to "Partial Content", 404 to "Not Found", 416 to "Range Not Satisfiable")

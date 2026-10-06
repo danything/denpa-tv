@@ -59,6 +59,12 @@ data class NowProgram(
     val endAt: Long,
     /** 選べる音声 (デュアルモノの主・副を見分ける・焼くものを選ぶ。`DenpaAudio`)。古い denpa には無いので空 */
     val audios: List<DenpaAudio> = emptyList(),
+    /**
+     * 録る予定か (予約が入っていて、競合で弾かれていない) と、いま録っている最中か。ライブの「録画」の札の印。
+     * denpa が `POST api/services/<id>/record` を持つ版から (古い denpa には無いので false)
+     */
+    val reserved: Boolean = false,
+    val recording: Boolean = false,
 ) {
     /** 進み具合 (0..1) */
     fun progress(at: Long): Float =

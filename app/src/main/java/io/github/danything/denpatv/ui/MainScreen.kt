@@ -18,6 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.delay
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -62,6 +65,8 @@ fun MainScreen(
     val items = remember { Destination.entries.associateWith { FocusRequester() } }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val focusManager = LocalFocusManager.current
+    /** 「ライブ」に合っているか (ライブから戻ったときに合わせ直す) */
+    var liveFocused by remember { mutableStateOf(false) }
 
     /** 最後に左キーを押したとき (左キーで開いたのか、戻ってきて合いが仮にメニューへ落ちたのかを分ける) */
     var leftAt by remember { mutableLongStateOf(0L) }
@@ -71,6 +76,23 @@ fun MainScreen(
     LaunchedEffect(drawer.currentValue) {
         val byKey = System.nanoTime() - leftAt < 1_000_000_000L
         if (drawer.currentValue == DrawerValue.Open && byKey) runCatching { items.getValue(selected).requestFocus() }
+    }
+    /*
+     * **ライブから戻ったら、左のメニューの「ライブ」に合わせる** (戻るでいちばん上のメニューへ)。右の画面 (録画の一覧) も
+     * 戻ってきたときに合いを取りにいくので、そちらには取らせない (`takeFocus`)。合うまで何こまか試す —
+     * 合わせ損ねると、どこにも合わずにリモコンが効かなくなる
+     */
+    var toMenu by remember { mutableStateOf(repo.menuOnReturn.also { repo.menuOnReturn = false }) }
+    LaunchedEffect(Unit) {
+        if (!toMenu) return@LaunchedEffect
+        val live = items.getValue(Destination.Live)
+        for (attempt in 0 until MENU_FOCUS_TRIES) {
+            withFrameNanos { }
+            if (runCatching { live.requestFocus() }.getOrDefault(false) && liveFocused) break
+            delay(MENU_FOCUS_WAIT_MS)
+        }
+        // 合わせ終えたら (合わせ損ねても) 元どおり。このあと録画の一覧を開き直したときは、一覧がカードに合わせる
+        toMenu = false
     }
     // メニューが開いているときの戻るは、右の画面へ戻す (右キーと同じ)。何もしないと戻るが効かないように見える
     BackHandler(enabled = drawer.currentValue == DrawerValue.Open) { focusManager.moveFocus(FocusDirection.Right) }
@@ -93,7 +115,9 @@ fun MainScreen(
                             if (destination == Destination.Live) onLive() else selected = destination
                         },
                         leadingContent = { Icon(painterResource(destination.icon), contentDescription = null) },
-                        modifier = Modifier.focusRequester(items.getValue(destination)),
+                        modifier = Modifier
+                            .focusRequester(items.getValue(destination))
+                            .onFocusChanged { if (destination == Destination.Live) liveFocused = it.isFocused },
                     ) { Text(destination.label) }
                 }
             }
@@ -102,7 +126,11 @@ fun MainScreen(
         // 観て戻ったら右の画面が合いを取る (録画の一覧なら開いた録画、設定なら頭のボタン)
         when (selected) {
             Destination.Settings -> SettingsScreen(repo)
-            else -> RecordingsScreen(repo, onWatch, onUnauthorized)
+            else -> RecordingsScreen(repo, onWatch, onUnauthorized, takeFocus = !toMenu)
         }
     }
 }
+
+/** ライブから戻ったとき「ライブ」に合わせるのを試す回数と間 (ミリ秒)。画面の入れ替えが終わるまで */
+private const val MENU_FOCUS_TRIES = 20
+private const val MENU_FOCUS_WAIT_MS = 50L

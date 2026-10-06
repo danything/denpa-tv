@@ -48,6 +48,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.OutlinedButtonDefaults
@@ -83,15 +84,36 @@ fun BoxScope.ControlBar(
     header: (@Composable ColumnScope.(FocusRequester) -> Unit)? = null,
     focusActions: Boolean = true,
     onActivity: () -> Unit = {},
+    /** 操作の列から下キーで合わせる先 (ライブの局の列の、いま映している局)。null なら近いものへ */
+    down: FocusRequester? = null,
+    /**
+     * 帯の中に合いを持ち続けるか。**合わせるものがある帯では必ず** (既定)。合っていた札が消えた (「最新」に追いついた)・
+     * 戻るの取り合いで合いが外れた、のどれでも、帯の中に合いが無ければ操作の列に戻す — 開いたまま合いがどこにも無いと
+     * リモコンが効かなくなる (戻るでしか閉じられない、止めている間は勝手にも閉じない)。
+     * **帯の上に別の合わせ先 (ダイアログなど) を重ねるときは false にする** — 重ねたものから合いを取り返し続けてしまう
+     */
+    holdFocus: Boolean = groups.any { it.second.isNotEmpty() },
+    /** 操作の列の下に足すもの (ライブの局の列) */
+    below: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (focusActions) runCatching { first.requestFocus() } }
+    /** 帯の中 (札・シークバー・局の列) に合いがあるか */
+    var inside by remember { mutableStateOf(false) }
+    LaunchedEffect(holdFocus) {
+        if (!holdFocus) return@LaunchedEffect
+        while (true) {
+            delay(HOLD_FOCUS_MS)
+            if (!inside) runCatching { first.requestFocus() }
+        }
+    }
     var focused = false
     Column(
         Modifier
             .align(Alignment.BottomStart)
             .fillMaxWidth()
             .background(SCRIM)
+            .onFocusChanged { inside = it.hasFocus }
             .onPreviewKeyEvent { onActivity(); false }
             // 決定の長押しで開くので、押し続けている決定の続きと離しで札が押されないように (押し直したら効く)
             .ignoreHeldCenter()
@@ -112,7 +134,8 @@ fun BoxScope.ControlBar(
             horizontalArrangement = Arrangement.spacedBy(20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            groups.forEach { (name, controls) ->
+            // 空の組 (字幕も音声も無いときの組など) は並べない。間が空きすぎる
+            groups.filter { it.second.isNotEmpty() }.forEach { (name, controls) ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (name.isNotEmpty()) Text(name, style = MaterialTheme.typography.labelSmall, color = Color(0xFFD0D0D0))
                     controls.forEach { control ->
@@ -122,13 +145,18 @@ fun BoxScope.ControlBar(
                             else -> control.on || controls.none { it.on }
                         }
                         if (take) focused = true
-                        Chip(control, if (take) Modifier.focusRequester(first) else Modifier)
+                        val moves = down?.let { target -> Modifier.focusProperties { this.down = target } } ?: Modifier
+                        Chip(control, if (take) moves.focusRequester(first) else moves)
                     }
                 }
             }
         }
+        below?.invoke(this)
     }
 }
+
+/** 帯の中に合いがあるか見張る間 (ミリ秒) */
+private const val HOLD_FOCUS_MS = 300L
 
 /** 下から薄く暗くする (映像の上でも文字が読めるだけ。上は透かす) */
 val SCRIM = Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000), Color(0xCC000000)))
