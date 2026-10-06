@@ -30,6 +30,7 @@ class CodecSwitching internal constructor(
     private val scope: CoroutineScope,
     private val repo: Repository,
     private val say: () -> (String) -> Unit,
+    private val switching: () -> (LiveQuality) -> Unit,
 ) {
     /** 局の知らせに添える画質 (切り替え中ならそう言う) */
     val label: String get() = state.value.label
@@ -43,13 +44,13 @@ class CodecSwitching internal constructor(
     /** 札で入っているもの。選んだものをすぐ入れる */
     val chosen: LiveQuality get() = state.value.pending ?: state.value.shown
 
-    /** 札で選んだ。同じものなら何もしない。`before` は別の画質へ切り替えるときだけ (追っかけは居た場所を覚える) */
-    fun choose(next: LiveQuality, before: () -> Unit = {}) {
+    /** 札で選んだ。同じものなら何もしない */
+    fun choose(next: LiveQuality) {
         val switched = state.value.choose(next) ?: return
         state.value = switched
         note.value = null
+        switching()(next)
         if (switched.pending != null) {
-            before()
             say()("${next.label} に切り替え中")
         } else {
             // 切り替え中に映っている画質を選び直した: 切り替えをやめる (「… に切り替え中」の1行を残さない)
@@ -76,7 +77,13 @@ fun rememberCodecSwitching(
     quality: LiveQuality,
     failure: String?,
     flash: (String) -> Unit,
+    /**
+     * 覚えている画質を替える直前 (選んだ・切り替えをやめた・諦めて戻す)。引数は替える先。
+     * 追っかけはここで居た場所を覚え、画質が替わってからそこから頼み直す
+     */
+    onSwitching: (LiveQuality) -> Unit = {},
 ): CodecSwitching {
+    val switching by rememberUpdatedState(onSwitching)
     val state = remember { mutableStateOf(CodecSwitch(quality)) }
     val note = remember { mutableStateOf<String?>(null) }
     val flashing by rememberUpdatedState(flash)
@@ -112,6 +119,7 @@ fun rememberCodecSwitching(
         failed ?: return
         state.value = next
         tell("${failed.label} に切り替えられません: $reason")
+        switching(next.shown)
         // 元の画質で頼み直す (覚えている画質も戻す)
         repo.app.settings.setLiveQuality(next.shown)
     }
@@ -126,7 +134,7 @@ fun rememberCodecSwitching(
         giveUp("映像が届きません")
     }
     val scope = rememberCoroutineScope()
-    return remember(repo) { CodecSwitching(state, note, scope, repo) { flashing } }
+    return remember(repo) { CodecSwitching(state, note, scope, repo, { flashing }, { switching }) }
 }
 
 /** 済んだ・切り替えられなかったを見出しに出しておく間 (ミリ秒)。下の1行の知らせ (`rememberFlash`) と同じ */

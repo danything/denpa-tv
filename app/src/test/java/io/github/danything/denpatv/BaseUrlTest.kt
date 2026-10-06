@@ -18,6 +18,8 @@ class BaseUrlTest {
         assertEquals("http://192.168.1.10:3000/", BaseUrl.normalize("http://http://192.168.1.10:3000").toString())
         assertEquals("https://tv.example.jp/denpa/", BaseUrl.normalize("http://https://tv.example.jp/denpa").toString())
         assertEquals("https://tv.example.jp/", BaseUrl.normalize("HTTP://http://https://tv.example.jp").toString())
+        // パスの頭の // は1つに (別のホストと読まない)
+        assertEquals("http://192.168.1.10/denpa/", BaseUrl.normalize("192.168.1.10//denpa").toString())
         // 貼った URL の頭が大文字
         assertEquals("https://tv.example.jp/", BaseUrl.normalize("http://Https://tv.example.jp").toString())
     }

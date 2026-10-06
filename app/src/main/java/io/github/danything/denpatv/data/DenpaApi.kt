@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
@@ -15,28 +17,29 @@ import java.net.URI
  * **家の LAN からはトークン無しで通る** (denpa の TRUSTED_NETWORKS)。家の外の denpa (OIDC でログインする構成) では、
  * テレビを denpa に登録して受け取ったトークンを `Authorization: Bearer` で付ける (`token`、README の「繋ぐ」)
  */
+/**
+ * `api/health` の返事が denpa らしいか。denpa は `{"ok":true,…}` を返す。**JSON のオブジェクトなら `ok` が true のものだけ**
+ * (同じ機械の 3000 に居る Grafana などの `{"database":"ok"}` を選ばない)、HTML (NAS やルータの画面がどのパスにも返す) は違う。
+ * それ以外の文字 (古い・偽の denpa の `ok`) は通す
+ */
+fun looksLikeDenpaHealth(body: String): Boolean {
+    val text = body.removePrefix("\uFEFF").trimStart()
+    if (text.startsWith("<")) return false
+    if (!text.startsWith("{")) return true
+    val ok = runCatching { lenientJson.parseToJsonElement(text).jsonObject["ok"]?.jsonPrimitive?.booleanOrNull }.getOrNull()
+    return ok == true
+}
+
 class DenpaApi(private val token: () -> String? = { null }) {
     suspend fun health(base: URI): Boolean = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/health") ?: return@withContext false
-        try {
-            Http.request(url).ok
-        } catch (_: IOException) {
-            false
+        val response = try {
+            Http.request(url)
+        } catch (_: Exception) {
+            // 繋がらない・URL が変 (IOException 以外も): どれも「繋がらない」
+            return@withContext false
         }
-    }
-
-    /**
-     * 繋ぐ先として denpa らしいか。`api/health` が通り、返事が HTML でない (denpa は JSON を返す)。
-     * 同じ機械の 80 で NAS やルータの画面がどのパスにも 200 の HTML を返していても、そちらを選ばない (`firstReachable`)
-     */
-    suspend fun looksLikeDenpa(base: URI): Boolean = withContext(Dispatchers.IO) {
-        val url = BaseUrl.resolve(base, "api/health") ?: return@withContext false
-        try {
-            val response = Http.request(url)
-            response.ok && !response.text().trimStart().startsWith("<")
-        } catch (_: IOException) {
-            false
-        }
+        response.ok && looksLikeDenpaHealth(response.text())
     }
 
     suspend fun services(base: URI): List<Service> = get(base, "api/services")

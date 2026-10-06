@@ -6,10 +6,12 @@ import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.Http
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.connect
+import io.github.danything.denpatv.data.looksLikeDenpaHealth
 import io.github.danything.denpatv.ui.authorizationHeaders
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -56,6 +58,26 @@ class ConnectTest {
             val step = connect(DenpaApi(), "127.0.0.1", "tv") { listOf(URI(other.url()), URI(denpa.url())) }
             assertEquals(ConnectStep.Open(URI(denpa.url())), step)
         }
+    }
+
+    /** どちらも繋がるなら、前の候補 (ポートを省いた 80) を使う */
+    @Test
+    fun どちらも繋がれば前の候補を使う() = runTest {
+        FakeDenpa().use { later ->
+            later.enqueue("{\"ok\":true}")
+            denpa.enqueue("{\"ok\":true}")
+            denpa.enqueue("[]")
+            val step = connect(DenpaApi(), "127.0.0.1", "tv") { listOf(URI(denpa.url()), URI(later.url())) }
+            assertEquals(ConnectStep.Open(URI(denpa.url())), step)
+        }
+    }
+
+    @Test
+    fun denpa_らしい_health_の返事() {
+        assertTrue(looksLikeDenpaHealth("{\"ok\":true,\"version\":\"1.40.0\"}"))
+        assertTrue(looksLikeDenpaHealth("ok"))
+        assertFalse(looksLikeDenpaHealth("{\"database\":\"ok\"}"))
+        assertFalse(looksLikeDenpaHealth("\uFEFF<!doctype html>"))
     }
 
     @Test

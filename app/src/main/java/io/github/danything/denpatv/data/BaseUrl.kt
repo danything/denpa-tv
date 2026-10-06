@@ -26,7 +26,8 @@ object BaseUrl {
         val scheme = url.scheme?.lowercase()
         if (scheme != "http" && scheme != "https") return null
         if (url.host.isNullOrEmpty()) return null
-        val path = url.rawPath.orEmpty().ifEmpty { "/" }
+        // 頭の `//` はホストの差し替えと読まれるので、1つにそろえる (`192.168.1.10//denpa`)
+        val path = url.rawPath.orEmpty().replace(LEADING_SLASHES, "/").ifEmpty { "/" }
         return URI(scheme, null, url.host, url.port, null, null, null)
             .resolve(if (path.endsWith("/")) path else "$path/")
     }
@@ -51,6 +52,9 @@ object BaseUrl {
 
     /** denpa の compose の既定のポート */
     const val DENPA_PORT = 3000
+
+    /** パスの頭に重なった `/` */
+    private val LEADING_SLASHES = Regex("^/{2,}")
 
     /** 頭に重なったスキーム (`http://http://`・`http://https://`)。いちばん内側だけ残す */
     private val DOUBLED_SCHEME = Regex("^(?:https?://)+(https?://)", RegexOption.IGNORE_CASE)
