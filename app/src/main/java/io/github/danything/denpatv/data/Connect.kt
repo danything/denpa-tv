@@ -15,16 +15,16 @@ sealed interface ConnectStep {
 /**
  * 入れてもらった URL で繋げるか確かめる。
  *
- * 1. `api/health` が通るか (denpa か、URL は正しいか)
+ * 1. `api/health` が通るか (denpa か、URL は正しいか)。ポートを書いていなければ 80 のあと 3000 も
  * 2. トークン無しで局の一覧が取れるか — 取れれば家の LAN。そのまま使う
  * 3. 断られたら (401 / 403) テレビを denpa に登録しはじめる (`api/device/code`)。
  *    スマホを denpa の登録の画面へ送り、ログインが済めば denpa が登録を通す
  */
-suspend fun connect(api: DenpaApi, input: String, deviceName: String): ConnectStep {
-    val base = BaseUrl.normalize(input) ?: return ConnectStep.Failed("URL を読めません (例: http://192.168.1.10:3000)")
-    if (!api.health(base)) {
-        return ConnectStep.Failed("$base に繋がりません。URL を確かめてください")
-    }
+suspend fun connect(api: DenpaApi, input: String, deviceName: String, fallbackPort: Int = BaseUrl.DENPA_PORT): ConnectStep {
+    val typed = BaseUrl.normalize(input) ?: return ConnectStep.Failed("URL を読めません (例: http://192.168.1.10:3000)")
+    // ポートを書いていなければ 3000 も試し、繋がったほうを覚える (`BaseUrl.candidates`)
+    val base = BaseUrl.candidates(typed, fallbackPort).firstOrNull { api.health(it) }
+        ?: return ConnectStep.Failed("$typed に接続できません。URL を確認してください")
     return try {
         if (api.openWithoutToken(base)) {
             ConnectStep.Open(base)

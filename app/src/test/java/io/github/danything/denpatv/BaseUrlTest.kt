@@ -12,6 +12,29 @@ class BaseUrlTest {
         assertEquals("https://tv.example.jp/denpa/", BaseUrl.normalize(" https://tv.example.jp/denpa ").toString())
     }
 
+    /** 欄にはじめから入っている `http://` のあとに URL をまるごと打ったとき */
+    @Test
+    fun 重なったスキームは内側を使う() {
+        assertEquals("http://192.168.1.10:3000/", BaseUrl.normalize("http://http://192.168.1.10:3000").toString())
+        assertEquals("https://tv.example.jp/denpa/", BaseUrl.normalize("http://https://tv.example.jp/denpa").toString())
+        assertEquals("https://tv.example.jp/", BaseUrl.normalize("HTTP://http://https://tv.example.jp").toString())
+    }
+
+    @Test
+    fun ポートを書いていない_http_は_3000_も試す() {
+        assertEquals(
+            listOf("http://192.168.1.10/", "http://192.168.1.10:3000/"),
+            BaseUrl.candidates(BaseUrl.normalize("192.168.1.10")!!).map { it.toString() },
+        )
+        assertEquals(
+            listOf("http://nas.local/denpa/", "http://nas.local:3000/denpa/"),
+            BaseUrl.candidates(BaseUrl.normalize("nas.local/denpa")!!).map { it.toString() },
+        )
+        // ポートを書いた・https なら、そのまま
+        assertEquals(1, BaseUrl.candidates(BaseUrl.normalize("192.168.1.10:8080")!!).size)
+        assertEquals(1, BaseUrl.candidates(BaseUrl.normalize("https://tv.example.jp")!!).size)
+    }
+
     @Test
     fun 読めないものは_null() {
         assertNull(BaseUrl.normalize(""))

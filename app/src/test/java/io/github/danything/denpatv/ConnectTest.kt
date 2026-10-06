@@ -32,6 +32,22 @@ class ConnectTest {
         assertEquals(ConnectStep.Open(URI(denpa.url("/denpa/"))), step)
     }
 
+    /** ポートを書かずに打ったら、80 に繋がらなければ denpa の既定のポートも試し、繋がったほうを使う */
+    @Test
+    fun ポートが無く_80_に繋がらなければ既定のポートも試す() = runTest {
+        denpa.enqueue("ok")
+        denpa.enqueue("[]")
+        val port = URI(denpa.url()).port
+        val step = connect(DenpaApi(), "http://http://127.0.0.1/denpa", "tv", fallbackPort = port)
+        assertEquals(ConnectStep.Open(URI("http://127.0.0.1:$port/denpa/")), step)
+    }
+
+    @Test
+    fun どこにも繋がらなければそう言う() = runTest {
+        val step = connect(DenpaApi(), "127.0.0.1", "tv", fallbackPort = 9) as ConnectStep.Failed
+        assertEquals("http://127.0.0.1/ に接続できません。URL を確認してください", step.message)
+    }
+
     @Test
     fun 断られたら登録をはじめ_登録の画面の_URL_は接頭辞の下に解く() = runTest {
         for (refused in listOf(401, 403)) {
