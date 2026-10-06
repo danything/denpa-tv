@@ -209,16 +209,18 @@ fun RecordingsScreen(
         settled = shown.id
     }
     val backdrop = recordings.firstOrNull { it.id == settled }
-    /** 説明の頭の1行 (録画ごとに1回だけ取る。古い denpa・取れなければ空) */
+    /** 説明の頭の1行 (録画ごとに、取れるまで。説明の無い録画は空) */
     val descriptions = remember { mutableStateMapOf<Long, String>() }
     LaunchedEffect(settled) {
         val id = settled
         if (id in descriptions) return@LaunchedEffect
-        descriptions[id] = try {
-            repo.api.recordingDetail(repo.base, id)?.description?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        val detail = try {
+            repo.api.recordingDetail(repo.base, id)
         } catch (_: Unauthorized) {
             return@LaunchedEffect onUnauthorized()
         }
+        // 取れなかったら覚えない (次にこの録画に止まったときに取り直す)
+        detail?.let { descriptions[id] = it.description.lineSequence().firstOrNull { line -> line.isNotBlank() }?.trim().orEmpty() }
     }
 
     val groups = recordings.groupBy { DAY.format(Date(it.startAt)) }
@@ -266,7 +268,7 @@ fun RecordingsScreen(
                     }
                 }
                 // 送っている途中に上の端で切れるカードを、地の色へ溶かす
-                Box(Modifier.fillMaxWidth().height(GRID_TOP).background(GRID_FADE))
+                Box(Modifier.fillMaxWidth().height(GRID_FADE_HEIGHT).background(GRID_FADE))
             }
         }
         notice?.let { text ->
@@ -519,7 +521,12 @@ private val GRID_TOP = 14.dp
 private val GRID_END = 48.dp
 private val GRID_GAP = 24.dp
 
-/** 格子の上の端の溶かし。上半分は塗りつぶす (上に隠れた日の見出しの字の裾が覗かないように) */
+/**
+ * 格子の上の端の溶かし。上半分は塗りつぶす (上に隠れた日の見出しの字の裾が覗かないように)。
+ * 上の余白 (`GRID_TOP`) より短くし、上の端に揃えた段の膨らんだカードの縁には掛けない
+ */
+private val GRID_FADE_HEIGHT = 9.dp
+
 private val GRID_FADE = Brush.verticalGradient(0f to Palette.Background, 0.5f to Palette.Background, 1f to Color.Transparent)
 
 /**
