@@ -1,6 +1,7 @@
 package io.github.danything.denpatv
 
 import androidx.media3.common.PlaybackException
+import io.github.danything.denpatv.data.Chase
 import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.Reconnect
 import io.github.danything.denpatv.data.Reconnect.Verdict
@@ -112,5 +113,19 @@ class ReconnectTest {
         // 頼み直しても何も映らずに終わった・長さが分からない (前と同じく観終えたことに)
         assertEquals(ChaseEnd.Finished, chaseEnd(stillRecording = false, positionMs = 600_000, durationMs = 1_800_000, pictured = false))
         assertEquals(ChaseEnd.Finished, chaseEnd(stillRecording = false, positionMs = 600_000, durationMs = null, pictured = true))
+    }
+
+    @Test
+    fun 追っかけで映る前に繋がらないのは断られたのではない() {
+        val parse = PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
+        // 焼くのを断られた空の 200 は、形が分からないと言われる
+        assertTrue(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = parse))
+        // denpa の入れ替えの最中 (繋ぎ直しの途中) に繋がらない・読めないのは、繋ぎ直しに任せる
+        assertFalse(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED))
+        assertFalse(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = PlaybackException.ERROR_CODE_IO_UNSPECIFIED))
+        // HTTP の番号があるもの・映したあと・生の TS は断られたのではない
+        assertFalse(Chase.refused(started = false, baked = true, httpStatus = 503, errorCode = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
+        assertFalse(Chase.refused(started = true, baked = true, httpStatus = null, errorCode = parse))
+        assertFalse(Chase.refused(started = false, baked = false, httpStatus = null, errorCode = parse))
     }
 }

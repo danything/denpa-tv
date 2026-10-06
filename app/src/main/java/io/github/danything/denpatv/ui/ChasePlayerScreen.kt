@@ -26,7 +26,6 @@ import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.Chase
 import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.LiveQuality
-import io.github.danything.denpatv.data.Reconnect
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
@@ -279,12 +278,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                 val code = (e.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
                 when {
                     code == 404 -> flash("録り終えて焼き上がったようです。一覧に戻って開き直してください")
-                    /*
-                     * 空の返事は、端末によっては形が分からないと言われる。繋ぎ直さない (断られたと出す)。
-                     * 繋がらない・読めない (denpa の入れ替えの最中) は断られたのではないので、繋ぎ直しに任せる
-                     */
-                    !started && quality != LiveQuality.Raw && code == null &&
-                        Reconnect.verdict(e.errorCode, null) != Reconnect.Verdict.Retry -> {
+                    // 焼くのを断られた (空の返事)。繋ぎ直さずにそう出す
+                    Chase.refused(started, baked = quality != LiveQuality.Raw, httpStatus = code, errorCode = e.errorCode) -> {
                         refused = true
                         recovery.cancel()
                     }
