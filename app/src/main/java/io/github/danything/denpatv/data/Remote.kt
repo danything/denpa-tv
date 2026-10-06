@@ -10,7 +10,8 @@ import android.view.KeyEvent
  * **下・決定・Menu でメニュー** (操作の列と局の列。YouTube・Prime Video・ABEMA などのテレビのアプリと同じく、下でメニューが出る)。
  * **上は同じメニューを、局の列のいま映している局に合わせて開く** (局を一覧から選ぶ近道)。
  * **決定の長押しは情報キーと同じく、いまの局と番組を出す** (`liveCenter`)。
- * 録画: 左右で 10 秒戻す・送る、決定で止める・動かす、下でシークバーと操作の列、上・決定の長押し・Menu で操作の列。
+ * 録画: 左右で 10 秒戻す・送る、決定で止める・動かす、下でシークバーと操作の列、上・Menu で操作の列。
+ * **決定の長押しは番組の詳しいところ** (`recordingCenter`。ライブの長押しの情報・録画の一覧のカードの長押しと揃える)。
  * 開いたメニュー・帯は、いちばん上の段 (ライブは操作の列、録画はシークバー) で上を押すと閉じる (`UpToClose`)。
  * 決定の短押し・長押しは PlayerFrame が分ける (CenterPress)
  */
@@ -31,7 +32,7 @@ fun liveCenter(press: CenterPress.Action): LiveCommand = when (press) {
     CenterPress.Action.Long -> LiveCommand.Info
 }
 
-enum class RecordingCommand { Back, Forward, SeekBar, Actions, NextChapter, PreviousChapter, PlayPause, NextSpeed }
+enum class RecordingCommand { Back, Forward, SeekBar, Actions, NextChapter, PreviousChapter, PlayPause, NextSpeed, Details }
 
 fun recordingCommand(keyCode: Int): RecordingCommand? = when (keyCode) {
     KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> RecordingCommand.Back
@@ -43,6 +44,15 @@ fun recordingCommand(keyCode: Int): RecordingCommand? = when (keyCode) {
     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> RecordingCommand.PlayPause
     KeyEvent.KEYCODE_PROG_GREEN -> RecordingCommand.NextSpeed
     else -> null
+}
+
+/**
+ * 録画・追っかけの決定。短押しは止める・動かす、**長押しは番組の詳しいところ** (録画の一覧のカードの長押しと同じもの)。
+ * 操作の列は上キーと Menu で開く (長押しで開いていた頃は、上キーと同じことをするだけだった)。長押しのあとの離しは CenterPress が捨てる
+ */
+fun recordingCenter(press: CenterPress.Action): RecordingCommand = when (press) {
+    CenterPress.Action.Short -> RecordingCommand.PlayPause
+    CenterPress.Action.Long -> RecordingCommand.Details
 }
 
 /**

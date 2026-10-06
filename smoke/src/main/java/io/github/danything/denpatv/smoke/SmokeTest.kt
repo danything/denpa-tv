@@ -195,6 +195,7 @@ class SmokeTest {
      * 録画を映す。帯は**上で操作の列に合って開き、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる**。
      * 下で開いたシークバーからも上で閉じる。偽の録画は 10 秒しかないので、映ったらすぐ止めてから見る
      * (止めている間は帯が勝手に閉じないので、上キーで閉じたのと取り違えない)
+     * **決定の長押しで番組の詳しいところ** (一覧のカードの長押しと同じ) が開き、戻るで閉じて映像に戻る (止めたまま。長押しの離しで動き出さない)
      */
     @Test
     fun recording() = watching {
@@ -220,6 +221,12 @@ class SmokeTest {
         press(KeyEvent.KEYCODE_DPAD_UP)
         assertTrue("下で開いたシークバーで上を押しても帯が閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { !barOpen() })
         assertTrue("帯を閉じたら止めた位置の帯が出ていません: ${texts()}", paused())
+
+        longPress(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue("決定の長押しで詳しくが開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" in texts() && FakeDenpa.RECORDING_DESCRIPTION in texts() })
+        press(KeyEvent.KEYCODE_BACK)
+        assertTrue("戻るで詳しくが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in texts() })
+        assertTrue("詳しくを閉じたら止めた位置の帯が出ていません (動き出した・画面ごと戻った?): ${texts()}", poll(TEXT_TIMEOUT_MS) { paused() })
     }
 
     /** 録画を止めている (止めた位置の帯が出ている) */

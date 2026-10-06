@@ -37,7 +37,8 @@ import java.util.Date
 /**
  * 録画の詳しいところ (カードの長押しで開く)。局・日時・長さ・形・続きの位置と、番組の説明。
  *
- * - **再生 (続きから) に合わせて開く** — 決定の押し間違いで消えないように
+ * - **再生 (続きから) に合わせて開く** — 決定の押し間違いで消えないように。再生の画面の長押しで開いたときは、その札が「閉じる」
+   (`playLabel`。映像に戻るだけ)
  * - 削除はブラウザの denpa と同じ2回押し
  * - 説明は別の口 (`api/recordings/<id>/detail`) から開いたときに取る。古い denpa には無いので、そのときは出さない。
  *   説明の段落は1つずつ合わせられるようにしてあり、下キーで読み進められる (長い出演者の欄など)
@@ -50,6 +51,8 @@ fun RecordingDetailDialog(
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
     onUnauthorized: () -> Unit,
+    /** 再生の札の名前。null なら「再生」(続きがあれば「続きから再生」) */
+    playLabel: String? = null,
 ) {
     val play = remember { FocusRequester() }
     val delete = rememberTwoPress()
@@ -78,7 +81,7 @@ fun RecordingDetailDialog(
                 RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.width(400.dp).aspectRatio(16f / 9f), repo.token)
                 val resume = recording.resumeMs?.takeIf { it > 0 }
                 Button(onClick = onPlay, modifier = Modifier.focusRequester(play)) {
-                    Text(if (resume != null) "続きから再生 (${position(resume)})" else "再生")
+                    Text(playLabel ?: if (resume != null) "続きから再生 (${position(resume)})" else "再生")
                 }
                 OutlinedButton(onClick = { if (delete.press()) onDelete() }) {
                     // 押すと「もう一度押すと削除」と長くなる。1行のまま伸ばす (切れないように)
