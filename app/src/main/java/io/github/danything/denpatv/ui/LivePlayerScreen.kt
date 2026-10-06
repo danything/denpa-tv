@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
  * ライブ。**開いたらすぐ、最後に観ていた局を映す** (初めてなら局の一覧の先頭)。denpa の画面のライブと同じ。
  *
  * - **左右** (チャンネル送りも) で前・次の局 (同じものを流しているサブチャンネルは飛ばす)。押している間は行き先の局・番組を
- *   下に出すだけで、**押し終えて少し (`ZAP_SETTLE_MS`) たってから、最後の局だけを頼む** (押し続けて局を送っても、途中の局ごとに
+ *   下に出すだけで、**キーを離して少し (`ZAP_SETTLE_MS`) たってから、最後の局だけを頼む** (押し続けて局を送っても、途中の局ごとに
  *   denpa にチューナーを替えさせない)。替えたら局・番組・番組の進みを数秒だけ下に出す (キーの割り当ては data/Remote.kt)
  * - **下・決定・Menu でメニュー** (YouTube・Prime Video・ABEMA などのテレビのアプリと同じく下で開く)。
  *   下の端に、ブラウザの denpa のライブの操作列にあたる**操作の列** (画質・字幕・音声・録画) と、その下に**局の列**
@@ -223,13 +223,18 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     }
 
     /**
-     * 左右 (チャンネル送り) で送っている途中の行き先。押すたびに隣へ進め、**押し終えて `ZAP_SETTLE_MS` たったら映す** —
-     * 押し続けても途中の局は頼まない (denpa がそのたびにチューナーを替えずに済む)。その間は前の局を流したまま
+     * 左右 (チャンネル送り) で送っている途中の行き先。押すたびに隣へ進め、**キーを離して `ZAP_SETTLE_MS` たったら映す** —
+     * 押し続けても途中の局は頼まない (denpa がそのたびにチューナーを替えずに済む)。その間は前の局を流したまま。
+     * 待ちを最後に押したときから数えると、押し続けたときの最初の繰り返し (古い Android は 0.5 秒後) より先に切れて、
+     * 途中の局を頼んでしまう。離したのが届かなかったとき (合いが外れたなど) は、最後に押してから `ZAP_HELD_MS` で映す
      */
     var stepping by remember { mutableStateOf<Service?>(null) }
-    LaunchedEffect(stepping) {
+    /** 局送りのキーを押したまま (離すまで頼まない) */
+    var held by remember { mutableStateOf(false) }
+    LaunchedEffect(stepping, held) {
         val target = stepping ?: return@LaunchedEffect
-        delay(ZAP_SETTLE_MS)
+        delay(if (held) ZAP_HELD_MS else ZAP_SETTLE_MS)
+        held = false
         playing = target
         stepping = null
     }
@@ -238,6 +243,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     val current = playing ?: return Centered("局がありません")
     fun zap(step: Int) {
         val next = neighbor(services, (stepping ?: current).id, step) ?: return
+        held = true
         stepping = next
         // 行き先を出す (映ったら同じものを出し直して、数秒残す)
         flash(describe(next, quality))
@@ -246,6 +252,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         // 送っている途中なら、待たずにそこへ替える (メニューの局の列と映しているものを揃える)
         stepping?.let { playing = it }
         stepping = null
+        held = false
         touched = System.nanoTime()
         menu = start
     }
@@ -287,6 +294,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         active = menu == null && !leaving,
         // `::run` (関数の参照) にしない。Compose が参照を覚えたままにして、前の局から送ってしまう
         onKey = { event -> liveCommand(event.nativeKeyEvent.keyCode)?.let { run(it) } != null },
+        onKeyUp = { held = false },
         // 決定の短押しはメニュー、長押しは情報キーと同じ (いまの局と番組)
         onCenter = { press -> run(liveCenter(press)) },
         // 送っている途中は行き先の番組の進み (知らせの文と揃える)
@@ -356,10 +364,13 @@ private fun describe(service: Service, quality: LiveQuality): String {
 private const val LIVE_HINT = "左右で局送り・決定か下でメニュー・上で局の列・決定の長押しで番組"
 
 /**
- * 局送りで押し終えてから映すまで (ミリ秒)。続けて押す間 (キーの繰り返しや、手で続けて押す間) より長く、
+ * 局送りでキーを離してから映すまで (ミリ秒)。続けて押す間 (キーの繰り返しや、手で続けて押す間) より長く、
  * 1回だけ押したときに待たされたと感じない短さ
  */
 private const val ZAP_SETTLE_MS = 500L
+
+/** 押したまま離したのが届かないときに、最後に押してから映すまで (ミリ秒)。押し続けている間はキーの繰り返しが数十ミリ秒ごとに来る */
+private const val ZAP_HELD_MS = 2_000L
 
 /** 上で開いたメニューで、いま映している局の札に合わせるのを試すこま数 */
 private const val CARD_FOCUS_TRIES = 10

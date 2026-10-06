@@ -67,7 +67,7 @@ class SmokeTest {
         awaitVideo(LIVE_COLOR)
         assertTrue("流している間に画面を点けたままにしていません", poll(TEXT_TIMEOUT_MS) { keepsScreenOn() })
 
-        // 右で次の局へ。押すとすぐ行き先の局名が出て、押し終えて少したってから頼む
+        // 右で次の局へ。押すとすぐ行き先の局名が出て、離して少したってから頼む
         val next = "GET /api/services/${FakeDenpa.NEXT_SERVICE_ID}/live"
         pressUntil(KeyEvent.KEYCODE_DPAD_RIGHT, "右で次の局へ送りません") { next in denpa.requests || texts().any { FakeDenpa.NEXT_SERVICE_NAME in it } }
         assertTrue("右で次の局を頼みません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { next in denpa.requests })
