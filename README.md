@@ -9,15 +9,15 @@ Jetpack Compose for TV で書いています。
 
 | 録画 (一番下の古いものから) | **録画の詳しく** (長押し) |
 | --- | --- |
-| <img src="docs/images/recordings.webp" alt="録画の一覧。放送日ごとの見出しと、ポスター・番組名・局・放送日時・長さ・形の札のカード。途中まで観たものはポスターの下に観た割合の帯" width="420"> | <img src="docs/images/detail.webp" alt="録画の詳しく。ポスター、続きから再生と削除のボタン、局・放送日時・長さ・形、番組の説明と出演者" width="420"> |
+| <img src="docs/images/recordings.webp" alt="録画の一覧。放送日ごとの見出しと、ポスター・番組名・局・放送日時・長さ・形の札のカード。録っている最中のものは「録画中」、焼いている最中のものは「エンコード中 42%」の札。途中まで観たものはポスターの下に観た割合の帯" width="420"> | <img src="docs/images/detail.webp" alt="録画の詳しく。ポスター、続きから再生と削除のボタン、局・放送日時・長さ・形、番組の説明と出演者" width="420"> |
 | **録画の再生** (下キーでシークバーと操作の列) | **最後まで観たとき** |
-| <img src="docs/images/player-bar.webp" alt="録画の再生。下の端に小さく、番組名と位置、CM を色分けしたシークバー、操作の札: 一時停止・前のチャプター・次のチャプター・速さ・CM 飛ばし・字幕・削除" width="420"> | <img src="docs/images/ended.webp" alt="録画の再生の終わり。下に「最後まで観ました」と、一覧に戻る・削除" width="420"> |
+| <img src="docs/images/player-bar.webp" alt="録画の再生。下の端に小さく、番組名と位置、CM を色分けしたシークバー、操作の札: 一時停止・前のチャプター・次のチャプター・速さ・CM 飛ばし・字幕・音声 (右に削除が続く)" width="420"> | <img src="docs/images/ended.webp" alt="録画の再生の終わり。下に「最後まで観ました」と、一覧に戻る・削除 (削除に合っている)" width="420"> |
 | **ライブ** | **ライブのメニュー** (決定・左右) |
 | <img src="docs/images/live.webp" alt="ライブ。局を替えると、下の端に局と番組名と残り時間、番組の進みが数秒出る" width="420"> | <img src="docs/images/live-menu.webp" alt="ライブの下の端に、局と番組・番組の進み、操作の札 (画質 H.264・録画)、その下に地上波の局の列が覗き、次の BS の列の頭が見える" width="420"> |
 | **局の列** (メニューで下キー) | **局を替えている間** (長くかかったとき) |
 | <img src="docs/images/live-channels.webp" alt="局の列。地上波の局の札が横に並び、合わせたフジテレビの札に「録画中」の印と番組名" width="420"> | <img src="docs/images/live-tuning.webp" alt="前の局の絵のまま、真ん中に回るものと「選局しています」。下に替えた先の局と番組" width="420"> |
 | **追っかけ再生** (録画中の録画) | **設定** |
-| <img src="docs/images/chase.webp" alt="追っかけ再生。下の端に「録画中」と番組名、位置と録れたところまでの長さ、シークバー、操作の札: 一時停止・最新・速さ・画質" width="420"> | <img src="docs/images/settings.webp" alt="設定。左のメニューが開いていて、繋ぐ先と繋ぐ先を変える" width="420"> |
+| <img src="docs/images/chase.webp" alt="追っかけ再生。下の端に「録画中」と番組名、位置と録れたところまでの長さ、シークバー、操作の札: 一時停止・最新・速さ・画質" width="420"> | <img src="docs/images/settings.webp" alt="設定。繋ぐ先と繋ぐ先を変える、この版と「アップデートを確かめる」(押すと「最新です」)" width="420"> |
 | **繋ぐ** | |
 | <img src="docs/images/setup.webp" alt="繋ぐ画面。スマホで読む QR と手順" width="420"> | |
 
