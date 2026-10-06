@@ -21,16 +21,30 @@ deadline=$((SECONDS + ${WAIT_APKS_TIMEOUT:-900}))
 echo "apks の列が $artifact を上げるのを待ちます"
 # 見るのは今の試行 (re-run なら最新) の apks の列だけ (1 回に API を 1 度。5 列が 15 分待っても GITHUB_TOKEN の上限に届かない間隔)。
 # 上げる手順が終われば取りに行き、列の後始末 (Gradle のキャッシュの保存) が終わるのは待たない。
-# API がたまたま落ちても待ち続ける (gh のエラーはそのまま出る)
+# API がたまたま落ちても待ち続ける (gh のエラーはそのまま出る)。10 回続けて落ちたら (権限の誤りなど) 待つのをやめる
+failures=0
 while :; do
-    state=$(gh api "$api/jobs?per_page=100" \
-        --jq ".jobs[] | select(.name == \"$job\") | \"\(.status) \(.conclusion) \([.steps[]? | select(.name == \"$step\") | .conclusion] | first // \"none\")\"" || true)
+    if state=$(gh api "$api/jobs?per_page=100" \
+        --jq ".jobs[] | select(.name == \"$job\") | \"\(.status) \(.conclusion) \([.steps[]? | select(.name == \"$step\") | .conclusion] | first // \"none\")\""); then
+        failures=0
+    else
+        failures=$((failures + 1))
+        if [ "$failures" -ge 10 ]; then
+            echo "::error::Actions の API が続けて失敗しました (上の gh のエラーを見てください)"
+            exit 1
+        fi
+        state=""
+    fi
     read -r status conclusion uploaded <<< "${state:-none none none}"
     if [ "$uploaded" = success ]; then
         break
     fi
     if [ "$status" = completed ]; then
-        echo "::error::apks の列が $artifact を上げずに終わりました ($conclusion)。APK が無いので試験できません"
+        if [ "$conclusion" = success ]; then
+            echo "::error::apks の列は通りましたが、手順「$step」が見当たりません (ci.yml の手順の名前と合わせる)"
+        else
+            echo "::error::apks の列が $artifact を上げずに終わりました ($conclusion)。APK が無いので試験できません"
+        fi
         exit 1
     fi
     if [ "$SECONDS" -ge "$deadline" ]; then
