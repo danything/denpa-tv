@@ -85,7 +85,9 @@ jobs:
         # lintVital (縮める版に付く lint の致命の分) は外して焼くだけにする。lint は build の列の lintDebug が全部の検査でやっている。
         # ここで走らせると R8 と並んで 1 分ほど CPU を使い、emulator の列が待つ APK を遅らせうる
         run: ./gradlew :app:assembleMinified :smoke:assembleMinified -x lintVitalMinified --console=plain
+      # 手順の名前は scripts/wait-apks.sh が見ている (emulator の列はこれが終わるのを待つ)
       - if: needs.changes.outputs.code == 'true'
+        name: Upload smoke-apks
         uses: actions/upload-artifact@v7
         with:
           name: smoke-apks
