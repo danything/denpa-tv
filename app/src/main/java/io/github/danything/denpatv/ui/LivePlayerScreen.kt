@@ -11,12 +11,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 import androidx.media3.common.MediaItem
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
+import io.github.danything.denpatv.data.liveCenter
 import io.github.danything.denpatv.data.liveCommand
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.NowProgram
@@ -35,17 +37,19 @@ import kotlinx.coroutines.launch
 /**
  * ライブ。**開いたらすぐ、最後に観ていた局を映す** (初めてなら局の一覧の先頭)。denpa の画面のライブと同じ。
  *
- * - 上下 (チャンネル送りも) で前・次の局 (同じものを流しているサブチャンネルは飛ばす)。替えたら局・番組・番組の進みを
- *   数秒だけ下に出す。いちばん押すのは局替えなので十字キーの上下に (キーの割り当ては data/Remote.kt)
- * - **ほかのキー (決定・左右・決定の長押し・Menu) はどれもメニュー** (YouTube のアプリと同じく、何を押しても十字キーで辿れるものが出る)。
+ * - **左右** (チャンネル送りも) で前・次の局 (同じものを流しているサブチャンネルは飛ばす)。押している間は行き先の局・番組を
+ *   下に出すだけで、**押し終えて少し (`ZAP_SETTLE_MS`) たってから、最後の局だけを頼む** (押し続けて局を送っても、途中の局ごとに
+ *   denpa にチューナーを替えさせない)。替えたら局・番組・番組の進みを数秒だけ下に出す (キーの割り当ては data/Remote.kt)
+ * - **下・決定・Menu でメニュー** (YouTube・Prime Video・ABEMA などのテレビのアプリと同じく下で開く)。
  *   下の端に、ブラウザの denpa のライブの操作列にあたる**操作の列** (画質・字幕・音声・録画) と、その下に**局の列**
  *   (地上波 / BS / CS ごとの列。ブラウザのタブにあたる) が覗く。下キーで局の列に入り、左右で選んで決定で替える。
+ *   **上で開くと、はじめから局の列のいま映している局に合う** (一覧から局を選ぶ近道)。
  *   画質はすぐ切り替わってこの端末で覚える (既定は端末がハードで MPEG-2 を解ければ生の TS)。**戻るで閉じる** (もう一度でメニューの画面へ)。
  *   8 秒触らなければ閉じる
  * - **録画** はいま観ている番組を denpa に予約する (ブラウザのライブの録画ボタンと同じ。何度押しても二重には録らない)
  * - 局を替えている間は前の局の絵を残し、長くかかったら (1.5 秒) 回るものと「選局しています」→「映像を待っています」を出す (PlayerFrame)
  * - アプリが裏に回ったら (ホーム・別のアプリ) 止めて denpa から降りる (チューナーを空ける)。戻ったら同じ局を映し直す
- * - 情報キーで、いまの局と番組を出す
+ * - 情報キーと決定の長押しで、いまの局と番組を出す
  * - 何も開いていないときの戻るは、メニューの画面へ (「ライブ」に合う)
  */
 @Composable
@@ -63,14 +67,14 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     var ready by remember { mutableStateOf(false) }
     /** 映している局が一覧から消えたと知らせたか */
     var gone by remember { mutableStateOf(false) }
-    /** メニュー (操作の列と局の列) を開いているか */
-    var menu by remember { mutableStateOf(false) }
+    /** メニュー (操作の列と局の列) を開いているか。開いているなら、開いたときにどちらに合わせるか */
+    var menu by remember { mutableStateOf<MenuStart?>(null) }
     /** メニューで最後にキーを押したとき (しばらく触らなければ閉じる) */
     var touched by remember { mutableLongStateOf(0L) }
     LaunchedEffect(menu, touched) {
-        if (!menu) return@LaunchedEffect
+        if (menu == null) return@LaunchedEffect
         delay(MENU_IDLE_MS)
-        menu = false
+        menu = null
     }
     /** キーの手引きを出したか (開いて最初の1回だけ) */
     var hinted by remember { mutableStateOf(false) }
@@ -168,7 +172,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 // 知らせは消えたときに1度だけ (取り直しのたびに出さない)
                 !gone -> {
                     gone = true
-                    flash("${current.name} は局の一覧から無くなりました (スキャンし直した?)。上下で別の局へ")
+                    flash("${current.name} は局の一覧から無くなりました (スキャンし直した?)。左右で別の局へ")
                 }
             }
         }
@@ -209,8 +213,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
      * 続けて押しても1つだけ戻る (2回目は受けない)
      */
     BackHandler(enabled = !leaving) {
-        if (menu) {
-            menu = false
+        if (menu != null) {
+            menu = null
         } else {
             leaving = true
             repo.menuOnReturn = true
@@ -218,19 +222,37 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         }
     }
 
+    /**
+     * 左右 (チャンネル送り) で送っている途中の行き先。押すたびに隣へ進め、**押し終えて `ZAP_SETTLE_MS` たったら映す** —
+     * 押し続けても途中の局は頼まない (denpa がそのたびにチューナーを替えずに済む)。その間は前の局を流したまま
+     */
+    var stepping by remember { mutableStateOf<Service?>(null) }
+    LaunchedEffect(stepping) {
+        val target = stepping ?: return@LaunchedEffect
+        delay(ZAP_SETTLE_MS)
+        playing = target
+        stepping = null
+    }
+
     if (!ready) return Centered("読み込んでいます…")
     val current = playing ?: return Centered("局がありません")
     fun zap(step: Int) {
-        neighbor(services, current.id, step)?.let { playing = it }
+        val next = neighbor(services, (stepping ?: current).id, step) ?: return
+        stepping = next
+        // 行き先を出す (映ったら同じものを出し直して、数秒残す)
+        flash(describe(next, quality))
     }
-    fun openMenu() {
+    fun openMenu(start: MenuStart) {
+        // 送っている途中なら、待たずにそこへ替える (メニューの局の列と映しているものを揃える)
+        stepping?.let { playing = it }
+        stepping = null
         touched = System.nanoTime()
-        menu = true
+        menu = start
     }
     /** いまの番組を録る (ブラウザのライブの録画ボタンと同じ口)。結果は1行で知らせ、局を取り直して印を合わせる */
     fun record() {
         val service = current
-        menu = false
+        menu = null
         scope.launch {
             val result = try {
                 repo.api.recordNow(repo.base, service.id)
@@ -249,29 +271,30 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             if (result is RecordResult.Recorded) refresh()
         }
     }
+    fun run(command: LiveCommand) = when (command) {
+        LiveCommand.PreviousChannel -> zap(-1)
+        LiveCommand.NextChannel -> zap(1)
+        LiveCommand.Menu -> openMenu(MenuStart.Controls)
+        LiveCommand.Channels -> openMenu(MenuStart.Channels)
+        LiveCommand.Info -> flash(describe(stepping ?: current, quality) + "\n$LIVE_HINT")
+    }
     val currentCard = remember { FocusRequester() }
     PlayerFrame(
         player,
         // メニューを開いている間は1行の知らせを出さない (メニューの帯の下から透けて重なる)
-        overlay.takeUnless { menu },
+        overlay.takeUnless { menu != null },
         error,
-        active = !menu && !leaving,
-        onKey = { event ->
-            when (liveCommand(event.nativeKeyEvent.keyCode)) {
-                LiveCommand.PreviousChannel -> { zap(-1); true }
-                LiveCommand.NextChannel -> { zap(1); true }
-                LiveCommand.Menu -> { openMenu(); true }
-                LiveCommand.Info -> { flash(describe(current, quality) + "\n$LIVE_HINT"); true }
-                null -> false
-            }
-        },
-        // 決定は短押しも長押しもメニュー (長押しは、決定を押し続けがちな人とリモコンのため)
-        onCenter = { openMenu() },
-        progress = current.now?.let { System.currentTimeMillis() - it.startAt to it.endAt - it.startAt },
+        active = menu == null && !leaving,
+        // `::run` (関数の参照) にしない。Compose が参照を覚えたままにして、前の局から送ってしまう
+        onKey = { event -> liveCommand(event.nativeKeyEvent.keyCode)?.let { run(it) } != null },
+        // 決定の短押しはメニュー、長押しは情報キーと同じ (いまの局と番組)
+        onCenter = { press -> run(liveCenter(press)) },
+        // 送っている途中は行き先の番組の進み (知らせの文と揃える)
+        progress = (stepping ?: current).now?.let { System.currentTimeMillis() - it.startAt to it.endAt - it.startAt },
         captions = captions,
         busyLabel = "選局しています",
     ) {
-        if (menu) {
+        menu?.let { start ->
             val now = current.now
             ControlBar(
                 describe(current, quality),
@@ -284,6 +307,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                     "" to tracks.controls() + baked.controls(),
                     "" to listOf(recordControl(now) { record() }),
                 ),
+                // 上で開いたときは、操作の列ではなく局の列のいま映している局に合わせる (下の LaunchedEffect)
+                focusActions = start == MenuStart.Controls,
                 onActivity = { touched = System.nanoTime() },
                 // いまの番組の進み
                 header = now?.let { program ->
@@ -293,13 +318,24 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 below = {
                     ChannelRows(repo, services, current, currentCard) { picked ->
                         playing = picked
-                        menu = false
+                        menu = null
                     }
                 },
             )
+            LaunchedEffect(Unit) {
+                if (start != MenuStart.Channels) return@LaunchedEffect
+                // 局の札は局の列を並べたあとに出来るので、合うまで何こまか試す (合わなければ帯が操作の列に合わせる)
+                for (attempt in 0 until CARD_FOCUS_TRIES) {
+                    withFrameNanos { }
+                    if (runCatching { currentCard.requestFocus() }.getOrDefault(false)) break
+                }
+            }
         }
     }
 }
+
+/** メニューを開いたときにどこに合わせるか。下・決定・Menu は操作の列、上は局の列のいま映している局 */
+private enum class MenuStart { Controls, Channels }
 
 /** 録画の札。録っている・録る予定ならそう出す (押しても二重には録らない。denpa が番組ごとに1本にまとめる) */
 private fun recordControl(now: NowProgram?, onClick: () -> Unit): Control = when {
@@ -317,7 +353,16 @@ private fun describe(service: Service, quality: LiveQuality): String {
     return if (now.title.isBlank()) "$head\n$left" else "$head\n${now.title}  $left"
 }
 
-private const val LIVE_HINT = "上下で局送り・決定でメニュー (局・画質・録画)"
+private const val LIVE_HINT = "左右で局送り・決定か下でメニュー・上で局の列・決定の長押しで番組"
+
+/**
+ * 局送りで押し終えてから映すまで (ミリ秒)。続けて押す間 (キーの繰り返しや、手で続けて押す間) より長く、
+ * 1回だけ押したときに待たされたと感じない短さ
+ */
+private const val ZAP_SETTLE_MS = 500L
+
+/** 上で開いたメニューで、いま映している局の札に合わせるのを試すこま数 */
+private const val CARD_FOCUS_TRIES = 10
 
 /** メニューを閉じるまで (ミリ秒)。局の列で番組名を読むので、録画の帯 (5 秒) より長く */
 private const val MENU_IDLE_MS = 8_000L
