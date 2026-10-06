@@ -4,6 +4,8 @@ import io.github.danything.denpatv.data.ApkCache
 import io.github.danything.denpatv.data.GitHubAsset
 import io.github.danything.denpatv.data.GitHubRelease
 import io.github.danything.denpatv.data.HashMismatch
+import io.github.danything.denpatv.data.INSTALL_REQUEST_TTL_MS
+import io.github.danything.denpatv.data.InstallRequest
 import io.github.danything.denpatv.data.MAX_SILENT_FAILURES
 import io.github.danything.denpatv.data.Prefetch
 import io.github.danything.denpatv.data.Update
@@ -23,6 +25,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
 
@@ -189,6 +192,36 @@ class UpdateTest {
         assertTrue(offerAfterFailure(MAX_SILENT_FAILURES, manual = false))
         // 設定で「確かめる」を押したときは出す
         assertTrue(offerAfterFailure(1, manual = true))
+    }
+
+    /** 許可の画面へ送ったあと、アプリが閉じられて開き直したとき (denpa-tv#32) */
+    @Test
+    fun 許可の画面へ送った版を_開き直したときに続けて入れるか() {
+        val at = 1_000_000L
+        val request = InstallRequest("0.4.0", at)
+        val update = Update("0.4.0", "denpa-tv-0.4.0.apk", "", null)
+        val file = File("denpa-tv-0.4.0.apk")
+        // 頼まれた版を入れられる
+        assertEquals(Resume.Start, resumePlan(UpdateState.Ready(update, file), request, at))
+        assertEquals(Resume.Start, resumePlan(UpdateState.Available(update), request, at + INSTALL_REQUEST_TTL_MS))
+        // 確かめられなかった・裏で取れなかった (Idle に戻る)・取ってきている: 頼みは残す (期限で切れる)
+        for (state in listOf(UpdateState.Idle, UpdateState.Checking, UpdateState.CheckFailed("x"), UpdateState.Preparing(update, 10))) {
+            assertEquals(state.toString(), Resume.Wait, resumePlan(state, request, at))
+        }
+        // その間にもっと新しい版が出たら、頼まれた版ではないので忘れる
+        assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update.copy(version = "0.4.1"), file), request, at))
+        // ずっと後 (許可せずに戻って、何日も後に開いた)・時計が戻った: 勝手に入れ始めない
+        assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update, file), request, at + INSTALL_REQUEST_TTL_MS + 1))
+        assertEquals(Resume.Forget, resumePlan(UpdateState.Idle, request, at + INSTALL_REQUEST_TTL_MS + 1))
+        assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update, file), request, at - 1))
+    }
+
+    @Test
+    fun 許可を待つ間の1行() {
+        val update = Update("0.4.0", "denpa-tv-0.4.0.apk", "", null)
+        val message = "「不明なアプリのインストール」を許可して戻ると、続けて入れます"
+        assertEquals(message, UpdateState.NeedsPermission(update, message).notice())
+        assertEquals("v0.4.0 があります", UpdateState.Available(update).notice())
     }
 
     @Test

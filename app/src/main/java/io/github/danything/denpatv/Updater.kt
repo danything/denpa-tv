@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import io.github.danything.denpatv.data.ApkCache
 import io.github.danything.denpatv.data.HashMismatch
+import io.github.danything.denpatv.data.InstallRequest
 import io.github.danything.denpatv.data.Prefetch
 import io.github.danything.denpatv.data.Update
 import io.github.danything.denpatv.data.UpdateRejected
@@ -24,12 +25,15 @@ import io.github.danything.denpatv.data.offerAfterFailure
 import io.github.danything.denpatv.data.prefetchPlan
 import io.github.danything.denpatv.data.selectUpdate
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import io.github.danything.denpatv.data.lenientJson
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** アップデートのいま。録画の一覧の頭の1行と設定の画面が出す */
 sealed interface UpdateState {
@@ -51,6 +55,11 @@ sealed interface UpdateState {
     data class Downloading(val update: Update, val percent: Int) : UpdateState
     /** 確かめた APK を入れている。`confirming` はテレビに確認の画面を出したところ */
     data class Installing(val update: Update, val file: File, val confirming: Boolean = false) : UpdateState
+    /**
+     * 「不明なアプリのインストール」の許可の画面を開いた。**許可して戻れば、押さなくても続けて入れる** (`resume`)。
+     * 押すともう一度確かめる (許可していなければ、また許可の画面を開く)
+     */
+    data class NeedsPermission(val update: Update, val message: String, val file: File? = null) : UpdateState
     /** 取れない・合わない・入らない。押すとやり直す (取れた APK があればそれを入れ直す) */
     data class Failed(val update: Update, val message: String, val file: File? = null) : UpdateState
 }
@@ -62,8 +71,37 @@ fun UpdateState.notice(): String? = when (this) {
     is UpdateState.Downloading -> "${update.label} を取ってきています $percent%"
     is UpdateState.Installing ->
         if (confirming) "${update.label}: 出てきた確認の画面で入れてください" else "${update.label} を入れています…"
+    is UpdateState.NeedsPermission -> message
     is UpdateState.Failed -> message
     else -> null
+}
+
+/** 許可の画面へ送ったあとに開き直したとき、覚えておいた頼み (`InstallRequest`) をどうするか */
+enum class Resume {
+    /** 頼まれた版を入れられる (許可してあれば続けて入れる) */
+    Start,
+    /**
+     * まだ分からない (確かめられなかった・裏で取れなかった)。頼みは残し、期限で切れる。
+     * 取ってきている・入れている (開き直してから押された・設定で確かめている) ときは、そちらが入れる
+     * (開き直したときの裏の取り込みは確かめの中で取り終えるので、ここでは取ってきている途中にならない)
+     */
+    Wait,
+    /** 古い頼み・ほかの版になった (もっと新しい版が出た)。忘れる */
+    Forget,
+}
+
+/**
+ * 開き直して確かめ終えたときの `state` で、頼み `request` をどうするか。**確かめられなかったときに頼みを捨てない**
+ * (許可の画面にいる間に閉じられ、開き直したときにたまたま届かなくても、次に開いたときに続けられるように)
+ */
+fun resumePlan(state: UpdateState, request: InstallRequest, now: Long): Resume {
+    if (!request.fresh(now)) return Resume.Forget
+    val update = when (state) {
+        is UpdateState.Ready -> state.update
+        is UpdateState.Available -> state.update
+        else -> return Resume.Wait
+    }
+    return if (update.version == request.version) Resume.Start else Resume.Forget
 }
 
 /**
@@ -78,14 +116,19 @@ class Updater(private val app: DenpaApp) {
     val current: String = BuildConfig.VERSION_NAME
     val dev: Boolean = isDevBuild(current)
 
-    private val source = UpdateSource()
+    private val source = UpdateSource(BuildConfig.UPDATE_API)
     private val cache = ApkCache(File(app.cacheDir, "update"))
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> get() = _state
 
-    /** 開いたとき。手元で焼いた版では見ない */
+    private val started = AtomicBoolean(false)
+
+    /**
+     * 開いたとき (プロセスごとに1回。プロセスが落ちて画面が作り直されたときも)。手元で焼いた版では見ない。
+     * 許可の画面へ送ったあとに開き直したのなら、許可してあれば続けて入れる (`resumeRequest`)
+     */
     fun checkOnStart() {
-        if (dev) return
+        if (dev || !started.compareAndSet(false, true)) return
         app.scope.launch {
             val (at, saved) = app.settings.lastUpdateCheck()
             val now = System.currentTimeMillis()
@@ -94,17 +137,52 @@ class Updater(private val app: DenpaApp) {
                 val update = saved?.let { runCatching { lenientJson.decodeFromString(Update.serializer(), it) }.getOrNull() }
                     ?.takeIf { isNewer(it) }
                 prepare(update, fresh = false, manual = false)
-                return@launch
+            } else {
+                try {
+                    prepare(fetch(), fresh = true, manual = false)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "新しい版を確かめられませんでした", e)
+                }
             }
-            try {
-                prepare(fetch(), fresh = true, manual = false)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "新しい版を確かめられませんでした", e)
-            }
+            resumeRequest()
         }
     }
+
+    /**
+     * 画面に戻った (MainActivity の onResume)。許可の画面から戻って**許可されていれば、もう一度押さなくても続けて入れる**
+     * (denpa-tv#32。前は「もう一度押してください」と出したまま待っていた)
+     */
+    fun resume() {
+        val state = _state.value as? UpdateState.NeedsPermission ?: return
+        if (allowedToInstall()) start(state.update, state.file?.takeIf { it.exists() })
+    }
+
+    /**
+     * 許可の画面へ送ったあと、アプリが閉じられて開き直した (テレビによっては許可の画面にいる間・許可したときに閉じられる)。
+     * 頼まれた版がまだ新しく、頼んでから間もなく、許可してあれば、続けて入れる。許可していなければ知らせを出したままにする
+     */
+    private suspend fun resumeRequest() {
+        val request = app.settings.installRequest() ?: return
+        val state = _state.value
+        when (resumePlan(state, request, System.currentTimeMillis())) {
+            Resume.Start -> if (allowedToInstall()) when (state) {
+                is UpdateState.Ready -> start(state.update, state.file.takeIf { it.exists() })
+                is UpdateState.Available -> start(state.update, null)
+                else -> Unit
+            }
+            Resume.Wait -> Unit
+            Resume.Forget -> remember(null)
+        }
+    }
+
+    /** 許可の画面へ送った版を覚える・忘れる。書いた順に効くよう1本ずつ書く (続けて書くと後のほうが先に効くことがある) */
+    private fun remember(request: InstallRequest?) {
+        app.scope.launch(requestWriter) { app.settings.setInstallRequest(request) }
+    }
+
+    private val requestWriter = Dispatchers.IO.limitedParallelism(1)
 
     /** 設定の「アップデートを確かめる」。取ってきている・入れている間は何もしない */
     fun checkNow() {
@@ -137,6 +215,7 @@ class Updater(private val app: DenpaApp) {
         when (val state = _state.value) {
             is UpdateState.Ready -> start(state.update, state.file.takeIf { it.exists() })
             is UpdateState.Available -> start(state.update, null)
+            is UpdateState.NeedsPermission -> start(state.update, state.file?.takeIf { it.exists() })
             is UpdateState.Failed -> start(state.update, state.file?.takeIf { it.exists() })
             // 確認の画面を戻るで閉じると、OS から何も返らないことがある。押せばもう一度出す
             // (セッションを書いている最中 = 確認の画面を出す前は何もしない)
@@ -209,10 +288,13 @@ class Updater(private val app: DenpaApp) {
 
     private fun start(update: Update, downloaded: File?) {
         // 先に「不明なアプリのインストール」を確かめる (取ってきてから断られると無駄になる)
+        // 許可して戻ったら続けて入れる (`resume`)。アプリが閉じられても開き直したときに続けられるよう、先に覚えておく
         if (!allowedToInstall()) {
-            _state.value = UpdateState.Failed(update, askPermission(), downloaded)
+            remember(InstallRequest(update.version, System.currentTimeMillis()))
+            _state.value = UpdateState.NeedsPermission(update, askPermission(), downloaded)
             return
         }
+        remember(null)
         // 続けて押されても2本取らないよう、先に「取ってきている」にする
         _state.value = if (downloaded == null) UpdateState.Downloading(update, 0) else UpdateState.Installing(update, downloaded)
         app.scope.launch {
@@ -258,7 +340,7 @@ class Updater(private val app: DenpaApp) {
             Settings.Secure.getInt(app.contentResolver, Settings.Secure.INSTALL_NON_MARKET_APPS, 0) == 1
         }
 
-    /** 許可の画面を開いて、出す1行を返す */
+    /** 許可の画面を開いて、出す1行を返す (許可して戻れば続けて入れる) */
     private fun askPermission(): String {
         val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${app.packageName}".toUri())
@@ -268,9 +350,9 @@ class Updater(private val app: DenpaApp) {
         val opened = open(intent) || open(Intent(Settings.ACTION_SETTINGS))
         // 頭の1行に収まる長さで。開けなければ、どこで許可するかを足す
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            (if (opened) "" else "テレビの設定で ") + "「不明なアプリのインストール」を許可してから、もう一度押してください"
+            (if (opened) "" else "テレビの設定で ") + "「不明なアプリのインストール」を許可して戻ると、続けて入れます"
         } else {
-            (if (opened) "" else "テレビの設定の「セキュリティ」で ") + "「提供元不明のアプリ」を許可してから、もう一度押してください"
+            (if (opened) "" else "テレビの設定の「セキュリティ」で ") + "「提供元不明のアプリ」を許可して戻ると、続けて入れます"
         }
     }
 
@@ -311,11 +393,29 @@ class Updater(private val app: DenpaApp) {
                 val pending = PendingIntent.getBroadcast(app, id, Intent(ACTION_STATUS).setPackage(app.packageName), flags)
                 session.commit(pending.intentSender)
             }
+            waitForStatus(update, file, id)
         } catch (e: Exception) {
             Log.w(TAG, "入れられませんでした", e)
             abandon(installer, id)
             if (session == id) session = NO_SESSION
             _state.value = UpdateState.Failed(update, "${update.label} を入れられませんでした (${e.message ?: e.javaClass.simpleName})", file)
+        }
+    }
+
+    /**
+     * 渡したセッションの結果 (確認の画面を出す・入った・断られた) が OS から来ないまま「入れています…」で止まらないよう、
+     * しばらく待って来なければ、押してやり直せる1行にする (セッションは捨てない。後から入ればアプリが閉じる)
+     */
+    private fun waitForStatus(update: Update, file: File, id: Int) {
+        app.scope.launch {
+            delay(STATUS_TIMEOUT_MS)
+            val now = _state.value
+            // その間に結果が来た・押し直した (ほかの状態・ほかのセッションになった) ら何もしない
+            if (now is UpdateState.Installing && !now.confirming && session == id &&
+                _state.compareAndSet(now, UpdateState.Failed(update, "${update.label}: テレビから返事がありません (押すともう一度)", file))
+            ) {
+                Log.w(TAG, "セッション $id の結果が ${STATUS_TIMEOUT_MS / 1000} 秒来ません")
+            }
         }
     }
 
@@ -382,6 +482,7 @@ class Updater(private val app: DenpaApp) {
         const val TAG = "DenpaUpdate"
         const val NO_SESSION = -1
         const val CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000L
+        const val STATUS_TIMEOUT_MS = 30_000L
         const val ACTION_STATUS = "io.github.danything.denpatv.UPDATE_STATUS"
     }
 }

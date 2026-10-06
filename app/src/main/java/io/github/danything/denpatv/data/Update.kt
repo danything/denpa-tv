@@ -160,6 +160,18 @@ fun offerAfterFailure(failures: Int, manual: Boolean): Boolean = manual || failu
 const val MAX_SILENT_FAILURES = 3
 
 /**
+ * 押して「不明なアプリのインストール」の許可の画面へ送った (denpa-tv#32)。**許可して戻ったら、もう一度押さなくても続けて入れる。**
+ * テレビによっては許可の画面にいる間・許可したときにアプリが閉じられ、戻ると開き直しになるので、覚えておく (Settings)。
+ * 古い頼み (許可せずに戻って、ずっと後に開いた) では勝手に入れ始めない
+ */
+data class InstallRequest(val version: String, val at: Long) {
+    /** 頼んでから間もない (時計が戻ったときは古いとみなす) */
+    fun fresh(now: Long): Boolean = now - at in 0..INSTALL_REQUEST_TTL_MS
+}
+
+const val INSTALL_REQUEST_TTL_MS = 30 * 60 * 1000L
+
+/**
  * 確かめた APK を版ごとに置くところ (`<root>/<版>/<APK>`)。APK の隣に、照らした SHA256SUMS の行 (`<APK>.sha256`) と
  * 裏で取れなかった回数 (`failures`) を置く。開き直したときは隣の行とハッシュを計り直して照らし、合えば取り直さない
  */
@@ -207,9 +219,9 @@ class ApkCache(private val root: File) {
 }
 
 /**
- * GitHub のリリースを引き、APK を取ってくる。`api` は手元のテストで差し替える
+ * GitHub のリリースを引き、APK を取ってくる。`api` は `BuildConfig.UPDATE_API` (debug では差し替えられる)・手元のテストの偽物
  */
-class UpdateSource(private val api: String = "https://api.github.com/repos/danything/denpa-tv") {
+class UpdateSource(private val api: String) {
     /** いちばん新しい版の候補 (試し版も含めて新しい順に何本か)。並びは作った順なので、版で選び直す */
     fun releases(): List<GitHubRelease> {
         val url = URI("$api/releases?per_page=$RELEASES")
