@@ -317,7 +317,8 @@ private fun HeroArea(repo: Repository, recordings: List<Recording>, shownId: () 
     val descriptions = remember { mutableStateMapOf<Long, String>() }
     LaunchedEffect(settled) {
         val id = settled
-        prefetch(repo, recordings, id, cardSize[0], cardSize[1])
+        // 先読みは説明と並べて (先読みを待たずに説明を取りに行く)。止まる先が替わったら一緒にやめる
+        launch { prefetch(repo, recordings, id, cardSize[0], cardSize[1]) }
         if (id in descriptions) return@LaunchedEffect
         val detail = try {
             repo.api.recordingDetail(repo.base, id)
