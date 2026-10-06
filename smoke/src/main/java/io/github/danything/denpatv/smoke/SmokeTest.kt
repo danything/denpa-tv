@@ -20,7 +20,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.BeforeClass
 import org.junit.FixMethodOrder
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.Timeout
 import org.junit.runners.MethodSorters
 import kotlin.math.abs
 
@@ -38,6 +40,13 @@ import kotlin.math.abs
  */
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class SmokeTest {
+    /**
+     * **1件ごとの上限。** 固まったら (画面の木を取りに行ったまま戻らないなど) その1件を落として次へ進む。
+     * CI の遅いエミュレータでも、ふつうは1件 1 分もかからない
+     */
+    @get:Rule
+    val timeout: Timeout = Timeout.seconds(TEST_TIMEOUT_S)
+
     @Test
     fun live() = watching {
         open("denpa://live/${FakeDenpa.SERVICE_ID}")
@@ -315,6 +324,7 @@ class SmokeTest {
         private const val POLL_MS = 500L
         private const val MENU_TRIES = 4
         private const val STOP_WAIT_MS = 3_000L
+        private const val TEST_TIMEOUT_S = 150L
         private const val MENU_WAIT_MS = 3_000L
     }
 }

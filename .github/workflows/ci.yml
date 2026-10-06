@@ -169,8 +169,10 @@ jobs:
           emulator-options: ${{ env.EMULATOR_OPTIONS }}
           disable-animations: false
           script: echo "AVD のスナップショットを作りました"
+      # 固まっても 30 分待たずに切る (smoke-run.sh も am instrument を 8 分で切って記録を残す)
       - if: env.RUN == 'true'
         name: Smoke test
+        timeout-minutes: 12
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -184,7 +186,8 @@ jobs:
           emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
           disable-animations: true
           script: bash scripts/smoke-run.sh apks/app/build/outputs/apk/minified/app-minified.apk apks/smoke/build/outputs/apk/minified/smoke-minified.apk smoke-results
-      - if: failure() && env.RUN == 'true'
+      # 通っても落ちても切られても残す (logcat・JUnit の出力・止まったところの画面)
+      - if: always() && env.RUN == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: emulator-${{ matrix.api-level }}
