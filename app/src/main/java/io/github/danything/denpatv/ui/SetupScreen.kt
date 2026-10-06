@@ -86,7 +86,7 @@ fun SetupScreen(app: DenpaApp) {
     suspend fun submit(input: String): String = busy.withLock {
         polling?.cancel()
         state = SetupState.Checking
-        message = "確かめています…"
+        message = "接続中…"
         when (val step = connect(api, input, deviceName)) {
             is ConnectStep.Open -> {
                 app.settings.connect(step.base.toString(), null)

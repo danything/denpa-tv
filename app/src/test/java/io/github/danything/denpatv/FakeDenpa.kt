@@ -8,6 +8,9 @@ import java.util.concurrent.LinkedBlockingQueue
  * denpa の代わりに JSON を返す小さなサーバ。JDK の HttpServer で足りる (依存を足さない)。
  * 届いた要求は `requests` に溜める
  */
+/** denpa の `api/health` の返事 */
+const val HEALTH_OK = """{"ok":true}"""
+
 class FakeDenpa : AutoCloseable {
     data class Request(val method: String, val target: String, val body: String, val authorization: String?, val contentType: String? = null)
 

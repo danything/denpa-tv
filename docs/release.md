@@ -40,4 +40,4 @@ DENPA_TV_VERSION=0.7.0 DENPA_TV_VERSION_CODE=70 ./gradlew :app:assembleDebug   #
 
 偽のリリースは `<API>/releases` に GitHub と同じ形の JSON (`tag_name` と、`denpa-tv-0.7.0.apk`・`SHA256SUMS` の
 `browser_download_url`) を返し、APK と `sha256sum` の出力を置けば足ります。`adb install old.apk` してから、
-設定の「アップデートを確かめる」→ 知らせを押す → 許可の画面で許可して戻る、と進めます。
+設定の「アップデートを確認」→ 知らせを押す → 許可の画面で許可して戻る、と進めます。

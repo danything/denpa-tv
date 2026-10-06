@@ -45,7 +45,8 @@ import kotlinx.coroutines.launch
  *   (地上波 / BS / CS ごとの列。ブラウザのタブにあたる) が覗く。下キーで局の列に入り、左右で選んで決定で替える。
  *   **上で開くと、はじめから局の列のいま映している局に合う** (一覧から局を選ぶ近道)。
  *   **操作の列 (いちばん上) でもう一度上を押すと閉じて映像に戻る** (`UpToClose`)。
- *   画質はすぐ切り替わってこの端末で覚える (既定は端末がハードで MPEG-2 を解ければ生の TS)。**戻るで閉じる** (もう一度でメニューの画面へ)。
+ *   画質は選んだらすぐ頼み直してこの端末で覚える (既定は端末がハードで MPEG-2 を解ければ生の TS)。映るまでは前の絵のまま
+ *   「AV1 に切り替え中」、映ったら「AV1 にしました」。映せなければ元の画質に戻して理由を出す (`rememberCodecSwitching`)。**戻るで閉じる** (もう一度でメニューの画面へ)。
  *   8 秒触らなければ閉じる
  * - **録画** はいま観ている番組を denpa に予約する (ブラウザのライブの録画ボタンと同じ。何度押しても二重には録らない)
  * - 局を替えている間は前の局の絵を残し、長くかかったら (1.5 秒) 回るものと「選局しています」→「映像を待っています」を出す (PlayerFrame)
@@ -130,6 +131,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         onChange = flash,
     )
     CatchUp(player, buffering)
+    val codec = rememberCodecSwitching(repo, player, quality, error, flash)
 
     LaunchedEffect(Unit) {
         if (services.isEmpty() || repo.servicesStale) {
@@ -145,19 +147,25 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         playing = services.firstOrNull { it.id == last } ?: services.firstOrNull()
         ready = true
     }
-    /** 局・画質を最後に出したもの。音声だけを替えて頼み直したときは出し直さない (「音声 …」の知らせを消さない) */
-    var shown by remember { mutableStateOf<Pair<Long, LiveQuality>?>(null) }
-    LaunchedEffect(playing?.id, quality, baked.ready, baked.audio?.id, returns) {
+    /**
+     * 局を最後に出したもの。音声だけを替えて頼み直したときは出し直さない (「音声 …」の知らせを消さない)。
+     * 画質だけを替えたときも出さない (切り替え中・切り替えたは `codec` が言う)
+     */
+    var shown by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(playing?.id, quality, baked.ready, baked.audio?.id, returns, codec.chosen) {
         val service = playing ?: return@LaunchedEffect
         if (!baked.ready || background) return@LaunchedEffect
+        // 選んだ画質が覚えている画質に届くまでは頼まない (届いたら頼む。選び直しが1こまにまとまって画質が変わらなくても、ここで頼み直す)
+        if (codec.chosen != quality) return@LaunchedEffect
         val url = repo.url("${service.live}?codec=${quality.codec}${audioQuery(baked.audio)}") ?: return@LaunchedEffect
         recovery.requested()
         player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
         player.prepare()
         player.playWhenReady = true
-        if (shown == service.id to quality) return@LaunchedEffect
-        shown = service.id to quality
-        flash(describe(service, quality) + if (hinted) "" else "\n$LIVE_HINT")
+        codec.requested(quality)
+        if (shown == service.id) return@LaunchedEffect
+        shown = service.id
+        flash(describe(service, codec.label) + if (hinted) "" else "\n$LIVE_HINT")
         hinted = true
         repo.app.settings.setLastService(service.id)
     }
@@ -260,7 +268,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         held = true
         stepping = next
         // 行き先を出す (映ったら同じものを出し直して、数秒残す)
-        flash(describe(next, quality))
+        flash(describe(next, codec.label))
     }
     fun openMenu(start: MenuStart) {
         // 送っている途中なら、待たずにそこへ替える (メニューの局の列と映しているものを揃える)
@@ -297,7 +305,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         LiveCommand.NextChannel -> zap(1)
         LiveCommand.Menu -> openMenu(MenuStart.Controls)
         LiveCommand.Channels -> openMenu(MenuStart.Channels)
-        LiveCommand.Info -> flash(describe(stepping ?: current, quality) + "\n$LIVE_HINT")
+        LiveCommand.Info -> flash(describe(stepping ?: current, codec.label) + "\n$LIVE_HINT")
     }
     val currentCard = remember { FocusRequester() }
     PlayerFrame(
@@ -320,11 +328,12 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         menu?.let { start ->
             val now = current.now
             ControlBar(
-                describe(current, quality),
+                describe(current, codec.heading),
                 groups = listOf(
                     "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
-                        Control(choice.label, on = choice == quality, icon = if (choice == quality) R.drawable.ic_quality else null) {
-                            scope.launch { repo.app.settings.setLiveQuality(choice) }
+                        // 選んだらすぐ入れる (映るまでは見出しが「… に切り替え中」)
+                        Control(choice.label, on = choice == codec.chosen, icon = if (choice == codec.chosen) R.drawable.ic_quality else null) {
+                            codec.choose(choice)
                         }
                     },
                     "" to tracks.controls() + baked.controls(),
@@ -369,9 +378,9 @@ private fun recordControl(now: NowProgram?, onClick: () -> Unit): Control = when
     else -> Control("録画", icon = R.drawable.ic_record, onClick = onClick)
 }
 
-/** 1行目に局、2行目にいま放送中の番組と残り */
-private fun describe(service: Service, quality: LiveQuality): String {
-    val head = listOfNotNull(service.number?.toString(), service.name, quality.label).joinToString("  ")
+/** 1行目に局と画質 (`CodecSwitch.label`)、2行目にいま放送中の番組と残り */
+private fun describe(service: Service, quality: String): String {
+    val head = listOfNotNull(service.number?.toString(), service.name, quality).joinToString("  ")
     val now = service.now ?: return head
     val left = "あと${now.remainingMinutes(System.currentTimeMillis())}分"
     // サブチャンネルは番組名が空で来る

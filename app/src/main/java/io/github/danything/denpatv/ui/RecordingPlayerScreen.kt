@@ -22,8 +22,9 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
-import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
+import io.github.danything.denpatv.data.RecordingCenter
+import io.github.danything.denpatv.data.recordingCenter
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.skipCmAtStart
@@ -46,7 +47,7 @@ import kotlinx.coroutines.launch
  *
  * - 左右で 10 秒戻す・送る、決定で止める・動かす (キーの割り当ては data/Remote.kt と README の「操作」)
  * - **下でシークバー** (左右で 10 秒ずつ。CM は色を変えて出す)、下でその下の操作の列へ
- * - **上 (か決定の長押し・Menu) で操作の列**。帯の中は上下で操作の列とシークバーを行き来し、**シークバー (いちばん上) から上で閉じる**。操作の列: 再生 / 一時停止、前へ・次へ (チャプター)、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
+ * - **上 (か Menu) で操作の列**。**決定の長押しで番組の詳しいところ** (一覧のカードの長押しと同じ。削除もそこから)。帯の中は上下で操作の列とシークバーを行き来し、**シークバー (いちばん上) から上で閉じる**。操作の列: 再生 / 一時停止、前へ・次へ (チャプター)、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
  *   **CM 飛ばし** (既定で入。ロゴで CM を判定できなかった録画は切で始まる)、**字幕**・**音声** (あれば)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
  *   動いている間は 5 秒触らなければ閉じる。戻るでも閉じる。緑のボタンは速さを1段送る
  * - リモコンの次へ・前へでチャプター送り
@@ -121,6 +122,8 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     }
     /** 開いている帯 (null なら何も出していない) */
     var bar by remember { mutableStateOf<Bar?>(null) }
+    /** 番組の詳しいところを開いているか (決定の長押し) */
+    var details by remember { mutableStateOf(false) }
     // 戻るは1つで受ける (帯が開いていれば閉じ、無ければ一覧へ。ライブと同じ理由)
     BackHandler(enabled = !leaving) { if (bar != null) bar = null else leave() }
     /** 帯に出す位置と、止まっているか (帯を開いている間だけ取り直す) */
@@ -259,13 +262,12 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     fun deleteNow() {
         scope.launch {
             val done = try {
-                repo.api.deleteRecording(repo.base, recording.id)
+                deleteFromPlayer(repo, recording.id)
             } catch (_: Unauthorized) {
                 return@launch onUnauthorized()
             }
-            if (!done) return@launch flash("消せませんでした (録画中は消せません)")
+            if (!done) return@launch flash(NOT_DELETED)
             deleted = true
-            repo.focusOnReturn = repo.forgetRecording(recording.id)
             leave()
         }
     }
@@ -307,7 +309,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     val deleteControl = Control(deleteLabel(delete.armed), icon = R.drawable.ic_delete) { if (delete.press()) deleteNow() }
     val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, error, active = bar == null && !ended && !leaving, captions = captions, recovery = recovery, above = {
+    PlayerFrame(player, overlay, error, active = bar == null && !details && !ended && !leaving, captions = captions, recovery = recovery, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
@@ -315,7 +317,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
                 listOf("" to listOf(Control("一覧に戻る", icon = R.drawable.ic_back) { leave() }, deleteControl.copy(initial = true))),
             )
         } else if (bar == null && !playing) {
-            // 止めている間の位置の帯。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上・長押しで操作の列)
+            // 止めている間の位置の帯。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳しく)
             val total = player.duration.takeIf { it != C.TIME_UNSET }
             ControlBar(
                 "一時停止  ${recording.title}\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}  ・決定で再生  $SEEK_HINT",
@@ -377,14 +379,16 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
             null -> false
         }
     }, onCenter = { press ->
-        when (press) {
-            CenterPress.Action.Short -> togglePause()
-            CenterPress.Action.Long -> open(Bar.Actions)
+        when (recordingCenter(press)) {
+            RecordingCenter.PlayPause -> togglePause()
+            RecordingCenter.Details -> details = true
         }
     })
+
+    if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }
 
-/** 録画・追っかけの帯をどこに合わせて開いたか。下キーならシークバー、上キー・決定の長押し・Menu なら操作の列 */
+/** 録画・追っかけの帯をどこに合わせて開いたか。下キーならシークバー、上キー・Menu なら操作の列 */
 internal enum class Bar { SeekBar, Actions }
 
 /** 録画・追っかけのキーの手引き */

@@ -8,6 +8,8 @@ import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.UpKey
 import io.github.danything.denpatv.data.UpToClose
 import io.github.danything.denpatv.data.liveCommand
+import io.github.danything.denpatv.data.RecordingCenter
+import io.github.danything.denpatv.data.recordingCenter
 import io.github.danything.denpatv.data.recordingCommand
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -46,6 +48,9 @@ class RemoteTest {
         assertEquals(RecordingCommand.PlayPause, recordingCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
         assertNull(recordingCommand(KeyEvent.KEYCODE_DPAD_CENTER))
         assertNull(recordingCommand(KeyEvent.KEYCODE_BACK))
+        // 決定の短押しは止める・動かす、長押しは詳しいところ
+        assertEquals(RecordingCenter.PlayPause, recordingCenter(CenterPress.Action.Short))
+        assertEquals(RecordingCenter.Details, recordingCenter(CenterPress.Action.Long))
     }
 
     private fun UpToClose.down(at: Long, repeat: Int = 0) = key(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP, repeat, at)

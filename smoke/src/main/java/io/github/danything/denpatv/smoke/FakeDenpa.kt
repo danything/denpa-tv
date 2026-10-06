@@ -99,7 +99,7 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
             path == "/api/recordings" -> json(out, recordings())
             path == "/api/events" -> events(out)
             recording != null && method == "POST" -> respond(out, 204, "text/plain", ByteArray(0))
-            recording?.groupValues?.get(2) == "detail" -> json(out, """{"description":"偽の denpa の録画","extended":{}}""")
+            recording?.groupValues?.get(2) == "detail" -> json(out, """{"description":"$RECORDING_DESCRIPTION","extended":{}}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
             // 追っかけはライブと同じ焼き方の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリは居た場所から頼み直す)
             path == "/api/recordings/$CHASE_ID/chase" -> media(out, "live.mp4", "video/mp4", range)
@@ -203,6 +203,8 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
         const val NEXT_PROGRAM_TITLE = "偽の講座"
         const val RECORDING_ID = 1L
         const val RECORDING_TITLE = "偽の録画"
+        /** 録画の説明 (`detail`)。詳しくに出る */
+        const val RECORDING_DESCRIPTION = "偽の denpa の録画"
         /** 録っている最中の録画 (追っかけで観る) */
         const val CHASE_ID = 2L
         const val CHASE_TITLE = "偽の録画中"

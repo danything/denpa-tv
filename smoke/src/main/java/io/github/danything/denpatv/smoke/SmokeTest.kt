@@ -1,5 +1,6 @@
 package io.github.danything.denpatv.smoke
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Instrumentation
 import android.content.Intent
 import android.graphics.Bitmap
@@ -195,6 +196,7 @@ class SmokeTest {
      * 録画を映す。帯は**上で操作の列に合って開き、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる**。
      * 下で開いたシークバーからも上で閉じる。偽の録画は 10 秒しかないので、映ったらすぐ止めてから見る
      * (止めている間は帯が勝手に閉じないので、上キーで閉じたのと取り違えない)
+     * **決定の長押しで番組の詳しいところ** (一覧のカードの長押しと同じ) が開き、戻るで閉じて映像に戻る (止めたまま。長押しの離しで動き出さない)
      */
     @Test
     fun recording() = watching {
@@ -220,6 +222,17 @@ class SmokeTest {
         press(KeyEvent.KEYCODE_DPAD_UP)
         assertTrue("下で開いたシークバーで上を押しても帯が閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { !barOpen() })
         assertTrue("帯を閉じたら止めた位置の帯が出ていません: ${texts()}", paused())
+
+        // 詳しくはダイアログ (別の窓)。古い Android (API 24・28) では、閉じたあと rootInActiveWindow が空のまま返るので、アプリの窓を全部見る
+        longPress(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue("決定の長押しで詳しくが開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().let { "閉じる" in it && FakeDenpa.RECORDING_DESCRIPTION in it } })
+        press(KeyEvent.KEYCODE_BACK)
+        // 窓が取れずに空なのを「閉じた」と取り違えない
+        assertTrue("戻るで詳しくが閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } })
+        assertTrue(
+            "詳しくを閉じたら止めた位置の帯が出ていません (動き出した・画面ごと戻った?): ${windowTexts()}",
+            poll(TEXT_TIMEOUT_MS) { windowTexts().any { it.startsWith("一時停止  ") } },
+        )
     }
 
     /** 録画を止めている (止めた位置の帯が出ている) */
@@ -465,6 +478,23 @@ class SmokeTest {
         }
 
         private fun node(match: (AccessibilityNodeInfo) -> Boolean) = nodes().firstOrNull(match)
+
+        /** アプリの窓 (ダイアログも) すべての文字 */
+        private fun windowTexts(): List<String> {
+            val automation = instrumentation.uiAutomation
+            val info = automation.serviceInfo
+            if (info.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS == 0) {
+                info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                automation.serviceInfo = info
+            }
+            val out = mutableListOf<String>()
+            fun walk(node: AccessibilityNodeInfo) {
+                node.text?.let { out += it.toString() }
+                for (i in 0 until node.childCount) node.getChild(i)?.let(::walk)
+            }
+            automation.windows.mapNotNull { it.root }.filter { it.packageName?.toString() == APP }.forEach(::walk)
+            return out
+        }
 
         /** いちばん前のアプリの窓の文字 */
         private fun texts(): List<String> = nodes().mapNotNull { it.text?.toString() }

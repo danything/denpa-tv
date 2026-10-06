@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
@@ -18,11 +20,13 @@ import java.net.URI
 class DenpaApi(private val token: () -> String? = { null }) {
     suspend fun health(base: URI): Boolean = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/health") ?: return@withContext false
-        try {
-            Http.request(url).ok
-        } catch (_: IOException) {
-            false
+        val response = try {
+            Http.request(url)
+        } catch (_: Exception) {
+            // 繋がらない・URL が変 (IOException 以外も): どれも「繋がらない」
+            return@withContext false
         }
+        response.ok && looksLikeDenpaHealth(response.text())
     }
 
     suspend fun services(base: URI): List<Service> = get(base, "api/services")
@@ -184,4 +188,13 @@ sealed interface TokenResult {
     data class Granted(val token: String) : TokenResult
     /** `authorization_pending` / `slow_down` / `access_denied` / `expired_token` / `invalid_grant` など */
     data class Error(val error: String) : TokenResult
+}
+
+/**
+ * `api/health` の返事が denpa らしいか。denpa は初めから `{"ok":true,…}` を返す。**JSON のオブジェクトで `ok` が true のものだけ**
+ * (同じ機械の 80・3000 に居るほかのもの — NAS やルータの画面の HTML、Grafana の `{"database":"ok"}`、素の `OK` — を選ばない)
+ */
+fun looksLikeDenpaHealth(body: String): Boolean {
+    val ok = runCatching { lenientJson.parseToJsonElement(body.removePrefix("\uFEFF")).jsonObject["ok"]?.jsonPrimitive?.booleanOrNull }
+    return ok.getOrNull() == true
 }

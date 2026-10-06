@@ -151,7 +151,7 @@ fun prefetchPlan(cached: Boolean, hasSums: Boolean, failures: Int, fresh: Boolea
 }
 
 /**
- * 裏で取れなかったあと、知らせ (「v0.4.0 があります」、押すと取ってくる) を出すか。
+ * 裏で取れなかったあと、知らせ (「アップデート (v0.4.0)」、押すと取ってくる) を出すか。
  * 黙っているのは、開いたときの裏の取り込みが続けて [MAX_SILENT_FAILURES] 回より少なく失敗したときだけ
  * (次に確かめたときに取り直す)。設定で「確かめる」を押したときは、見ているので出す
  */
@@ -237,11 +237,11 @@ class UpdateSource(private val api: String) {
      */
     fun download(update: Update, dir: File, progress: (Int) -> Unit): File {
         // 先にハッシュを取る (無いリリースのために大きな APK を落とさない)
-        val sumsUrl = update.sumsUrl ?: throw UpdateRejected("リリースに SHA256SUMS が無いので入れません")
+        val sumsUrl = update.sumsUrl ?: throw UpdateRejected("リリースに SHA256SUMS がありません")
         val sums = Http.request(URI(sumsUrl), headers = DOWNLOAD_HEADERS)
-        if (!sums.ok) throw IOException("SHA256SUMS を取れません (${sums.code})")
+        if (!sums.ok) throw IOException("SHA256SUMS を取得できません (${sums.code})")
         val expected = parseSha256Sums(sums.text())[update.apkName]
-            ?: throw UpdateRejected("SHA256SUMS に ${update.apkName} が無いので入れません")
+            ?: throw UpdateRejected("SHA256SUMS に ${update.apkName} がありません")
 
         dir.mkdirs()
         val file = File(dir, update.apkName)
@@ -253,7 +253,7 @@ class UpdateSource(private val api: String) {
         val connection = Http.connection(URI(update.apkUrl), headers = DOWNLOAD_HEADERS)
         try {
             val code = connection.responseCode
-            if (code !in 200..299) throw IOException("APK を取れません ($code)")
+            if (code !in 200..299) throw IOException("APK を取得できません ($code)")
             val total = connection.contentLengthLong.takeIf { it > 0 } ?: update.size
             connection.inputStream.use { input ->
                 part.outputStream().use { output ->
@@ -282,11 +282,11 @@ class UpdateSource(private val api: String) {
         val actual = digest.digest().toHex()
         if (actual != expected) {
             part.delete()
-            throw HashMismatch("APK のハッシュが合わないので入れません (もう一度押すと取り直します)")
+            throw HashMismatch("APK のハッシュが一致しません")
         }
         if (!part.renameTo(file)) {
             part.delete()
-            throw IOException("APK を置けません")
+            throw IOException("APK を保存できません")
         }
         sum.writeText("$expected  ${update.apkName}\n")
         return file

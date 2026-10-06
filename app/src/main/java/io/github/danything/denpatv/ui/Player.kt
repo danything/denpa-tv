@@ -184,7 +184,7 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
 
 /**
  * 映像と字幕と、上に重ねる文字。キーは呼ぶ側が受ける (ライブは局送り、録画は送り戻し)。
- * **決定 (OK) は短押しと長押しを分けて `onCenter` に渡す** (録画は長押しで操作の列、ライブは長押しで局と番組。Menu キーの無いリモコンが多いので)。
+ * **決定 (OK) は短押しと長押しを分けて `onCenter` に渡す** (録画・追っかけは長押しで番組の詳しいところ、ライブは長押しで局と番組。情報キーの無いリモコンが多いので)。
  *
  * 上に重ねたもの (ライブのメニュー・操作の帯) を閉じたら、**必ず映像にキーを戻す** — 閉じたものに合っていたまま
  * 消えると、どこにも合わずリモコンが効かなくなる。`active` の間は**映像そのものに合っているか見張り、外れていたら
@@ -514,7 +514,7 @@ fun rememberPlayer(
                     error = null
                     return
                 }
-                error = "再生できません: " + (code?.let { "denpa の答えが HTTP $it (${e.errorCodeName})" } ?: e.errorCodeName)
+                error = PLAYBACK_ERROR_PREFIX + (code?.let { "denpa の答えが HTTP $it (${e.errorCodeName})" } ?: e.errorCodeName)
             }
             override fun onPlaybackStateChanged(state: Int) {
                 val plan = recovery.plan ?: return
@@ -561,6 +561,9 @@ fun rememberPlayer(
     }
     return PlayerHandle(player, error, dualMono, recovery)
 }
+
+/** 再生のエラーの頭 (画質の切り替えに失敗したときは外して理由だけ出す) */
+const val PLAYBACK_ERROR_PREFIX = "再生できません: "
 
 /** ライブが映る前に何度か終わった (denpa が焼くのを断った空の返事など) */
 private const val ENDED_EMPTY = "denpa が映像を送らずに閉じました (焼く数の上限かも)。少し待つか、画質・局を替えてください"
