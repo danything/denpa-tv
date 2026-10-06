@@ -70,12 +70,15 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     /** 左右で動かしている途中の行き先 (まとめて頼む) */
     var pending by remember { mutableStateOf<Long?>(null) }
     fun position() = pending ?: (from + player.currentPosition)
+    /** 裏に回ったときの位置 (`OnBackground`)。戻ったらここから頼み直す。裏に回っていなければ null */
+    var stoppedAt by remember { mutableStateOf<Long?>(null) }
     // 生の TS の字幕。映像を頼み直したら、字幕もいまの位置から頼み直す
     val captions = rememberRawCaptions(
         repo,
         player,
         clock,
-        path = CaptionPaths.recording(recording.id).takeIf { quality == LiveQuality.Raw },
+        // 裏に回っている間は字幕の流れも閉じる
+        path = CaptionPaths.recording(recording.id).takeIf { quality == LiveQuality.Raw && stoppedAt == null },
         generation = from to attempt,
         fromMs = { from + player.currentPosition },
         onUnauthorized = onUnauthorized,
@@ -89,12 +92,12 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     }
 
     var bar by remember { mutableStateOf<Bar?>(null) }
-    BackHandler(enabled = bar != null) { bar = null }
     /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
     var leaving by remember { mutableStateOf(false) }
     // 戻るを続けて押しても、1つだけ戻る (2回目は受けない。録画の再生と同じ)
     val leave = { if (!leaving) { leaving = true; onLeave() } }
-    BackHandler(enabled = bar == null) { leave() }
+    // 戻るは1つで受ける (帯が開いていれば閉じ、無ければ一覧へ。ライブと同じ理由)
+    BackHandler(enabled = !leaving) { if (bar != null) bar = null else leave() }
     var at by remember { mutableLongStateOf(from) }
     var length by remember { mutableLongStateOf(recorded()) }
     var playing by remember { mutableStateOf(true) }
@@ -185,6 +188,26 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     DisposableEffect(Unit) {
         onDispose { if (!ended && position() > 0) save(position(), stopped = true) }
     }
+    /*
+     * **裏に回ったら止めて denpa から降り、観た位置を預ける** (ホーム・別のアプリ。焼いている追っかけなら denpa の焼く手も空く)。
+     * 流しっぱなしの1本なので、戻ったら止めた位置から頼み直して続ける
+     */
+    OnBackground(
+        onStop = {
+            if (ended) return@OnBackground
+            val at = position()
+            pending = null
+            stoppedAt = at
+            if (at > 0) save(at, stopped = true)
+            player.stop()
+        },
+        onStart = {
+            val at = stoppedAt ?: return@OnBackground
+            stoppedAt = null
+            from = at
+            attempt++
+        },
+    )
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {

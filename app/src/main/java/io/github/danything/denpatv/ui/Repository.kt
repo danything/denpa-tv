@@ -59,6 +59,12 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     /** 局が古くなった (denpa から `services` / `programs` が来た)。ライブを開いたら読み直す */
     var servicesStale = false
 
+    /**
+     * メニューの画面に戻ったら、左のメニュー (「ライブ」) に合わせる。ライブから戻ったとき — 戻るでいちばん上のメニューへ
+     * (録画の一覧のカードに合わせると、ライブに戻るにも左へ行き直すことになる)
+     */
+    var menuOnReturn = false
+
     /** 録画の一覧に戻ったとき合わせる先 (再生の画面で消したときの隣) */
     var focusOnReturn: Long? = null
 

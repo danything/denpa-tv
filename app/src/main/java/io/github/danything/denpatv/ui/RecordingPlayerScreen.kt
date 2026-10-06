@@ -111,8 +111,8 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     }
     /** 開いている帯 (null なら何も出していない) */
     var bar by remember { mutableStateOf<Bar?>(null) }
-    BackHandler(enabled = bar != null) { bar = null }
-    BackHandler(enabled = bar == null) { leave() }
+    // 戻るは1つで受ける (帯が開いていれば閉じ、無ければ一覧へ。ライブと同じ理由)
+    BackHandler(enabled = !leaving) { if (bar != null) bar = null else leave() }
     /** 帯に出す位置と、止まっているか (帯を開いている間だけ取り直す) */
     var at by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(true) }
@@ -211,19 +211,39 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
             if (player.isPlaying) repo.api.saveResume(repo.base, recording.id, player.currentPosition / 1000.0, length())
         }
     }
-    // 閉じるときに1回。画面はもう閉じるので、アプリの寿命で送る (画面の scope だと送る前に取り消される)。
-    // player を畳むのは rememberPlayer の後始末で、こちらが先に走る
-    DisposableEffect(Unit) {
-        onDispose {
-            val at = player.currentPosition / 1000.0
-            val length = length()
-            if (at > 0 && !deleted) repo.app.scope.launch {
-                repo.api.saveResume(repo.base, recording.id, at, length)
-                // 途中なら「続きを視聴」に出す (最後まで来ていれば消す)
-                repo.watchNext(recording, (at * 1000).toLong(), (length * 1000).toLong(), finished = ended)
-            }
+    /**
+     * 観た位置を預け、途中なら「続きを視聴」に出す (最後まで来ていれば消す)。画面はもう閉じる・裏に回るので、アプリの寿命で送る
+     * (画面の scope だと送る前に取り消される)
+     */
+    fun saveNow() {
+        val at = player.currentPosition / 1000.0
+        val length = length()
+        if (at > 0 && !deleted) repo.app.scope.launch {
+            repo.api.saveResume(repo.base, recording.id, at, length)
+            repo.watchNext(recording, (at * 1000).toLong(), (length * 1000).toLong(), finished = ended)
         }
     }
+    // 閉じるときに1回。player を畳むのは rememberPlayer の後始末で、こちらが先に走る
+    DisposableEffect(Unit) { onDispose { saveNow() } }
+    /*
+     * **裏に回ったら止めて、観た位置を預ける** (ホーム・別のアプリ。流しっぱなしにすると裏で進んでしまう)。
+     * 戻ったら、流していたなら続きから流す (止めていたなら止めたまま)
+     */
+    var resumeOnReturn by remember { mutableStateOf(false) }
+    OnBackground(
+        onStop = {
+            resumeOnReturn = player.playWhenReady
+            player.pause()
+            playing = false
+            saveNow()
+        },
+        onStart = {
+            if (resumeOnReturn && !ended) {
+                player.play()
+                playing = true
+            }
+        },
+    )
 
     /** 消して一覧へ戻る。一覧からも抜き、隣に合わせる */
     fun deleteNow() {

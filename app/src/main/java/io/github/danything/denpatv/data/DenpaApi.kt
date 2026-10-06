@@ -44,6 +44,27 @@ class DenpaApi(private val token: () -> String? = { null }) {
             }
         }
 
+    /**
+     * **いま流れている番組を録る** (`POST api/services/<id>/record`)。ブラウザの denpa のライブの録画ボタンと同じで、
+     * 予約は番組ごとに1本なので、何度押しても二重には録らない
+     */
+    suspend fun recordNow(base: URI, serviceId: Long): RecordResult = withContext(Dispatchers.IO) {
+        val url = BaseUrl.resolve(base, "api/services/$serviceId/record") ?: return@withContext RecordResult.Failed("URL を組み立てられません")
+        val res = try {
+            Http.request(url, "POST", token = token())
+        } catch (_: IOException) {
+            return@withContext RecordResult.Failed("denpa に届きません")
+        }
+        if (res.code == 401) throw Unauthorized(url)
+        val body = runCatching { lenientJson.decodeFromString(RecordResponse.serializer(), res.text()) }.getOrNull()
+        when {
+            res.ok && body?.recorded != null -> RecordResult.Recorded(body.recorded, body.reserved)
+            // 口の無い古い denpa は SvelteKit の「Not Found」(断りの文言は日本語で来る)
+            res.code == 404 && (body?.message == null || body.message == "Not Found") -> RecordResult.Unsupported
+            else -> RecordResult.Failed(body?.message ?: "${res.code}")
+        }
+    }
+
     /** 番組の中身。古い denpa (口が無い) や読めないときは null */
     suspend fun recordingDetail(base: URI, id: Long): RecordingDetail? = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/recordings/$id/detail") ?: return@withContext null
@@ -125,6 +146,20 @@ class DenpaApi(private val token: () -> String? = { null }) {
 
 @Serializable
 private data class DeviceCodeRequest(val name: String)
+
+/** `api/services/<id>/record` の答え。断られたとき (404・400) は `message` だけ来る */
+@Serializable
+private data class RecordResponse(val recorded: String? = null, val reserved: Boolean = true, val message: String? = null)
+
+/** いまの番組を録った結果 (`DenpaApi.recordNow`) */
+sealed interface RecordResult {
+    /** 予約した (`reserved` が false ならチューナーが足りず競合で録らない) */
+    data class Recorded(val title: String, val reserved: Boolean) : RecordResult
+    /** 断られた。`message` は denpa の文言 (画面にそのまま出せる) */
+    data class Failed(val message: String) : RecordResult
+    /** 口の無い古い denpa */
+    data object Unsupported : RecordResult
+}
 
 @Serializable
 private data class DeviceTokenRequest(val deviceCode: String)

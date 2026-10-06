@@ -5,19 +5,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
 import androidx.media3.common.MediaItem
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
-import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
 import io.github.danything.denpatv.data.liveCommand
 import io.github.danything.denpatv.data.LiveQuality
+import io.github.danything.denpatv.data.NowProgram
+import io.github.danything.denpatv.data.RecordResult
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.audioQuery
@@ -34,12 +37,16 @@ import kotlinx.coroutines.launch
  *
  * - 上下 (チャンネル送りも) で前・次の局 (同じものを流しているサブチャンネルは飛ばす)。替えたら局・番組・番組の進みを
  *   数秒だけ下に出す。いちばん押すのは局替えなので十字キーの上下に (キーの割り当ては data/Remote.kt)
- * - 決定 (と左) で局の一覧を開く (種別で切り替え、いま放送中の番組つき)。戻るで閉じる
- * - **決定の長押し** (か Menu キー) で操作の列: **画質 (コーデック)** (H.264 / AV1 / MPEG-2 のうち、この端末で解けるもの)、
- *   字幕・音声 (あれば)、情報。ブラウザの denpa のライブと同じく、すぐ切り替わってこの端末で覚える。既定は端末がハードで MPEG-2 を
- *   解ければ生の TS (いちばん遅れが少ない)。5 秒触らなければ閉じる
+ * - **ほかのキー (決定・左右・決定の長押し・Menu) はどれもメニュー** (YouTube のアプリと同じく、何を押しても十字キーで辿れるものが出る)。
+ *   下の端に、ブラウザの denpa のライブの操作列にあたる**操作の列** (画質・字幕・音声・録画) と、その下に**局の列**
+ *   (地上波 / BS / CS ごとの列。ブラウザのタブにあたる) が覗く。下キーで局の列に入り、左右で選んで決定で替える。
+ *   画質はすぐ切り替わってこの端末で覚える (既定は端末がハードで MPEG-2 を解ければ生の TS)。**戻るで閉じる** (もう一度でメニューの画面へ)。
+ *   8 秒触らなければ閉じる
+ * - **録画** はいま観ている番組を denpa に予約する (ブラウザのライブの録画ボタンと同じ。何度押しても二重には録らない)
+ * - 局を替えている間は前の局の絵を残し、長くかかったら (1.5 秒) 回るものと「選局しています」→「映像を待っています」を出す (PlayerFrame)
+ * - アプリが裏に回ったら (ホーム・別のアプリ) 止めて denpa から降りる (チューナーを空ける)。戻ったら同じ局を映し直す
  * - 情報キーで、いまの局と番組を出す
- * - 何も開いていないときの戻るは、メニューの画面へ
+ * - 何も開いていないときの戻るは、メニューの画面へ (「ライブ」に合う)
  */
 @Composable
 fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
@@ -56,17 +63,21 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     var ready by remember { mutableStateOf(false) }
     /** 映している局が一覧から消えたと知らせたか */
     var gone by remember { mutableStateOf(false) }
-    var panel by remember { mutableStateOf(false) }
-    var controls by remember { mutableStateOf(false) }
-    /** 操作の列で最後にキーを押したとき (5 秒触らなければ閉じる) */
+    /** メニュー (操作の列と局の列) を開いているか */
+    var menu by remember { mutableStateOf(false) }
+    /** メニューで最後にキーを押したとき (しばらく触らなければ閉じる) */
     var touched by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(controls, touched) {
-        if (!controls) return@LaunchedEffect
-        delay(5_000)
-        controls = false
+    LaunchedEffect(menu, touched) {
+        if (!menu) return@LaunchedEffect
+        delay(MENU_IDLE_MS)
+        menu = false
     }
-    /** 長押しでメニューが開くと知らせたか (開いて最初の1回だけ) */
+    /** キーの手引きを出したか (開いて最初の1回だけ) */
     var hinted by remember { mutableStateOf(false) }
+    /** 裏に回っている (ホーム・別のアプリ)。その間は流さない (`OnBackground`) */
+    var background by remember { mutableStateOf(false) }
+    /** 裏から戻った回数。戻るたびに同じ局を頼み直す */
+    var returns by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val clock = remember { TsClock() }
     val (player, error, dualMono) = rememberPlayer(repo, buffering, onUnauthorized, clock)
@@ -76,7 +87,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         repo,
         player,
         clock,
-        path = playing?.takeIf { quality == LiveQuality.Raw }?.let { CaptionPaths.live(it.live) },
+        // 裏に回っている間は字幕の流れも閉じる
+        path = playing?.takeIf { quality == LiveQuality.Raw && !background }?.let { CaptionPaths.live(it.live) },
         generation = playing?.id,
         onUnauthorized = onUnauthorized,
     )
@@ -118,9 +130,9 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     }
     /** 局・画質を最後に出したもの。音声だけを替えて頼み直したときは出し直さない (「音声 …」の知らせを消さない) */
     var shown by remember { mutableStateOf<Pair<Long, LiveQuality>?>(null) }
-    LaunchedEffect(playing?.id, quality, baked.ready, baked.audio?.id) {
+    LaunchedEffect(playing?.id, quality, baked.ready, baked.audio?.id, returns) {
         val service = playing ?: return@LaunchedEffect
-        if (!baked.ready) return@LaunchedEffect
+        if (!baked.ready || background) return@LaunchedEffect
         val url = repo.url("${service.live}?codec=${quality.codec}${audioQuery(baked.audio)}") ?: return@LaunchedEffect
         player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
         player.prepare()
@@ -131,6 +143,20 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         hinted = true
         repo.app.settings.setLastService(service.id)
     }
+    /*
+     * **裏に回ったら止めて、denpa から降りる** (流れを閉じる。ほかに観ている人がいなければ denpa がチューナーを空ける)。
+     * 流しっぱなしにすると、ホームに戻っても音が鳴り続け、チューナーも掴んだままになる。戻ったら同じ局を頼み直す
+     */
+    OnBackground(
+        onStop = {
+            background = true
+            player.stop()
+        },
+        onStart = {
+            background = false
+            returns++
+        },
+    )
     /** 局を取り直して、映している局を新しいものに替える (取れなければそのまま) */
     suspend fun refresh() {
         runCatching { repo.refreshServices() }.onSuccess {
@@ -162,79 +188,124 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     }
     // denpa の知らせ (局・番組表が変わった、繋ぎ直した) でも取り直す。番組表は1局集めるたびに来るので、まとめて1回 (1 秒待つ)
     LaunchedEffect(Unit) {
-        val changed = setOf(DenpaEvent.Opened, DenpaEvent.Changed("services"), DenpaEvent.Changed("programs"))
+        // 予約・録画が変わったときも (メニューの「録画」と局の列の印を合わせる)
+        val changed = setOf(
+            DenpaEvent.Opened,
+            DenpaEvent.Changed("services"),
+            DenpaEvent.Changed("programs"),
+            DenpaEvent.Changed("reservations"),
+            DenpaEvent.Changed("recordings"),
+        )
         repo.events.filter { it in changed }.collectLatest {
             delay(1_000)
             if (ready) refresh()
         }
     }
-    BackHandler(enabled = panel || controls) { panel = false; controls = false }
     /** メニューの画面へ戻るところ (映像に合いを取り返させない。戻った先が合いを取るので) */
     var leaving by remember { mutableStateOf(false) }
-    // 戻るを続けて押しても、1つだけ戻る (2回目は受けない)
-    BackHandler(enabled = !panel && !controls && !leaving) { leaving = true; onLeave() }
+    /*
+     * **戻るは1つで受ける。** メニューが開いていれば閉じ、何も無ければメニューの画面へ (戻った先は「ライブ」に合う)。
+     * 開いているときと無いときで別々に置くと、端末によって (並べた順と効く順が食い違って) 開いているのに画面ごと戻ることがある。
+     * 続けて押しても1つだけ戻る (2回目は受けない)
+     */
+    BackHandler(enabled = !leaving) {
+        if (menu) {
+            menu = false
+        } else {
+            leaving = true
+            repo.menuOnReturn = true
+            onLeave()
+        }
+    }
 
     if (!ready) return Centered("読み込んでいます…")
     val current = playing ?: return Centered("局がありません")
     fun zap(step: Int) {
         neighbor(services, current.id, step)?.let { playing = it }
     }
+    fun openMenu() {
+        touched = System.nanoTime()
+        menu = true
+    }
+    /** いまの番組を録る (ブラウザのライブの録画ボタンと同じ口)。結果は1行で知らせ、局を取り直して印を合わせる */
+    fun record() {
+        val service = current
+        menu = false
+        scope.launch {
+            val result = try {
+                repo.api.recordNow(repo.base, service.id)
+            } catch (_: Unauthorized) {
+                return@launch onUnauthorized()
+            }
+            flash(
+                when (result) {
+                    is RecordResult.Recorded ->
+                        if (result.reserved) "録画を始めます: ${result.title}"
+                        else "予約しましたが、チューナーが足りず録れません (競合): ${result.title}"
+                    is RecordResult.Failed -> "録画できません: ${result.message}"
+                    RecordResult.Unsupported -> "この denpa はアプリからの録画に対応していません (denpa を新しくしてください)"
+                },
+            )
+            if (result is RecordResult.Recorded) refresh()
+        }
+    }
+    val currentCard = remember { FocusRequester() }
     PlayerFrame(
         player,
-        overlay,
+        // メニューを開いている間は1行の知らせを出さない (メニューの帯の下から透けて重なる)
+        overlay.takeUnless { menu },
         error,
-        active = !panel && !controls && !leaving,
+        active = !menu && !leaving,
         onKey = { event ->
             when (liveCommand(event.nativeKeyEvent.keyCode)) {
                 LiveCommand.PreviousChannel -> { zap(-1); true }
                 LiveCommand.NextChannel -> { zap(1); true }
-                LiveCommand.ChannelList -> { panel = true; true }
-                LiveCommand.Actions -> { controls = true; true }
+                LiveCommand.Menu -> { openMenu(); true }
                 LiveCommand.Info -> { flash(describe(current, quality) + "\n$LIVE_HINT"); true }
                 null -> false
             }
         },
-        onCenter = { press ->
-            when (press) {
-                CenterPress.Action.Short -> panel = true
-                CenterPress.Action.Long -> controls = true
-            }
-        },
+        // 決定は短押しも長押しもメニュー (長押しは、決定を押し続けがちな人とリモコンのため)
+        onCenter = { openMenu() },
         progress = current.now?.let { System.currentTimeMillis() - it.startAt to it.endAt - it.startAt },
         captions = captions,
+        busyLabel = "選局しています",
     ) {
-        if (controls) {
+        if (menu) {
             val now = current.now
             ControlBar(
                 describe(current, quality),
                 groups = listOf(
-                    "画質 (コーデック)" to LiveQuality.available(repo.app.decoders).map { choice ->
+                    "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
                         Control(choice.label, on = choice == quality, icon = if (choice == quality) R.drawable.ic_quality else null) {
-                            controls = false
                             scope.launch { repo.app.settings.setLiveQuality(choice) }
                         }
                     },
-                    "" to tracks.controls() + baked.controls() + listOf(
-                        Control("情報", icon = R.drawable.ic_info) {
-                            controls = false
-                            flash(describe(current, quality) + "\n$LIVE_HINT")
-                        },
-                    ),
+                    "" to tracks.controls() + baked.controls(),
+                    "" to listOf(recordControl(now) { record() }),
                 ),
                 onActivity = { touched = System.nanoTime() },
                 // いまの番組の進み
                 header = now?.let { program ->
                     { ProgressLine(System.currentTimeMillis() - program.startAt, program.endAt - program.startAt) }
                 },
+                down = currentCard,
+                below = {
+                    ChannelRows(repo, services, current, currentCard) { picked ->
+                        playing = picked
+                        menu = false
+                    }
+                },
             )
         }
-        if (panel) {
-            ChannelPanel(repo, services, current) { picked ->
-                playing = picked
-                panel = false
-            }
-        }
     }
+}
+
+/** 録画の札。録っている・録る予定ならそう出す (押しても二重には録らない。denpa が番組ごとに1本にまとめる) */
+private fun recordControl(now: NowProgram?, onClick: () -> Unit): Control = when {
+    now?.recording == true -> Control("録画中", on = true, icon = R.drawable.ic_record, onClick = onClick)
+    now?.reserved == true -> Control("録画予約済み", on = true, icon = R.drawable.ic_record, onClick = onClick)
+    else -> Control("録画", icon = R.drawable.ic_record, onClick = onClick)
 }
 
 /** 1行目に局、2行目にいま放送中の番組と残り */
@@ -246,7 +317,10 @@ private fun describe(service: Service, quality: LiveQuality): String {
     return if (now.title.isBlank()) "$head\n$left" else "$head\n${now.title}  $left"
 }
 
-private const val LIVE_HINT = "決定で局の一覧・長押しでメニュー (画質)"
+private const val LIVE_HINT = "上下で局送り・決定でメニュー (局・画質・録画)"
+
+/** メニューを閉じるまで (ミリ秒)。局の列で番組名を読むので、録画の帯 (5 秒) より長く */
+private const val MENU_IDLE_MS = 8_000L
 
 /** 覚えているライブの画質 (追っかけも同じものを使う)。この端末で選べなければ選び直す。読み終えるまでは null */
 @Composable

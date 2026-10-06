@@ -67,6 +67,8 @@ fun RecordingsScreen(
     onWatch: (Recording) -> Unit,
     onUnauthorized: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 開いたときにカードに合わせるか (ライブから戻ったときは左のメニューが合いを取るので false) */
+    takeFocus: Boolean = true,
 ) {
     var recordings by remember { mutableStateOf(repo.recordings) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -153,6 +155,7 @@ fun RecordingsScreen(
         repo.focusOnReturn?.let { lastFocused = it; repo.focusOnReturn = null }
         // 観て戻ったら開いた録画に。初めては一番下 (いちばん古い録画): 古いものから片付けられるように (ブラウザの denpa と同じ)
         val id = lastFocused?.takeIf { id -> recordings.any { it.id == id } } ?: recordings.lastOrNull()?.id ?: return@LaunchedEffect
+        if (!takeFocus) return@LaunchedEffect
         withFrameNanos { }
         // 見えていなければ (一番下・消した隣)、そこまで送ってから合わせる
         if (requesters[id] == null || grid.layoutInfo.visibleItemsInfo.none { it.key == id }) {

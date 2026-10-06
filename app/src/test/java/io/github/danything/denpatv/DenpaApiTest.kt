@@ -2,6 +2,7 @@ package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.DenpaApi
+import io.github.danything.denpatv.data.RecordResult
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -51,6 +52,44 @@ class DenpaApiTest {
         assertEquals(0.5f, withNow[0].now!!.progress(91_000))
         assertNull(withNow[1].now)
         assertEquals(754_000L, api.recordings(base).single().resumeMs)
+    }
+
+    /**
+     * いまの番組を録る (`POST api/services/<id>/record`)。本文は無くても Content-Type を付ける。
+     * 番組表に無い (404 と理由)・予約できない (400 と理由)・口の無い古い denpa (SvelteKit の「Not Found」) を分ける
+     */
+    @Test
+    fun いまの番組を録る() = runTest {
+        val base = BaseUrl.normalize(denpa.url())!!
+        denpa.enqueue("""{"recorded":"ニュース","programId":32736103210001,"reserved":true}""")
+        assertEquals(RecordResult.Recorded("ニュース", reserved = true), api.recordNow(base, 3273601024))
+        val request = denpa.requests.take()
+        assertEquals("POST", request.method)
+        assertEquals("/api/services/3273601024/record", request.target)
+        assertEquals("application/json", request.contentType)
+
+        denpa.enqueue("""{"recorded":"ニュース","programId":1,"reserved":false}""")
+        assertEquals(RecordResult.Recorded("ニュース", reserved = false), api.recordNow(base, 1))
+        denpa.enqueue("""{"message":"いま流れている番組が番組表に見つかりません"}""", code = 404)
+        assertEquals(RecordResult.Failed("いま流れている番組が番組表に見つかりません"), api.recordNow(base, 1))
+        denpa.enqueue("""{"message":"この番組は放送が終わっています"}""", code = 400)
+        assertEquals(RecordResult.Failed("この番組は放送が終わっています"), api.recordNow(base, 1))
+        denpa.enqueue("""{"message":"Not Found"}""", code = 404)
+        assertEquals(RecordResult.Unsupported, api.recordNow(base, 1))
+    }
+
+    /** 局の now に録画の印 (denpa の新しい版)。古い denpa には無いので false */
+    @Test
+    fun 局の録画の印を読む() = runTest {
+        denpa.enqueue(
+            """[{"id":1,"type":"GR","name":"A","live":"api/services/1/live","now":{"id":9,"title":"x","startAt":1,"endAt":2,"reserved":true,"recording":true}},
+               {"id":2,"type":"GR","name":"B","live":"api/services/2/live","now":{"title":"y","startAt":1,"endAt":2}}]""",
+        )
+        val services = api.services(BaseUrl.normalize(denpa.url())!!)
+        assertTrue(services[0].now!!.reserved)
+        assertTrue(services[0].now!!.recording)
+        assertFalse(services[1].now!!.reserved)
+        assertFalse(services[1].now!!.recording)
     }
 
     /** 観た位置は秒で預ける (denpa の POST api/recordings/<id>/resume は {at, length} を秒で受ける) */

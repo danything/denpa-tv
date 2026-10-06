@@ -21,6 +21,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import android.os.SystemClock
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -166,7 +182,7 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
  * 映像と字幕と、上に重ねる文字。キーは呼ぶ側が受ける (ライブは局送り、録画は送り戻し)。
  * **決定 (OK) は短押しと長押しを分けて `onCenter` に渡す** (長押しでメニュー。Menu キーの無いリモコンが多いので)。
  *
- * 上に重ねたもの (局の一覧・操作の帯) を閉じたら、**必ず映像にキーを戻す** — 閉じたものに合っていたまま
+ * 上に重ねたもの (ライブのメニュー・操作の帯) を閉じたら、**必ず映像にキーを戻す** — 閉じたものに合っていたまま
  * 消えると、どこにも合わずリモコンが効かなくなる。`active` の間は**映像そのものに合っているか見張り、外れていたら
  * 取り戻す** (閉じたものが消える間・帯が勝手に消えたとき・端末によって遅れて合いが外れる場合も)。
  * 開いている間と、画面を離れるとき (一覧に戻る間に一覧が合いを取るので、取り返さない) は `active = false`
@@ -179,7 +195,7 @@ fun PlayerFrame(
     player: ExoPlayer,
     overlay: String?,
     error: String?,
-    /** 映像がキーを受けるか。上に重ねたもの (局の一覧) が開いている間は false。閉じたら映像に戻す */
+    /** 映像がキーを受けるか。上に重ねたもの (メニュー・帯) が開いている間は false。閉じたら映像に戻す */
     active: Boolean = true,
     onKey: (KeyEvent) -> Boolean,
     onCenter: (CenterPress.Action) -> Unit = {},
@@ -187,8 +203,11 @@ fun PlayerFrame(
     progress: Pair<Long, Long>? = null,
     /** 生の TS の字幕 (`rememberRawCaptions`)。焼いた映像の字幕の上、知らせの下に重ねる */
     captions: RawCaptionState? = null,
+    /** 映るまでの間に出す、何をしているか (ライブは「選局しています」)。流れが届いたら「映像を待っています」に替わる */
+    busyLabel: String = "読み込んでいます",
     above: @Composable BoxScope.() -> Unit = {},
 ) {
+    val loading = rememberLoading(player)
     val focus = remember { FocusRequester() }
     val center = remember { CenterPress() }
     /** 映像そのものに合っているか */
@@ -235,9 +254,18 @@ fun PlayerFrame(
                     })
                 }
             },
+            /*
+             * **流している間は画面を点けたままにする** (スクリーンセーバーを出さない)。この画面の View に付けるので、
+             * 画面を離れれば一緒に外れる (ComposeView に付けると、次の画面と取り合って消し合う)
+             */
+            update = { view -> view.keepScreenOn = loading.awake },
+            // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
+            onReset = { view -> view.keepScreenOn = false },
+            onRelease = { view -> view.keepScreenOn = false },
             modifier = Modifier.fillMaxSize(),
         )
         captions?.let { RawCaptionLayer(it) }
+        if (error == null) LoadingVeil(loading, busyLabel)
         val text = error ?: overlay
         if (text != null) {
             // 操作の帯と同じく、下の端に小さく (下から薄く暗くするだけ)
@@ -265,6 +293,136 @@ fun PlayerFrame(
 
 /** 映像に合っているか見張る間 (ミリ秒) */
 private const val FOCUS_WATCH_MS = 250L
+
+/**
+ * 映るまでの様子 (`rememberLoading`)。**ブラウザの denpa の幕 (`PlayerVeil`) にあたる。**
+ *
+ * - `busy` … 動かすつもりで読み込んでいる (選局・頼み直し・シークの直後)
+ * - `arrived` … 流れが届きはじめた (中身の形が分かった)。届くまでは「選局しています」、届いたら「映像を待っています」
+ * - `pictured` … 一度でも絵を出したか。出していれば、次が映るまで**前の絵が画面に残っている** (Media3 は替えるときに面を消さない)
+ * - `since` … `busy` になったとき (uptime ミリ秒)
+ */
+@Stable
+class LoadingState {
+    var busy by mutableStateOf(false)
+    var arrived by mutableStateOf(false)
+    var pictured by mutableStateOf(false)
+    var since by mutableLongStateOf(0L)
+    /** 画面を点けたままにするか (流している・流すつもりで読み込んでいる) */
+    var awake by mutableStateOf(false)
+}
+
+/**
+ * プレーヤーから映るまでの様子を拾う。`awake` は**動いている間は画面を点けたままにする**か (スクリーンセーバーを出さない)。
+ * 止めた・終わった・止まった (`stop`) ら離す
+ */
+@Composable
+private fun rememberLoading(player: ExoPlayer): LoadingState {
+    val state = remember(player) { LoadingState() }
+    DisposableEffect(player) {
+        fun update() {
+            val busy = player.playWhenReady && player.playbackState == Player.STATE_BUFFERING
+            if (busy && !state.busy) state.since = SystemClock.uptimeMillis()
+            state.busy = busy
+            state.arrived = !player.currentTracks.isEmpty
+            // 流しているか、流すつもりで読み込んでいる間だけ。止めたら (一時停止・終わり・エラー・stop) スクリーンセーバーに任せる
+            state.awake = player.playWhenReady &&
+                (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+        }
+        val listener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) = update()
+            override fun onRenderedFirstFrame() {
+                state.pictured = true
+            }
+        }
+        player.addListener(listener)
+        update()
+        onDispose { player.removeListener(listener) }
+    }
+    return state
+}
+
+/**
+ * 読み込んでいる間の幕。**決まりはブラウザの denpa (`PlayerVeil`) と同じ:**
+ *
+ * - 前の絵が残っている間は塗り潰さず、回るものは `SPINNER_DELAY_MS` 待ってから出す (局替えはたいてい1秒前後で終わるので、
+ *   すぐ出すとちらつくだけ。テレビと同じく前の絵のまま止めておく)
+ * - 前の絵を残すのは `HOLD_MOST_MS` まで。それを過ぎたら暗くする (選局に失敗したのに前の局が止まって見えるのがいちばん悪い)
+ * - まだ何も映していなければ (開いた直後)、すぐ回るものを出す
+ *
+ * 回るものの下に、いま何をしているかを1行 (「選局しています」→「映像を待っています」)
+ */
+@Composable
+private fun BoxScope.LoadingVeil(state: LoadingState, label: String) {
+    if (!state.busy) return
+    var elapsed by remember(state.since) { mutableLongStateOf(0L) }
+    LaunchedEffect(state.since) {
+        while (true) {
+            elapsed = SystemClock.uptimeMillis() - state.since
+            if (elapsed > HOLD_MOST_MS) break
+            delay(100)
+        }
+    }
+    val holding = state.pictured && elapsed < HOLD_MOST_MS
+    if (!holding) Box(Modifier.fillMaxSize().background(Color(0x99000000)))
+    if (state.pictured && elapsed < SPINNER_DELAY_MS) return
+    Column(
+        Modifier
+            .align(Alignment.Center)
+            .background(Color(0x73000000), RoundedCornerShape(16.dp))
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Spinner()
+        Text(if (state.arrived) "映像を待っています" else label, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+    }
+}
+
+/** 回るもの (Compose for TV には無いので、弧を回すだけ) */
+@Composable
+private fun Spinner() {
+    val turn by rememberInfiniteTransition(label = "spinner").animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1_000, easing = LinearEasing)),
+        label = "turn",
+    )
+    Canvas(Modifier.size(40.dp)) {
+        val stroke = 4.dp.toPx()
+        drawArc(Color(0x40FFFFFF), 0f, 360f, false, style = Stroke(stroke))
+        drawArc(Color.White, turn, 90f, false, style = Stroke(stroke, cap = StrokeCap.Round))
+    }
+}
+
+/** 前の絵を残したまま回るものを出すまで (ミリ秒)。ブラウザの denpa の `PlayerVeil` と同じ 1.5 秒 */
+private const val SPINNER_DELAY_MS = 1_500L
+
+/** 前の絵を残しておく上限 (ミリ秒)。ブラウザの denpa の `HOLD_MOST` と同じ 6 秒 */
+private const val HOLD_MOST_MS = 6_000L
+
+/**
+ * アプリが裏に回った (ホーム・別のアプリ・画面が消えた) ときと、前に戻ったとき。**最初に開いたときの `onStart` は呼ばない。**
+ * 再生の画面はここで止め、戻ったら続ける (裏で流し続けない。ライブならチューナーを空ける)
+ */
+@Composable
+fun OnBackground(onStop: () -> Unit, onStart: () -> Unit) {
+    val owner = LocalLifecycleOwner.current
+    val stop by rememberUpdatedState(onStop)
+    val start by rememberUpdatedState(onStart)
+    DisposableEffect(owner) {
+        var stopped = false
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> if (!stopped) { stopped = true; stop() }
+                Lifecycle.Event.ON_START -> if (stopped) { stopped = false; start() }
+                else -> {}
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+}
 
 /** 何秒かだけ出して消える文字 */
 @Composable

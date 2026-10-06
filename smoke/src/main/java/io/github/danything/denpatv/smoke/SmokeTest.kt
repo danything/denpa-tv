@@ -45,6 +45,45 @@ class SmokeTest {
         assertRequested("GET /api/services/${FakeDenpa.SERVICE_ID}/live")
     }
 
+    /**
+     * ライブのメニュー。決定で操作の列と局の列が開き、「録画」で denpa にいまの番組を予約する。**戻るでメニューだけが閉じ**
+     * (画面ごと戻らない。Android 12 以前では戻るキーが合いを外へ出すのに使われ、閉じずに合いだけが抜けていた)、
+     * もう一度の戻るでいちばん上のメニューへ (「ライブ」に合う)。流している間は画面を点けたまま (スクリーンセーバーを出さない)、
+     * ホームに出たら流れを閉じ、戻ったら頼み直す
+     */
+    @Test
+    fun liveMenu() = watching {
+        open("denpa://live/${FakeDenpa.SERVICE_ID}")
+        awaitVideo(LIVE_COLOR)
+        assertTrue("流している間に画面を点けたままにしていません", poll(TEXT_TIMEOUT_MS) { keepsScreenOn() })
+
+        openMenu()
+        val record = node { it.text?.toString() == "録画" }?.let(::clickable) ?: throw AssertionError("「録画」がありません: ${texts()}")
+        assertTrue("「録画」を押せません", record.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        awaitText { it == "録画を始めます: ${FakeDenpa.PROGRAM_TITLE}" }
+        assertRequested("POST /api/services/${FakeDenpa.SERVICE_ID}/record")
+
+        openMenu()
+        press(KeyEvent.KEYCODE_BACK)
+        assertTrue("戻るでメニューが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "地上波" !in texts() })
+        awaitVideo(LIVE_COLOR)
+
+        // ホームに出ると流れを閉じ、戻ると同じ局を頼み直す
+        val asked = denpa.requests.count { it == LIVE_REQUEST }
+        press(KeyEvent.KEYCODE_HOME)
+        assertTrue("ホームに出ません", poll(TEXT_TIMEOUT_MS) { activeWindow()?.packageName?.toString() != APP })
+        // 裏に回った (onStop) のを待つ。すぐ開き直すと、止まる前に前へ戻るだけになる
+        SystemClock.sleep(STOP_WAIT_MS)
+        assertTrue("ホームに出ても画面を点けたままです", poll(TEXT_TIMEOUT_MS) { !keepsScreenOn() })
+        relaunch()
+        assertTrue("戻ってもライブを頼み直しません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > asked })
+        awaitVideo(LIVE_COLOR)
+
+        press(KeyEvent.KEYCODE_BACK)
+        awaitText { it == "ライブ" }
+        assertTrue("ライブを離れても画面を点けたままです", poll(TEXT_TIMEOUT_MS) { !keepsScreenOn() })
+    }
+
     @Test
     fun recording() = watching {
         open("denpa://recording/${FakeDenpa.RECORDING_ID}")
@@ -102,6 +141,26 @@ class SmokeTest {
             SystemClock.sleep(POLL_MS)
         }
         fail("映像が出ません (地の色の点 ${(last * 100).toInt()}%)。画面の文字: ${texts()}")
+    }
+
+    /**
+     * 決定でライブのメニューを開く (局の列の「地上波」が出る)。リンクで開き直した直後は前の画面と入れ替わっている最中で
+     * キーが届かないことがあるので、出るまで何度か押す
+     */
+    private fun openMenu() {
+        for (i in 0 until MENU_TRIES) {
+            press(KeyEvent.KEYCODE_DPAD_CENTER)
+            if (poll(MENU_WAIT_MS) { "地上波" in texts() }) return
+        }
+        fail("決定でメニューが開きません: ${texts()}")
+    }
+
+    /** アプリの窓が画面を点けたままにする印 (FLAG_KEEP_SCREEN_ON) を持っているか。古い Android は印を16進で出す */
+    private fun keepsScreenOn(): Boolean {
+        val window = shell("dumpsys window windows").split("Window #").firstOrNull { "$APP/" in it.substringBefore('\n') } ?: return false
+        if ("KEEP_SCREEN_ON" in window) return true
+        val flags = Regex("fl=#([0-9a-fA-F]+)").find(window)?.groupValues?.get(1) ?: return false
+        return flags.toLong(16) and FLAG_KEEP_SCREEN_ON != 0L
     }
 
     private fun assertRequested(request: String) =
@@ -169,6 +228,15 @@ class SmokeTest {
         @JvmStatic
         fun stop() = denpa.close()
 
+        /**
+         * ホームから戻る (ランチャーから開き直すのと同じ。いまの画面のまま前に出る)。シェルから開く — 新しい Android は、
+         * 前に出ていないテストのプロセスからの起動を止めることがある (裏からの起動の制限)
+         */
+        private fun relaunch() {
+            val launch = instrumentation.context.packageManager.getLeanbackLaunchIntentForPackage(APP) ?: error("$APP が入っていません")
+            shell("am start -n ${launch.component!!.flattenToShortString()}")
+        }
+
         private fun open(link: String) {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).setPackage(APP).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             instrumentation.context.startActivity(intent)
@@ -233,6 +301,9 @@ class SmokeTest {
         private const val LIVE_COLOR = 0xFF20C040.toInt()
         private const val RECORDING_COLOR = 0xFFC02080.toInt()
         private const val COLOR_TOLERANCE = 48
+        private val LIVE_REQUEST = "GET /api/services/${FakeDenpa.SERVICE_ID}/live"
+        /** WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON */
+        private const val FLAG_KEEP_SCREEN_ON = 0x80L
         private const val VIDEO_SHARE = 0.3f
         private const val GRID_X = 32
         private const val GRID_Y = 18
@@ -243,6 +314,7 @@ class SmokeTest {
         private const val SETTLE_MS = 3_000L
         private const val POLL_MS = 500L
         private const val MENU_TRIES = 4
+        private const val STOP_WAIT_MS = 3_000L
         private const val MENU_WAIT_MS = 3_000L
     }
 }
