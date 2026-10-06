@@ -201,6 +201,8 @@ fun PlayerFrame(
     /** 映像がキーを受けるか。上に重ねたもの (メニュー・帯) が開いている間は false。閉じたら映像に戻す */
     active: Boolean = true,
     onKey: (KeyEvent) -> Boolean,
+    /** キーを離したとき (ライブの局送りは、離してから待って頼む) */
+    onKeyUp: (KeyEvent) -> Unit = {},
     onCenter: (CenterPress.Action) -> Unit = {},
     /** 知らせの下に出す進み (ライブの番組の進み)。null なら出さない */
     progress: Pair<Long, Long>? = null,
@@ -263,6 +265,7 @@ fun PlayerFrame(
                     action?.let(onCenter)
                     return@onKeyEvent true
                 }
+                if (event.type == KeyEventType.KeyUp) onKeyUp(event)
                 event.type == KeyEventType.KeyDown && onKey(event)
             }
             .focusable(),
