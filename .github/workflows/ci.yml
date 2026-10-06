@@ -23,11 +23,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      # 構成のキャッシュ (configuration cache) も持ち越す。中身に秘密が入りうるので、鍵で暗号化して置く決まり
+      # cache-encryption-key は構成のキャッシュ (configuration cache) を暗号化する鍵。GRADLE_ENCRYPTION_KEY として後の手順に渡る
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-          cache-read-only: false
+      # 構成のキャッシュを前の走りから持ち越す (構成の 10 秒ほどを飛ばす)。setup-gradle (v6) が持ち越すのは Gradle の家だけで、
+      # プロジェクトの .gradle/configuration-cache は Develocity の契約が無いと持ち越さないので、ここで持つ。
+      # 使えるかは Gradle が入力 (build スクリプト・properties・JDK・依存) を見て決める (合わなければ構成し直して入れ替える)。
+      # 毎回いちばん新しいものを取って、新しく置く。鍵の無い走り (fork の PR) では使わない (暗号を解けない)
+      - if: env.GRADLE_ENCRYPTION_KEY != ''
+        uses: actions/cache@v6
+        with:
+          path: .gradle/configuration-cache
+          key: gradle-cc-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: gradle-cc-${{ github.job }}-
       # Android SDK はランナーに入っている。足りない platform は AGP が取ってくる
       - name: Lint / unit tests / debug APK
         run: ./gradlew lintDebug testDebugUnitTest assembleDebug --console=plain
@@ -86,7 +95,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-          cache-read-only: false
+      # build の列と同じ (構成のキャッシュを持ち越す)
+      - if: needs.changes.outputs.code == 'true' && env.GRADLE_ENCRYPTION_KEY != ''
+        uses: actions/cache@v6
+        with:
+          path: .gradle/configuration-cache
+          key: gradle-cc-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: gradle-cc-${{ github.job }}-
       - if: needs.changes.outputs.code == 'true'
         name: Build APKs
         # lintVital (縮める版に付く lint の致命の分だけ) は外す。同じ検査は build の列の lintDebug が全部やっていて、
