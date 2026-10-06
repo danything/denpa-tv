@@ -55,7 +55,8 @@ class SmokeTest {
     }
 
     /**
-     * ライブのメニュー。決定で操作の列と局の列が開き、「録画」で denpa にいまの番組を予約する。**戻るでメニューだけが閉じ**
+     * ライブのキーとメニュー。**左右で局を送る** (右で次の局を、左で元の局を denpa に頼む)。**決定の長押しは局と番組を出す**
+     * (メニューは開かない。離しても決定にならない)。**上で、局の列のいま映している局に合わせてメニューが開く。** 決定で操作の列と局の列が開き、「録画」で denpa にいまの番組を予約する。**戻るでメニューだけが閉じ**
      * (画面ごと戻らない。Android 12 以前では戻るキーが合いを外へ出すのに使われ、閉じずに合いだけが抜けていた)、
      * もう一度の戻るでいちばん上のメニューへ (「ライブ」に合う)。流している間は画面を点けたまま (スクリーンセーバーを出さない)、
      * ホームに出たら流れを閉じ、戻ったら頼み直す
@@ -65,6 +66,32 @@ class SmokeTest {
         open("denpa://live/${FakeDenpa.SERVICE_ID}")
         awaitVideo(LIVE_COLOR)
         assertTrue("流している間に画面を点けたままにしていません", poll(TEXT_TIMEOUT_MS) { keepsScreenOn() })
+
+        // 右で次の局へ。押すとすぐ行き先の局名が出て、押し終えて少したってから頼む
+        val next = "GET /api/services/${FakeDenpa.NEXT_SERVICE_ID}/live"
+        pressUntil(KeyEvent.KEYCODE_DPAD_RIGHT, "右で次の局へ送りません") { next in denpa.requests || texts().any { FakeDenpa.NEXT_SERVICE_NAME in it } }
+        assertTrue("右で次の局を頼みません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { next in denpa.requests })
+        awaitVideo(LIVE_COLOR)
+        // 左で元の局へ戻る
+        val before = denpa.requests.count { it == LIVE_REQUEST }
+        press(KeyEvent.KEYCODE_DPAD_LEFT)
+        assertTrue("左で前の局を頼みません: ${denpa.requests.filter { it.endsWith("/live") }}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > before })
+        awaitVideo(LIVE_COLOR)
+
+        // 決定の長押しは情報と同じ (局と番組に、キーの手引きを添える)。メニューは開かず、離しても決定にならない
+        longPress(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue("決定の長押しで局と番組が出ません: ${texts()}", poll(TEXT_TIMEOUT_MS) { texts().any { "長押しで番組" in it } })
+        SystemClock.sleep(MENU_WAIT_MS)
+        assertTrue("決定の長押しでメニューが開きました: ${texts()}", "地上波" !in texts())
+
+        // 上で、局の列のいま映している局に合わせて開く。戻るで閉じる
+        pressUntil(KeyEvent.KEYCODE_DPAD_UP, "上でメニューが開きません") { "地上波" in texts() }
+        assertTrue(
+            "上で開いたメニューが、いま映している局に合っていません: ${focusedTexts()}",
+            poll(TEXT_TIMEOUT_MS) { focusedTexts().any { FakeDenpa.SERVICE_NAME in it } },
+        )
+        press(KeyEvent.KEYCODE_BACK)
+        assertTrue("戻るでメニューが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "地上波" !in texts() })
 
         openMenu()
         val record = node { it.text?.toString() == "録画" }?.let(::clickable) ?: throw AssertionError("「録画」がありません: ${texts()}")
@@ -160,12 +187,28 @@ class SmokeTest {
      * 決定でライブのメニューを開く (局の列の「地上波」が出る)。リンクで開き直した直後は前の画面と入れ替わっている最中で
      * キーが届かないことがあるので、出るまで何度か押す
      */
-    private fun openMenu() {
+    private fun openMenu() = pressUntil(KeyEvent.KEYCODE_DPAD_CENTER, "決定でメニューが開きません") { "地上波" in texts() }
+
+    /** `done` になるまで `code` を押す (届かなかったときだけ押し直す)。ならなければ `message` で失敗にする */
+    private fun pressUntil(code: Int, message: String, done: () -> Boolean) {
         for (i in 0 until MENU_TRIES) {
-            press(KeyEvent.KEYCODE_DPAD_CENTER)
-            if (poll(MENU_WAIT_MS) { "地上波" in texts() }) return
+            press(code)
+            if (poll(MENU_WAIT_MS, done)) return
         }
-        fail("決定でメニューが開きません: ${texts()}")
+        fail("$message: ${texts()}")
+    }
+
+    /** 合っているもの (入力の合い) とその中の文字。Compose の札は中の Text を子に持つ */
+    private fun focusedTexts(): List<String> {
+        val focused = activeWindow()?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return emptyList()
+        val out = mutableListOf<String>()
+        fun walk(node: AccessibilityNodeInfo) {
+            node.text?.let { out += it.toString() }
+            node.contentDescription?.let { out += it.toString() }
+            for (i in 0 until node.childCount) node.getChild(i)?.let(::walk)
+        }
+        walk(focused)
+        return out
     }
 
     /** アプリの窓が画面を点けたままにする印 (FLAG_KEEP_SCREEN_ON) を持っているか。古い Android は印を16進で出す */
@@ -185,6 +228,19 @@ class SmokeTest {
             val event = KeyEvent(at, SystemClock.uptimeMillis(), action, code, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
             instrumentation.uiAutomation.injectInputEvent(event, true)
         }
+    }
+
+    /** 長押し: 押して、長押しの印つきの繰り返しを送ってから離す (リモコンで押し続けたときと同じ並び) */
+    private fun longPress(code: Int) {
+        val at = SystemClock.uptimeMillis()
+        fun send(action: Int, repeat: Int, flags: Int) {
+            val event = KeyEvent(at, SystemClock.uptimeMillis(), action, code, repeat, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, flags, InputDevice.SOURCE_KEYBOARD)
+            instrumentation.uiAutomation.injectInputEvent(event, true)
+        }
+        send(KeyEvent.ACTION_DOWN, 0, 0)
+        SystemClock.sleep(LONG_PRESS_MS)
+        send(KeyEvent.ACTION_DOWN, 1, KeyEvent.FLAG_LONG_PRESS)
+        send(KeyEvent.ACTION_UP, 0, 0)
     }
 
     private fun screenshot(): Bitmap? {
@@ -330,5 +386,6 @@ class SmokeTest {
         private const val STOP_WAIT_MS = 3_000L
         private const val TEST_TIMEOUT_S = 150L
         private const val MENU_WAIT_MS = 3_000L
+        private const val LONG_PRESS_MS = 700L
     }
 }

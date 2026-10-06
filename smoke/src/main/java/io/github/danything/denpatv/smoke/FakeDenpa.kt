@@ -70,10 +70,12 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
 
     private fun route(method: String, path: String, range: String?, out: OutputStream) {
         val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file)").matchEntire(path)
+        val live = Regex("/api/services/(\\d+)/live").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
             path == "/api/health" -> json(out, """{"ok":true}""")
             path == "/api/services" -> json(out, services())
-            path == "/api/services/$SERVICE_ID/live" -> media(out, "live.mp4", "video/mp4", range)
+            // 局送りの行き先も同じ映像を流す
+            live == SERVICE_ID || live == NEXT_SERVICE_ID -> media(out, "live.mp4", "video/mp4", range)
             path == "/api/services/$SERVICE_ID/record" && method == "POST" ->
                 json(out, """{"recorded":"$PROGRAM_TITLE","programId":1,"reserved":true}""")
             path == "/api/recordings" -> json(out, recordings())
@@ -85,11 +87,13 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
         }
     }
 
+    /** 局は2つ (左右の局送りで行き来する)。どちらも放送中 (番組名がある。サブチャンネルとして飛ばされない) */
     private fun services(): String {
         val now = System.currentTimeMillis()
-        return """[{"id":$SERVICE_ID,"type":"GR","name":"$SERVICE_NAME","remoteControlKey":1,
-            "live":"api/services/$SERVICE_ID/live",
-            "now":{"title":"$PROGRAM_TITLE","startAt":${now - 600_000},"endAt":${now + 3_000_000}}}]"""
+        fun service(id: Long, name: String, key: Int, title: String) =
+            """{"id":$id,"type":"GR","name":"$name","remoteControlKey":$key,"live":"api/services/$id/live",
+            "now":{"title":"$title","startAt":${now - 600_000},"endAt":${now + 3_000_000}}}"""
+        return "[${service(SERVICE_ID, SERVICE_NAME, 1, PROGRAM_TITLE)},${service(NEXT_SERVICE_ID, NEXT_SERVICE_NAME, 2, NEXT_PROGRAM_TITLE)}]"
     }
 
     private fun recordings(): String {
@@ -157,6 +161,10 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
         const val SERVICE_ID = 3273601024L
         const val SERVICE_NAME = "偽の総合"
         const val PROGRAM_TITLE = "偽の番組"
+        /** 局送りで次に来る局 */
+        const val NEXT_SERVICE_ID = 3273601032L
+        const val NEXT_SERVICE_NAME = "偽の教育"
+        const val NEXT_PROGRAM_TITLE = "偽の講座"
         const val RECORDING_ID = 1L
         const val RECORDING_TITLE = "偽の録画"
         private val REASONS = mapOf(200 to "OK", 204 to "No Content", 206 to "Partial Content", 404 to "Not Found", 416 to "Range Not Satisfiable")
