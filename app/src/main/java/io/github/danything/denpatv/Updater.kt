@@ -81,7 +81,7 @@ fun UpdateState.notice(): String? = when (this) {
 
 /** 許可の画面へ送ったあとに開き直したとき、覚えておいた頼み (`InstallRequest`) をどうするか */
 enum class Resume {
-    /** 頼まれた版を入れられる (許可してあれば続けて入れる) */
+    /** 頼まれた版を入れられる (許可が見えなくても続けて入れてみる) */
     Start,
     /**
      * まだ分からない (確かめられなかった・裏で取れなかった)。頼みは残し、期限で切れる。
@@ -127,17 +127,6 @@ fun installStep(allowed: Boolean, asked: InstallRequest?, version: String, now: 
 }
 
 /**
- * セッションが断られた (`status`) とき、許可が見えなければ (`allowed`) 許可が無いせいとみなす。次に押すと許可の画面を開き直す。
- * 許可が無いと OS は「このアプリからは入れられません」の画面を出し、そこでやめると `STATUS_FAILURE_ABORTED`
- * (User rejected permissions) が来る。署名・空き・入れられない APK は許可のせいではない
- */
-fun deniedForPermission(status: Int, allowed: Boolean): Boolean = !allowed && status in setOf(
-    PackageInstaller.STATUS_FAILURE,
-    PackageInstaller.STATUS_FAILURE_ABORTED,
-    PackageInstaller.STATUS_FAILURE_BLOCKED,
-)
-
-/**
  * アプリの中から新しい版に上げる (README の「アップデート」)。**設定は増やさない**: 開いたとき (12 時間に1回まで) に
  * GitHub のリリースを見て、新しければ**黙って裏で取ってきて SHA256SUMS と照らし**、照らし終えたら録画の一覧の頭に1行出す。
  * 押すと PackageInstaller のセッションで入れる (リリースは同じ鍵で署名しているので上書きで入る)。
@@ -158,7 +147,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * 開いたとき (プロセスごとに1回。プロセスが落ちて画面が作り直されたときも)。手元で焼いた版では見ない。
-     * 許可の画面へ送ったあとに開き直したのなら、許可してあれば続けて入れる (`resumeRequest`)
+     * 許可の画面へ送ったあとに開き直したのなら、続けて入れる (許可が見えなくても入れてみる) (`resumeRequest`)
      */
     fun checkOnStart() {
         if (dev || !started.compareAndSet(false, true)) return
@@ -195,7 +184,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * 許可の画面へ送ったあと、アプリが閉じられて開き直した (テレビによっては許可の画面にいる間・許可したときに閉じられる)。
-     * 頼まれた版がまだ新しく、頼んでから間もなく、許可してあれば、続けて入れる。許可していなければ知らせを出したままにする
+     * 頼まれた版がまだ新しく、頼んでから間もなければ、続けて入れる。許可が見えなくても入れてみる (本当に無ければ OS が尋ねる。`installStep`)
      */
     private suspend fun resumeRequest() {
         val request = app.settings.installRequest() ?: return
@@ -205,7 +194,8 @@ class Updater(private val app: DenpaApp) {
         val plan = resumePlan(state, request, System.currentTimeMillis())
         Log.i(TAG, "開き直しました。v${request.version} を頼まれていました: $plan (${permissionReport()})")
         when (plan) {
-            Resume.Start -> if (allowedToInstall()) when (state) {
+            // 許可が見えなくても入れてみる (頼まれた版で間もないので、`start` の `installStep` は Install になる)
+            Resume.Start -> when (state) {
                 is UpdateState.Ready -> start(state.update, state.file.takeIf { it.exists() })
                 is UpdateState.Available -> start(state.update, null)
                 else -> Unit
@@ -477,20 +467,13 @@ class Updater(private val app: DenpaApp) {
             abandon(installer, id)
             if (session == id) session = NO_SESSION
             _state.value = if (e is SecurityException && !allowedToInstall()) {
-                deniedPermission(update, file)
+                // セッションを作れない・渡せない: 許可が無いせい。次に押すと許可の画面を開き直す (頼みを忘れて AskPermission に)
+                remember(null)
+                UpdateState.Failed(update, "${update.label}: 許可が効いていません。押すと許可の画面を開きます ($TWO_ENTRIES)", file)
             } else {
                 UpdateState.Failed(update, "${update.label} を入れられませんでした (${e.message ?: e.javaClass.simpleName})", file)
             }
         }
-    }
-
-    /**
-     * 許可が無いせいで入らなかった。次に押すと許可の画面を開き直す (`installStep` が AskPermission になるよう頼みを忘れる)。
-     * テレビの設定に同じアプリが2つ並ぶことがあり (denpa-tv#32)、片方だけ許可しても効かないので、そう添える
-     */
-    private fun deniedPermission(update: Update, file: File): UpdateState {
-        remember(null)
-        return UpdateState.Failed(update, "${update.label}: 許可が効いていません。押すと許可の画面を開きます (denpa が2つ並んでいたら両方を許可)", file)
     }
 
     /**
@@ -543,10 +526,6 @@ class Updater(private val app: DenpaApp) {
         val detail = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
         Log.i(TAG, "セッション $session の結果: $status $detail (${permissionReport()})")
         val failed = { message: String -> _state.value = UpdateState.Failed(installing.update, message, installing.file) }
-        if (deniedForPermission(status, allowedToInstall())) {
-            _state.value = deniedPermission(installing.update, installing.file)
-            return
-        }
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -564,7 +543,11 @@ class Updater(private val app: DenpaApp) {
             }
             // 入ると、このアプリは OS に閉じられる (ここにはまず来ない)
             PackageInstaller.STATUS_SUCCESS -> _state.value = UpdateState.Idle
-            PackageInstaller.STATUS_FAILURE_ABORTED -> failed("${installing.update.label} を入れるのをやめました (押すともう一度)")
+            // 許可が見えないときにやめたのは、OS の「このアプリからは入れられません」かもしれない。ただ確認の画面を閉じても同じ
+            // (User rejected permissions) で見分けられないので、許可の画面へは戻さず (押すとまた OS が尋ねる)、2つ並ぶことだけ添える
+            PackageInstaller.STATUS_FAILURE_ABORTED -> failed(
+                "${installing.update.label} を入れるのをやめました (押すともう一度" + (if (allowedToInstall()) ")" else "。$TWO_ENTRIES)"),
+            )
             PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
                 failed("署名が違うので上書きできません (docs/install.md の「署名について」)")
             PackageInstaller.STATUS_FAILURE_STORAGE -> failed("空きが足りないので入れられません")
@@ -581,6 +564,8 @@ class Updater(private val app: DenpaApp) {
         const val CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000L
         const val STATUS_TIMEOUT_MS = 30_000L
         const val ACTION_STATUS = "io.github.danything.denpatv.UPDATE_STATUS"
+        /** テレビの設定に同じアプリが2つ並ぶことがあり (denpa-tv#32)、片方だけ許可しても効かないことがある */
+        const val TWO_ENTRIES = "設定に denpa が2つ並んでいたら両方を許可"
         /** AppOpsManager の OPSTR_REQUEST_INSTALL_PACKAGES (SDK には出ていない名前) */
         const val OPSTR_REQUEST_INSTALL_PACKAGES = "android:request_install_packages"
     }
