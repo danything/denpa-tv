@@ -23,7 +23,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+      # 構成のキャッシュ (configuration cache) も持ち越す。中身に秘密が入りうるので、鍵で暗号化して置く決まり
       - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       # Android SDK はランナーに入っている。足りない platform は AGP が取ってくる
       - name: Lint / unit tests / debug APK
         run: ./gradlew lintDebug testDebugUnitTest assembleDebug --console=plain
@@ -65,7 +68,8 @@ jobs:
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
 
   # 縮めた APK (:app の minified。R8 は release と同じで、署名だけ debug) と SmokeTest の APK を1度だけ焼く。
-  # emulator の列はこれを入れて走らせるだけ (Gradle も JDK も使わない)。lint・単体テスト (build の列) とは並べて走る
+  # emulator の列はこれを入れて走らせるだけ (Gradle も JDK も使わない)。lint・単体テスト (build の列) とは並べて走る。
+  # emulator の列はこれを待たずにエミュレータを起こし、上がった smoke-apks を取りに来る (scripts/wait-apks.sh)
   apks:
     needs: changes
     runs-on: ubuntu-latest
@@ -79,9 +83,13 @@ jobs:
           java-version: '25'
       - if: needs.changes.outputs.code == 'true'
         uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - if: needs.changes.outputs.code == 'true'
         name: Build APKs
-        run: ./gradlew :app:assembleMinified :smoke:assembleMinified --console=plain
+        # lintVital (縮める版に付く lint の致命の分だけ) は外す。同じ検査は build の列の lintDebug が全部やっていて、
+        # ここで R8 と CPU を取り合うと、emulator の列が待つ APK が遅れる
+        run: ./gradlew :app:assembleMinified :smoke:assembleMinified -x lintVitalMinified --console=plain
       - if: needs.changes.outputs.code == 'true'
         uses: actions/upload-artifact@v7
         with:
@@ -98,9 +106,14 @@ jobs:
   # 像はどれも Android TV (system-images;android-NN;android-tv)。36 だけ x86_64 (24〜34 の TV の像は x86 しか無い)
   emulator:
     name: emulator (API ${{ matrix.api-level }})
-    needs: [changes, apks]
+    # apks は待たない。キャッシュから像を戻してエミュレータを起こすのと、APK を焼くのを重ねる (APK は Smoke test の手順の中で待つ)
+    needs: changes
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      # apks の列の様子と、上げた APK (artifact) を読む
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -126,11 +139,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           sparse-checkout: scripts
-      - if: env.RUN == 'true'
-        uses: actions/download-artifact@v8
-        with:
-          name: smoke-apks
-          path: apks
       # android-emulator-runner の README のとおり
       - if: env.RUN == 'true'
         name: Enable KVM
@@ -169,10 +177,12 @@ jobs:
           emulator-options: ${{ env.EMULATOR_OPTIONS }}
           disable-animations: false
           script: echo "AVD のスナップショットを作りました"
-      # 固まっても 30 分待たずに切る (smoke-run.sh も am instrument を 8 分で切って記録を残す)
+      # 固まっても 40 分待たずに切る (wait-apks.sh は APK を 15 分まで待ち、smoke-run.sh は am instrument を 8 分で切って記録を残す)
       - if: env.RUN == 'true'
         name: Smoke test
-        timeout-minutes: 12
+        timeout-minutes: 27
+        env:
+          GH_TOKEN: ${{ github.token }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -185,7 +195,8 @@ jobs:
           emulator-boot-timeout: 300
           emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
           disable-animations: true
-          script: SMOKE_STOP_EMULATOR=1 bash scripts/smoke-run.sh apks/app/build/outputs/apk/minified/app-minified.apk apks/smoke/build/outputs/apk/minified/smoke-minified.apk smoke-results
+          # 起きてから apks の APK を待って apks/ に取ってくる (SMOKE_WAIT_APKS)
+          script: SMOKE_STOP_EMULATOR=1 SMOKE_WAIT_APKS=apks bash scripts/smoke-run.sh apks/app/build/outputs/apk/minified/app-minified.apk apks/smoke/build/outputs/apk/minified/smoke-minified.apk smoke-results
       # 通っても落ちても切られても残す (logcat・JUnit の出力・止まったところの画面)
       - if: always() && env.RUN == 'true'
         uses: actions/upload-artifact@v7
@@ -194,3 +205,4 @@ jobs:
           path: |
             smoke-results/
             apks/app/build/outputs/mapping/minified/mapping.txt
+

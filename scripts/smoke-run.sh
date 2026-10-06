@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
 # 縮めた APK (:app の minified) と SmokeTest の APK (:smoke) を、繋いだ端末 (エミュレータ) に入れて走らせる。
-# CI の emulator の列はこれだけを走らせる (Gradle も JDK も要らない。APK は apks の列が1度だけ焼く)。
+# CI の emulator の列はこれだけを走らせる (Gradle も JDK も要らない。APK は apks の列が1度だけ焼き、ここで待って取ってくる)。
 #
 #   scripts/smoke-run.sh <app-minified.apk> <smoke-minified.apk> [結果を置くディレクトリ]
 #
@@ -15,12 +15,6 @@ smoke=$2
 out=${3:-smoke-results}
 mkdir -p "$out"
 
-adb install -r -t "$app"
-adb install -r -t "$smoke"
-adb logcat -c || true
-# logcat は走らせている間ずっと書き出す (途中で止められても、そこまでの記録が残る)
-adb logcat -v threadtime > "$out/logcat.txt" 2>&1 &
-logcat=$!
 # CI (`SMOKE_STOP_EMULATOR=1`) では、終わったらエミュレータもここで止める。API 28 の像では、エミュレータが閉じても
 # その子の crashpad_handler が出力を握ったまま残り、android-emulator-runner がその終わりを待ったまま手順の上限まで固まった
 # (ほかの API では一緒に閉じる)。頼んで 30 秒待ち、閉じなければ qemu を殺し、残った crashpad_handler も殺す
@@ -38,7 +32,19 @@ stop_emulator() {
     fi
     pkill -9 -f emulator/crashpad_handler || true
 }
-trap 'kill $logcat 2>/dev/null || true; stop_emulator' EXIT
+logcat=""
+trap '[ -n "$logcat" ] && kill "$logcat" 2>/dev/null; stop_emulator' EXIT
+# CI (`SMOKE_WAIT_APKS=<置く先>`) では、エミュレータを起こしてから apks の列が焼き終わるのを待って APK を取ってくる
+# (scripts/wait-apks.sh)。取れなくてもエミュレータは上で止める
+if [ -n "${SMOKE_WAIT_APKS:-}" ]; then
+    bash "$(dirname "$0")/wait-apks.sh" "$SMOKE_WAIT_APKS"
+fi
+adb install -r -t "$app"
+adb install -r -t "$smoke"
+adb logcat -c || true
+# logcat は走らせている間ずっと書き出す (途中で止められても、そこまでの記録が残る)
+adb logcat -v threadtime > "$out/logcat.txt" 2>&1 &
+logcat=$!
 # am instrument は失敗しても 0 で戻るので、JUnit の締めの行 (OK (3 tests) / FAILURES!!!) で見る。
 # テストの APK ごと起き上がれないと 0 件のまま終わるので、1件以上通ったことも見る。-r でテストごとの始まり・終わりも出す。
 #
