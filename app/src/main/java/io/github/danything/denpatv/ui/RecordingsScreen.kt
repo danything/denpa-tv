@@ -316,7 +316,11 @@ private fun HeroArea(repo: Repository, recordings: List<Recording>, shownId: () 
     LaunchedEffect(settled) {
         val id = settled
         // 先読みは説明と並べて (先読みを待たずに説明を取りに行く)。止まる先が替わったら一緒にやめる
-        launch { prefetch(repo, recordings, id, cardSize[0], cardSize[1]) }
+        launch {
+            // 開いたばかりでカードがまだ測られていなければ、測られるまで待つ (少しだけ)
+            repeat(CARD_SIZE_WAITS) { if (cardSize[0] <= 0) delay(CARD_SIZE_WAIT_MS) }
+            prefetch(repo, recordings, id, cardSize[0], cardSize[1])
+        }
         if (id in descriptions) return@LaunchedEffect
         val detail = try {
             repo.api.recordingDetail(repo.base, id)
@@ -333,11 +337,14 @@ private fun HeroArea(repo: Repository, recordings: List<Recording>, shownId: () 
     }
 }
 
-/** 止まった録画の前後 `PREFETCH` 件のポスターを、カードの大きさで先に読む (覚えているものは読まない)。IO の上で */
+/**
+ * 止まった録画の前後 `PREFETCH` 件のポスターを、カードの大きさで先に読む (覚えているものは読まない)。IO の上で。
+ * 近いものから (止まってすぐ隣へ送られても間に合うように)
+ */
 private suspend fun prefetch(repo: Repository, recordings: List<Recording>, id: Long, width: Int, height: Int) {
     if (width <= 0 || height <= 0) return
     val at = recordings.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: return
-    val near = recordings.subList((at - PREFETCH).coerceAtLeast(0), (at + PREFETCH + 1).coerceAtMost(recordings.size))
+    val near = nearFirst(at, PREFETCH, recordings.size).map { recordings[it] }
     withContext(Dispatchers.IO) {
         near.mapNotNull { repo.url(it.poster) }.forEach { url ->
             if (Images.cached(url, width, height, opaque = true) == null) Images.load(url, width, height, repo.token, opaque = true)
@@ -535,6 +542,19 @@ private const val BACKDROP_FADE_MS = 250
 
 /** 止まった録画の前後で、先にポスターを読む件数 (前後2段ぶん) */
 private const val PREFETCH = 8
+
+/** 先読みの前に、カードが測られるのを待つ回数と間 (ミリ秒) */
+private const val CARD_SIZE_WAITS = 20
+private const val CARD_SIZE_WAIT_MS = 50L
+
+/** `at` の前後 `count` 件の位置を、近い順に (`at`, `at+1`, `at-1`, `at+2`, …)。端は飛ばす */
+internal fun nearFirst(at: Int, count: Int, size: Int): List<Int> = buildList {
+    if (at in 0 until size) add(at)
+    for (d in 1..count) {
+        if (at + d < size) add(at + d)
+        if (at - d >= 0) add(at - d)
+    }
+}
 
 /** 背景の絵の大きさ (画面の幅・高さに対して) */
 private const val BACKDROP_WIDTH = 0.72f

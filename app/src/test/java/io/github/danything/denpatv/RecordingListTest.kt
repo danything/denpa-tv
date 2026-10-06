@@ -3,6 +3,7 @@ package io.github.danything.denpatv
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingList
 import io.github.danything.denpatv.data.reuse
+import io.github.danything.denpatv.ui.nearFirst
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -71,5 +72,13 @@ class RecordingListTest {
         assertSame(old[0], merged[1])
         assertNotSame(old, merged)
         assertSame(fresh, reuse(emptyList(), fresh))
+    }
+
+    /** 先読みは近い順に、端は飛ばす */
+    @Test
+    fun 先読みは近い順() {
+        assertEquals(listOf(3, 4, 2, 5, 1), nearFirst(3, 2, 10).take(5))
+        assertEquals(listOf(0, 1, 2), nearFirst(0, 2, 10))
+        assertEquals(listOf(4, 3, 2), nearFirst(4, 2, 5))
     }
 }
