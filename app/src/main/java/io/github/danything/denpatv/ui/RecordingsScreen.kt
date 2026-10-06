@@ -9,7 +9,6 @@ import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -227,17 +226,7 @@ fun RecordingsScreen(
         Backdrop(repo.url(backdrop?.poster), repo.token, Modifier.align(Alignment.TopEnd).fillMaxWidth(BACKDROP_WIDTH).height(BACKDROP_HEIGHT))
         Column(Modifier.fillMaxSize()) {
             Hero(repo, shown, descriptions[shown.id].orEmpty())
-            // 合わせている録画の放送日 (合わせた段を上の端に揃えるので、その段の日の見出しは上に隠れる。代わりにここに出す)
-            Text(
-                DAY.format(Date(shown.startAt)),
-                style = MaterialTheme.typography.titleMedium,
-                color = Palette.TextMuted,
-                modifier = Modifier.padding(start = EDGE, top = 4.dp),
-            )
-            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                // 1段 (カードと番組名) の高さ。いちばん下の段も上の端まで送れるよう、下にその残りの余白を足す
-                val cardWidth = (maxWidth - EDGE - GRID_END - GRID_GAP * 3) / 4
-                val rowHeight = cardWidth * 9f / 16f + CARD_TITLE_HEIGHT
+            Box(Modifier.fillMaxWidth().weight(1f)) {
                 val density = LocalDensity.current
                 val rowTop = remember(density) { RowTop(with(density) { GRID_TOP.toPx() }) }
                 CompositionLocalProvider(LocalBringIntoViewSpec provides rowTop) {
@@ -246,7 +235,7 @@ fun RecordingsScreen(
                         state = grid,
                         modifier = Modifier.fillMaxSize(),
                         // 合わせたカードは膨らんで光るので、上と横に切れないぶん空けておく
-                        contentPadding = PaddingValues(start = EDGE, end = GRID_END, top = GRID_TOP, bottom = (maxHeight - rowHeight - GRID_TOP).coerceAtLeast(48.dp)),
+                        contentPadding = PaddingValues(start = EDGE, end = GRID_END, top = GRID_TOP, bottom = 48.dp),
                         horizontalArrangement = Arrangement.spacedBy(GRID_GAP),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
@@ -423,12 +412,12 @@ private fun Badge(label: String, background: Color, color: Color) {
         style = MaterialTheme.typography.labelMedium,
         color = color,
         maxLines = 1,
-        modifier = Modifier.background(background, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
+        modifier = Modifier.background(background, TagShape).padding(horizontal = 8.dp, vertical = 2.dp),
     )
 }
 
 /**
- * 録画のカード。**絵を大きく** (16:9。Google TV の横長のカード) し、下に番組名だけ。局・日時・長さ・形は上の段に出す。
+ * 録画のカード。**絵を大きく** (16:9。Google TV の横長のカード。角 12dp) し、下に番組名を1行だけ (全部は上の段に)。局・日時・長さ・形は上の段に出す。
  * 絵の上に、録っている最中なら「● 録画中」、焼いている最中なら進み、下の縁に観た割合の帯。
  * 合わせると膨らみ、azure の縁と光 (`Focus`)。番組名も明るくする
  */
@@ -441,7 +430,7 @@ private fun RecordingCard(
     onLongClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
+    val shape = CardShape
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // 決定の長押しは繰り返しが来なくても押した長さで決める (`centerPresses`)。カードの onClick・onLongClick は手で触れたとき・読み上げ用
         Card(
@@ -473,8 +462,7 @@ private fun RecordingCard(
             recording.title,
             style = MaterialTheme.typography.titleSmall,
             color = if (focused) Palette.Text else Palette.TextMuted,
-            maxLines = 2,
-            minLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }
@@ -534,12 +522,11 @@ private val GRID_GAP = 24.dp
 /** 格子の上の端の溶かし。上半分は塗りつぶす (上に隠れた日の見出しの字の裾が覗かないように) */
 private val GRID_FADE = Brush.verticalGradient(0f to Palette.Background, 0.5f to Palette.Background, 1f to Color.Transparent)
 
-/** カードの絵の下 (間と番組名2行) の高さ。だいたいでよい */
-private val CARD_TITLE_HEIGHT = 56.dp
-
 /**
  * **合わせたカードの段を、格子の上の端に揃える** (Google TV の一覧と同じく、目の置き場を変えない)。
- * テレビの既定 (合わせたものを枠の 3 割の高さへ) では、上の段の番組名だけが絵から切れて覗いていた
+ * テレビの既定 (合わせたものを枠の 3 割の高さへ) では、上の段の番組名だけが絵から切れて覗いていた。
+ * 一覧の終わりはそれ以上送らない (下に余白を足さない) ので、一番下 (開いたときに合う、いちばん古い録画) では
+ * その上の段も見えている
  */
 @OptIn(ExperimentalFoundationApi::class)
 private class RowTop(private val top: Float) : BringIntoViewSpec {

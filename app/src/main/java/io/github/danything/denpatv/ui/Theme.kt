@@ -1,8 +1,12 @@
 package io.github.danything.denpatv.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -10,10 +14,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
+import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Glow
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.OutlinedButtonDefaults
+import androidx.tv.material3.Surface
+import androidx.tv.material3.Text
 import androidx.tv.material3.darkColorScheme
 
 /**
@@ -76,11 +84,18 @@ object Focus {
     val glow = Glow(elevationColor = Palette.AccentBright.copy(alpha = 0.45f), elevation = 12.dp)
 }
 
-/** 札の形。角を少し丸めた四角 (カードと同じ系統。丸い札はメニューの小さな札だけ) */
-private val ButtonShape = RoundedCornerShape(10.dp)
+/**
+ * 形。Android TV のデザインの指針 ([ボタン](https://developer.android.com/design/ui/tv/guides/components/buttons)) どおり、
+ * **文字・印の札は丸い札 (両端が半円)**、**幅いっぱいの札 (設定の行) と絵のカードは角 12dp の四角**。
+ * 押せない札 (ジャンル・形・音声などの情報) は角の小さな四角にして、押せる札と見分ける (`TagShape`)
+ */
+val PillShape = RoundedCornerShape(percent = 50)
+val CardShape = RoundedCornerShape(12.dp)
+val TagShape = RoundedCornerShape(4.dp)
 
 /**
- * 札。`primary` は主な操作 (azure で塗る)、そうでなければ枠だけ。**合わせると白く塗り、azure の縁と光** (`Focus`)。
+ * 札。`primary` は主な操作・決める操作 (azure で塗る。「続きから再生」「録画」)、そうでなければ枠だけ
+ * (並べる二の次の操作。「最初から」「閉じる」、戻せない「削除」も塗らない)。**合わせると白く塗り、azure の縁と光** (`Focus`)。
  * 入れ替えても合いが外れないよう、どちらも同じ部品 (OutlinedButton) の色だけ変える
  */
 @Composable
@@ -92,14 +107,14 @@ fun DenpaButton(
     contentPadding: PaddingValues = OutlinedButtonDefaults.ContentPadding,
     content: @Composable RowScope.() -> Unit,
 ) {
-    val shape = ButtonShape
+    val shape = PillShape
     OutlinedButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
         shape = OutlinedButtonDefaults.shape(shape),
         colors = OutlinedButtonDefaults.colors(
-            containerColor = if (primary) Palette.Accent else Palette.Surface.copy(alpha = 0.6f),
+            containerColor = if (primary) Palette.Accent else Color.Transparent,
             contentColor = if (primary) Palette.OnAccent else Palette.Text,
             focusedContainerColor = Color.White,
             focusedContentColor = Palette.Background,
@@ -116,3 +131,41 @@ fun DenpaButton(
         content = content,
     )
 }
+
+/**
+ * 幅いっぱいの札 (設定の行)。角 12dp の四角に、見出しと、その下に小さく今の様子 (`supporting`)。
+ * 合わせ方は札と同じ (白く塗り、azure の縁と光)。幅が広いので膨らみは小さく
+ */
+@Composable
+fun WideButton(
+    headline: String,
+    supporting: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = CardShape
+    Surface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = ClickableSurfaceDefaults.shape(shape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Palette.Surface,
+            contentColor = Palette.Text,
+            focusedContainerColor = Color.White,
+            focusedContentColor = Palette.Background,
+            pressedContainerColor = Palette.Text,
+            pressedContentColor = Palette.Background,
+        ),
+        border = ClickableSurfaceDefaults.border(focusedBorder = Focus.border(shape, 2f)),
+        glow = ClickableSurfaceDefaults.glow(focusedGlow = Focus.glow),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = WIDE_SCALE),
+    ) {
+        Column(Modifier.padding(horizontal = 24.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(headline, style = MaterialTheme.typography.titleMedium)
+            supporting?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = LocalContentColor.current.copy(alpha = 0.72f)) }
+        }
+    }
+}
+
+/** 幅いっぱいの札の膨らみ (幅が広いので、小さくても目に付く) */
+private const val WIDE_SCALE = 1.02f

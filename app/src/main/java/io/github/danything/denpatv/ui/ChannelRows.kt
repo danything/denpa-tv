@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -175,7 +174,7 @@ private val Keyline = object : BringIntoViewSpec {
  */
 @Composable
 private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(10.dp)
+    val shape = CardShape
     Surface(
         onClick = onClick,
         modifier = modifier.width(CARD_WIDTH).height(CARD_HEIGHT),
@@ -209,7 +208,7 @@ private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modi
                         "視聴中",
                         style = MaterialTheme.typography.labelSmall,
                         color = Palette.OnAccent,
-                        modifier = Modifier.background(Palette.Accent, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.background(Palette.Accent, TagShape).padding(horizontal = 6.dp, vertical = 1.dp),
                     )
                 }
             }
@@ -231,7 +230,7 @@ fun ChannelLogo(repo: Repository, service: Service, modifier: Modifier) {
     if (logo != null) {
         RemoteImage(logo, ContentScale.Fit, modifier, repo.token, placeholder = Color.Transparent)
     } else {
-        Box(modifier.background(Color(0x26FFFFFF), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+        Box(modifier.background(Color(0x26FFFFFF), TagShape), contentAlignment = Alignment.Center) {
             Text(service.type, style = MaterialTheme.typography.labelSmall, color = Palette.TextMuted, maxLines = 1)
         }
     }

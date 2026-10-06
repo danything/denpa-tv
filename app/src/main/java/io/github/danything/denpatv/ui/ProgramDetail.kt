@@ -183,7 +183,7 @@ private fun Header(facts: DetailFacts, token: String?) {
                 Box(
                     Modifier
                         .height(CHIP_HEIGHT)
-                        .background(if (badge) BADGE_COLOR else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
+                        .background(if (badge) BADGE_COLOR else MaterialTheme.colorScheme.surfaceVariant, TagShape)
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -318,7 +318,7 @@ private val BODY_PADDING = 16.dp
 private val CHIP_HEIGHT = 30.dp
 
 /** 録画中の印の赤 (一覧のカードの「● 録画中」と同じ) */
-private val BADGE_COLOR = Color(0xFFC62828)
+private val BADGE_COLOR = Palette.Recording
 
 /**
  * 詳しくの後ろにうすく敷く録画の絵。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (Android 12 から)、
