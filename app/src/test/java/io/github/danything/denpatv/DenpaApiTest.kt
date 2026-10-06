@@ -126,7 +126,7 @@ class DenpaApiTest {
 
     @Test
     fun 繋がるかを確かめる() = runTest {
-        denpa.enqueue("ok")
+        denpa.enqueue(HEALTH_OK)
         assertTrue(api.health(BaseUrl.normalize(denpa.url())!!))
         assertEquals("/api/health", denpa.requests.take().target)
         assertFalse(api.health(BaseUrl.normalize("http://127.0.0.1:1")!!))

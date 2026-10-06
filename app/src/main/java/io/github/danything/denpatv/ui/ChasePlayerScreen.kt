@@ -157,12 +157,12 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         lastSpeed = speed
     }
 
-    /** 最後に頼んだ画質 (画質が替わった頼みかを見分ける) */
-    val asked = remember { mutableStateOf<LiveQuality?>(null) }
-    LaunchedEffect(from, quality, attempt, baked.ready, baked.audio?.id) {
+    LaunchedEffect(from, quality, attempt, baked.ready, baked.audio?.id, codec.chosen) {
         if (!baked.ready) return@LaunchedEffect
-        // 画質が替わった頼みでだけ使う (ほかの頼み直し — 左右で動かした・繋ぎ直した — の位置を巻き戻さない)
-        switchedAt.value?.takeIf { it.second == quality && asked.value != quality }?.let { (at, _) ->
+        // 選んだ画質が覚えている画質に届くまでは頼まない (ライブと同じ)
+        if (codec.chosen != quality) return@LaunchedEffect
+        // 画質を替えた頼みでだけ使う。替えるたびに覚え直し、使ったら消すので、あとの頼み直し (左右・繋ぎ直し) の位置は巻き戻さない
+        switchedAt.value?.takeIf { it.second == quality }?.let { (at, _) ->
             switchedAt.value = null
             // 位置を替えると、この頼みをやり直す (そちらで頼む)
             if (at != from) {
@@ -178,7 +178,6 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
         player.prepare()
         player.playWhenReady = true
-        asked.value = quality
         codec.requested(quality)
     }
     LaunchedEffect(Unit) {

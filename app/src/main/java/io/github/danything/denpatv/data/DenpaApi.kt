@@ -17,19 +17,6 @@ import java.net.URI
  * **家の LAN からはトークン無しで通る** (denpa の TRUSTED_NETWORKS)。家の外の denpa (OIDC でログインする構成) では、
  * テレビを denpa に登録して受け取ったトークンを `Authorization: Bearer` で付ける (`token`、README の「繋ぐ」)
  */
-/**
- * `api/health` の返事が denpa らしいか。denpa は `{"ok":true,…}` を返す。**JSON のオブジェクトなら `ok` が true のものだけ**
- * (同じ機械の 3000 に居る Grafana などの `{"database":"ok"}` を選ばない)、HTML (NAS やルータの画面がどのパスにも返す) は違う。
- * それ以外の文字 (古い・偽の denpa の `ok`) は通す
- */
-fun looksLikeDenpaHealth(body: String): Boolean {
-    val text = body.removePrefix("\uFEFF").trimStart()
-    if (text.startsWith("<")) return false
-    if (!text.startsWith("{")) return true
-    val ok = runCatching { lenientJson.parseToJsonElement(text).jsonObject["ok"]?.jsonPrimitive?.booleanOrNull }.getOrNull()
-    return ok == true
-}
-
 class DenpaApi(private val token: () -> String? = { null }) {
     suspend fun health(base: URI): Boolean = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/health") ?: return@withContext false
@@ -201,4 +188,13 @@ sealed interface TokenResult {
     data class Granted(val token: String) : TokenResult
     /** `authorization_pending` / `slow_down` / `access_denied` / `expired_token` / `invalid_grant` など */
     data class Error(val error: String) : TokenResult
+}
+
+/**
+ * `api/health` の返事が denpa らしいか。denpa は初めから `{"ok":true,…}` を返す。**JSON のオブジェクトで `ok` が true のものだけ**
+ * (同じ機械の 80・3000 に居るほかのもの — NAS やルータの画面の HTML、Grafana の `{"database":"ok"}`、素の `OK` — を選ばない)
+ */
+fun looksLikeDenpaHealth(body: String): Boolean {
+    val ok = runCatching { lenientJson.parseToJsonElement(body.removePrefix("\uFEFF")).jsonObject["ok"]?.jsonPrimitive?.booleanOrNull }
+    return ok.getOrNull() == true
 }

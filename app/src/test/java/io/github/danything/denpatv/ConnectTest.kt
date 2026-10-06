@@ -29,7 +29,7 @@ class ConnectTest {
 
     @Test
     fun 家の_LAN_からトークン無しで入れればそのまま使う() = runTest {
-        denpa.enqueue("ok")
+        denpa.enqueue(HEALTH_OK)
         denpa.enqueue("[]")
         val step = connect(DenpaApi(), denpa.url("/denpa"), "tv")
         assertEquals(ConnectStep.Open(URI(denpa.url("/denpa/"))), step)
@@ -41,7 +41,7 @@ class ConnectTest {
     /** 前の候補 (ポートを省いた 80 にあたる) に繋がらなければ、次の候補 (3000 にあたる) を使う */
     @Test
     fun 前の候補に繋がらなければ次の候補を使う() = runTest {
-        denpa.enqueue("ok")
+        denpa.enqueue(HEALTH_OK)
         denpa.enqueue("[]")
         val closed = URI("http://127.0.0.1:${closedPort()}/denpa/")
         val step = connect(DenpaApi(), "http://http://127.0.0.1/denpa", "tv") { listOf(closed, URI(denpa.url("/denpa/"))) }
@@ -75,7 +75,8 @@ class ConnectTest {
     @Test
     fun denpa_らしい_health_の返事() {
         assertTrue(looksLikeDenpaHealth("{\"ok\":true,\"version\":\"1.40.0\"}"))
-        assertTrue(looksLikeDenpaHealth("ok"))
+        assertFalse(looksLikeDenpaHealth("ok"))
+        assertFalse(looksLikeDenpaHealth("[]"))
         assertFalse(looksLikeDenpaHealth("{\"database\":\"ok\"}"))
         assertFalse(looksLikeDenpaHealth("\uFEFF<!doctype html>"))
     }
@@ -89,7 +90,7 @@ class ConnectTest {
     @Test
     fun 断られたら登録をはじめ_登録の画面の_URL_は接頭辞の下に解く() = runTest {
         for (refused in listOf(401, 403)) {
-            denpa.enqueue("ok")
+            denpa.enqueue(HEALTH_OK)
             denpa.enqueue("""{"error":"unauthorized"}""", code = refused)
             denpa.enqueue(code)
             val step = connect(DenpaApi(), denpa.url("/denpa"), "denpa TV (emu)") as ConnectStep.NeedsLogin
@@ -104,7 +105,7 @@ class ConnectTest {
 
     @Test
     fun 登録待ちが多すぎるときと_denpa_でないとき() = runTest {
-        denpa.enqueue("ok")
+        denpa.enqueue(HEALTH_OK)
         denpa.enqueue("", code = 401)
         denpa.enqueue("""{"error":"too_many_pending"}""", code = 429)
         assertTrue((connect(DenpaApi(), denpa.url(), "tv") as ConnectStep.Failed).message.contains("多すぎ"))

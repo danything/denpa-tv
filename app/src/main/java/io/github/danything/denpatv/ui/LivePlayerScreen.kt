@@ -152,9 +152,11 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
      * 画質だけを替えたときも出さない (切り替え中・切り替えたは `codec` が言う)
      */
     var shown by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(playing?.id, quality, baked.ready, baked.audio?.id, returns) {
+    LaunchedEffect(playing?.id, quality, baked.ready, baked.audio?.id, returns, codec.chosen) {
         val service = playing ?: return@LaunchedEffect
         if (!baked.ready || background) return@LaunchedEffect
+        // 選んだ画質が覚えている画質に届くまでは頼まない (届いたら頼む。選び直しが1こまにまとまって画質が変わらなくても、ここで頼み直す)
+        if (codec.chosen != quality) return@LaunchedEffect
         val url = repo.url("${service.live}?codec=${quality.codec}${audioQuery(baked.audio)}") ?: return@LaunchedEffect
         recovery.requested()
         player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
