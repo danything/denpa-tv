@@ -32,7 +32,7 @@ fun liveCenter(press: CenterPress.Action): LiveCommand = when (press) {
     CenterPress.Action.Long -> LiveCommand.Info
 }
 
-enum class RecordingCommand { Back, Forward, SeekBar, Actions, NextChapter, PreviousChapter, PlayPause, NextSpeed, Details }
+enum class RecordingCommand { Back, Forward, SeekBar, Actions, NextChapter, PreviousChapter, PlayPause, NextSpeed }
 
 fun recordingCommand(keyCode: Int): RecordingCommand? = when (keyCode) {
     KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> RecordingCommand.Back
@@ -50,9 +50,11 @@ fun recordingCommand(keyCode: Int): RecordingCommand? = when (keyCode) {
  * 録画・追っかけの決定。短押しは止める・動かす、**長押しは番組の詳しいところ** (録画の一覧のカードの長押しと同じもの)。
  * 操作の列は上キーと Menu で開く (長押しで開いていた頃は、上キーと同じことをするだけだった)。長押しのあとの離しは CenterPress が捨てる
  */
-fun recordingCenter(press: CenterPress.Action): RecordingCommand = when (press) {
-    CenterPress.Action.Short -> RecordingCommand.PlayPause
-    CenterPress.Action.Long -> RecordingCommand.Details
+enum class RecordingCenter { PlayPause, Details }
+
+fun recordingCenter(press: CenterPress.Action): RecordingCenter = when (press) {
+    CenterPress.Action.Short -> RecordingCenter.PlayPause
+    CenterPress.Action.Long -> RecordingCenter.Details
 }
 
 /**

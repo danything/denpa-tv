@@ -31,6 +31,7 @@ import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.chaseEnd
 import io.github.danything.denpatv.data.nextSpeed
+import io.github.danything.denpatv.data.RecordingCenter
 import io.github.danything.denpatv.data.recordingCenter
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.resyncAfterSpeedChange
@@ -86,7 +87,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     val scope = rememberCoroutineScope()
     /** 焼くのを断られた。頼み直すまで、ふつうのエラーの代わりにそう出す */
     var refused by remember { mutableStateOf(false) }
-    val codec = rememberCodecSwitching(repo, player, quality, if (refused) REFUSED else error, recovery.active, flash)
+    val codec = rememberCodecSwitching(repo, player, quality, if (refused) "denpa が焼くのを断りました" else error, flash)
     // 一覧の「録画中」は古くなる (録り終える・焼き上がる)。戻ったら読み直してもらう
     DisposableEffect(Unit) { onDispose { repo.recordingsStale = true } }
 
@@ -115,6 +116,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     var bar by remember { mutableStateOf<Bar?>(null) }
     /** 番組の詳しいところを開いているか (決定の長押し) */
     var details by remember { mutableStateOf(false) }
+    /** 詳しくから消した (閉じるときに観た位置を預けない。「続きを視聴」に戻さない) */
+    var deleted by remember { mutableStateOf(false) }
     /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
     var leaving by remember { mutableStateOf(false) }
     // 戻るを続けて押しても、1つだけ戻る (2回目は受けない。録画の再生と同じ)
@@ -147,8 +150,21 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         lastSpeed = speed
     }
 
+    /**
+     * 画質を選んだときの位置。**画質が替わってから**、ここから頼み直す — 押したときに `from` を替えると、新しい画質が届く前に
+     * 古い画質で一度頼み直してしまう (denpa に焼き直しを2回させる)。MPEG-2 との行き来ではプレーヤーごと作り直すので、押したときに覚えておく
+     */
+    val switchedAt = remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(from, quality, attempt, baked.ready, baked.audio?.id) {
         if (!baked.ready) return@LaunchedEffect
+        switchedAt.value?.let { at ->
+            switchedAt.value = null
+            // 位置を替えると、この頼みをやり直す (そちらで頼む)
+            if (at != from) {
+                from = at
+                return@LaunchedEffect
+            }
+        }
         val url = repo.url(Chase.url(chase, quality.codec, from, baked.audio)) ?: return@LaunchedEffect
         caughtUp = false
         started = false
@@ -212,7 +228,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         onDispose {
             // 裏に回ったまま閉じたときは、止めた位置 (止めたあとのプレーヤーの位置には頼らない)
             val at = stoppedAt ?: position()
-            if (!ended && at > 0) save(at, stopped = true)
+            if (!ended && !deleted && at > 0) save(at, stopped = true)
         }
     }
     /*
@@ -353,7 +369,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                     "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
                         // 選んだらすぐ入れて、居た場所から頼み直す (映るまでは前の絵のまま「… に切り替え中」)
                         Control(choice.label, on = choice == codec.chosen) {
-                            codec.choose(choice) { from = position() }
+                            codec.choose(choice) { switchedAt.value = position() }
                         }
                     },
                     "" to tracks.controls() + baked.controls(),
@@ -381,45 +397,30 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
             }
             // 追っかけの流れにはチャプターが無い
             RecordingCommand.NextChapter, RecordingCommand.PreviousChapter -> { flash("チャプターがありません"); true }
-            RecordingCommand.Details -> { details = true; true }
             null -> false
         }
     }, onCenter = { press ->
         when (recordingCenter(press)) {
-            RecordingCommand.Details -> details = true
-            else -> togglePause()
+            RecordingCenter.PlayPause -> togglePause()
+            RecordingCenter.Details -> details = true
         }
     })
 
-    /** 消して一覧へ戻る (録画の再生と同じ。録っている間は denpa が断る) */
+    /** 消して一覧へ戻る (録画の再生と同じ。録っている間は denpa が断る)。消したら観た位置は預けない */
     fun deleteNow() {
         scope.launch {
             val done = try {
-                repo.api.deleteRecording(repo.base, recording.id)
+                deleteFromPlayer(repo, recording.id)
             } catch (_: Unauthorized) {
                 return@launch onUnauthorized()
             }
-            if (!done) return@launch flash("消せませんでした (録画中は消せません)")
-            repo.focusOnReturn = repo.forgetRecording(recording.id)
+            if (!done) return@launch flash(NOT_DELETED)
+            deleted = true
             leave()
         }
     }
 
-    /*
-     * **決定の長押しで、番組の詳しいところ** (録画の一覧のカードの長押しと同じもの)。映像は止めも動かしもしない。
-     * 戻る・「閉じる」で閉じて映像に戻る (合いは PlayerFrame が映像に取り戻す)
-     */
-    if (details) {
-        RecordingDetailDialog(
-            repo,
-            recording,
-            onPlay = { details = false },
-            onDelete = { details = false; deleteNow() },
-            onDismiss = { details = false },
-            onUnauthorized = onUnauthorized,
-            playLabel = "閉じる",
-        )
-    }
+    if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }
 
 private const val REFUSED = "denpa が焼くのを断りました (混んでいるかも)。少し待つか、画質を替えてください"

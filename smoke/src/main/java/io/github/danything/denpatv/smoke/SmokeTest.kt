@@ -1,5 +1,6 @@
 package io.github.danything.denpatv.smoke
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Instrumentation
 import android.content.Intent
 import android.graphics.Bitmap
@@ -222,11 +223,15 @@ class SmokeTest {
         assertTrue("下で開いたシークバーで上を押しても帯が閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { !barOpen() })
         assertTrue("帯を閉じたら止めた位置の帯が出ていません: ${texts()}", paused())
 
+        // 詳しくはダイアログ (別の窓)。古い Android (API 24・28) では、閉じたあと rootInActiveWindow が空のまま返るので、アプリの窓を全部見る
         longPress(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertTrue("決定の長押しで詳しくが開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" in texts() && FakeDenpa.RECORDING_DESCRIPTION in texts() })
+        assertTrue("決定の長押しで詳しくが開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().let { "閉じる" in it && FakeDenpa.RECORDING_DESCRIPTION in it } })
         press(KeyEvent.KEYCODE_BACK)
-        assertTrue("戻るで詳しくが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in texts() })
-        assertTrue("詳しくを閉じたら止めた位置の帯が出ていません (動き出した・画面ごと戻った?): ${texts()}", poll(TEXT_TIMEOUT_MS) { paused() })
+        assertTrue("戻るで詳しくが閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in windowTexts() })
+        assertTrue(
+            "詳しくを閉じたら止めた位置の帯が出ていません (動き出した・画面ごと戻った?): ${windowTexts()}",
+            poll(TEXT_TIMEOUT_MS) { windowTexts().any { it.startsWith("一時停止  ") } },
+        )
     }
 
     /** 録画を止めている (止めた位置の帯が出ている) */
@@ -472,6 +477,23 @@ class SmokeTest {
         }
 
         private fun node(match: (AccessibilityNodeInfo) -> Boolean) = nodes().firstOrNull(match)
+
+        /** アプリの窓 (ダイアログも) すべての文字 */
+        private fun windowTexts(): List<String> {
+            val automation = instrumentation.uiAutomation
+            val info = automation.serviceInfo
+            if (info.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS == 0) {
+                info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                automation.serviceInfo = info
+            }
+            val out = mutableListOf<String>()
+            fun walk(node: AccessibilityNodeInfo) {
+                node.text?.let { out += it.toString() }
+                for (i in 0 until node.childCount) node.getChild(i)?.let(::walk)
+            }
+            automation.windows.mapNotNull { it.root }.filter { it.packageName?.toString() == APP }.forEach(::walk)
+            return out
+        }
 
         /** いちばん前のアプリの窓の文字 */
         private fun texts(): List<String> = nodes().mapNotNull { it.text?.toString() }

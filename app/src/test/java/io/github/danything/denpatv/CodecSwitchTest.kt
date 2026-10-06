@@ -26,8 +26,10 @@ class CodecSwitchTest {
         assertNull(CodecSwitch(LiveQuality.H264).choose(LiveQuality.H264))
         val chosen = CodecSwitch(LiveQuality.H264).choose(LiveQuality.Av1)!!
         assertNull(chosen.choose(LiveQuality.Av1))
-        // 切り替え中に元のものを選び直せば、それへの切り替え
-        assertEquals(LiveQuality.H264, chosen.choose(LiveQuality.H264)?.pending)
+        // 切り替え中に映っているものを選び直せば、切り替えをやめる
+        assertEquals(CodecSwitch(LiveQuality.H264), chosen.choose(LiveQuality.H264))
+        // 切り替え中に別のものを選べば、そちらへ
+        assertEquals(LiveQuality.Raw, chosen.choose(LiveQuality.Raw)?.pending)
     }
 
     @Test

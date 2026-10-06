@@ -118,6 +118,33 @@ fun RecordingDetailDialog(
     }
 }
 
+/**
+ * 再生の画面 (録画・追っかけ) の決定の長押しで開く詳しく。一覧のものと同じで、いちばん上の札が「閉じる」(映像に戻るだけ)。
+ * 映像は止めも動かしもしない。戻る・「閉じる」で閉じて映像に戻る (合いは PlayerFrame が取り戻す)
+ */
+@Composable
+fun PlayerDetailDialog(repo: Repository, recording: Recording, onDelete: () -> Unit, onClose: () -> Unit, onUnauthorized: () -> Unit) {
+    RecordingDetailDialog(
+        repo,
+        recording,
+        onPlay = onClose,
+        onDelete = { onClose(); onDelete() },
+        onDismiss = onClose,
+        onUnauthorized = onUnauthorized,
+        playLabel = "閉じる",
+    )
+}
+
+/** 再生の画面から録画を消す。消せたら一覧から抜き、戻ったときに隣の録画に合うようにして true。録画中などで断られたら false */
+suspend fun deleteFromPlayer(repo: Repository, id: Long): Boolean {
+    if (!repo.api.deleteRecording(repo.base, id)) return false
+    repo.focusOnReturn = repo.forgetRecording(id)
+    return true
+}
+
+/** 再生の画面で消せなかったときの1行 */
+const val NOT_DELETED = "消せませんでした (録画中は消せません)"
+
 /** 説明の1段落。合わせると (下キーで) 読み進められるよう focusable にしてある */
 @Composable
 private fun Paragraph(heading: String?, body: String) {

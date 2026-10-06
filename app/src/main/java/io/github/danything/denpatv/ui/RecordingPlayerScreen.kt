@@ -23,6 +23,7 @@ import androidx.media3.common.util.UnstableApi
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.ChapterMark
+import io.github.danything.denpatv.data.RecordingCenter
 import io.github.danything.denpatv.data.recordingCenter
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
@@ -261,13 +262,12 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     fun deleteNow() {
         scope.launch {
             val done = try {
-                repo.api.deleteRecording(repo.base, recording.id)
+                deleteFromPlayer(repo, recording.id)
             } catch (_: Unauthorized) {
                 return@launch onUnauthorized()
             }
-            if (!done) return@launch flash("消せませんでした (録画中は消せません)")
+            if (!done) return@launch flash(NOT_DELETED)
             deleted = true
-            repo.focusOnReturn = repo.forgetRecording(recording.id)
             leave()
         }
     }
@@ -376,31 +376,16 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
                 flash("速さ ${speedLabel(next)}")
                 true
             }
-            RecordingCommand.Details -> { details = true; true }
             null -> false
         }
     }, onCenter = { press ->
         when (recordingCenter(press)) {
-            RecordingCommand.Details -> details = true
-            else -> togglePause()
+            RecordingCenter.PlayPause -> togglePause()
+            RecordingCenter.Details -> details = true
         }
     })
 
-    /*
-     * **決定の長押しで、番組の詳しいところ** (録画の一覧のカードの長押しと同じもの)。映像は止めも動かしもしない。
-     * 戻る・「閉じる」で閉じて映像に戻る (合いは PlayerFrame が映像に取り戻す)
-     */
-    if (details) {
-        RecordingDetailDialog(
-            repo,
-            recording,
-            onPlay = { details = false },
-            onDelete = { details = false; deleteNow() },
-            onDismiss = { details = false },
-            onUnauthorized = onUnauthorized,
-            playLabel = "閉じる",
-        )
-    }
+    if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }
 
 /** 録画・追っかけの帯をどこに合わせて開いたか。下キーならシークバー、上キー・Menu なら操作の列 */

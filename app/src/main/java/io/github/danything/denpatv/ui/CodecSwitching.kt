@@ -48,7 +48,8 @@ class CodecSwitching internal constructor(
         before()
         state.value = switched
         note.value = null
-        say()("${next.label} に切り替え中")
+        // 切り替え中に映っている画質を選び直したら、切り替えをやめるだけ (見出しは元の画質に戻る)
+        if (switched.pending != null) say()("${next.label} に切り替え中")
         scope.launch { repo.app.settings.setLiveQuality(next) }
     }
 
@@ -59,10 +60,9 @@ class CodecSwitching internal constructor(
 }
 
 /**
- * `failure` は画面に出しているエラー (出ていなければ null)、`retrying` は繋ぎ直しの最中か (`Recovery.active`)。
- * **切り替え中にどちらかが起きたら、切り替えられなかったことにして元の画質に戻す** — 新しい画質の流れが一度も映らないまま
- * 繋ぎ直し続けると、前の絵が暗くなって回り続けるだけになる (denpa が焼くのを断った 503 など)。
- * 頼んでから `SWITCH_GIVE_UP_MS` たっても映らないときも同じ
+ * `failure` は画面に出しているエラー (出ていなければ null)。**新しい画質の流れを頼んだあとにエラーが出たら、切り替えられなかったことにして
+ * 元の画質に戻す。** 選んでから `SWITCH_GIVE_UP_MS` たっても映らないときも同じ (denpa が焼くのを断り続ける 503 などは、繋ぎ直しが
+ * 諦めずに続くので、前の絵が暗くなって回り続けるだけになる)。繋ぎ直しの1回目 (空の返事・一瞬の切れ) では諦めない
  */
 @Composable
 fun rememberCodecSwitching(
@@ -70,13 +70,12 @@ fun rememberCodecSwitching(
     player: ExoPlayer,
     quality: LiveQuality,
     failure: String?,
-    retrying: Boolean,
     flash: (String) -> Unit,
 ): CodecSwitching {
     val state = remember { mutableStateOf(CodecSwitch(quality)) }
     val note = remember { mutableStateOf<String?>(null) }
     val flashing by rememberUpdatedState(flash)
-    /** 済んだ・切り替えられなかった: 下の1行と見出し (`label`) の両方に */
+    /** 済んだ・切り替えられなかった: 下の1行と見出し (`heading`) の両方に */
     val tell = { text: String ->
         note.value = text
         flashing(text)
@@ -86,14 +85,18 @@ fun rememberCodecSwitching(
         delay(NOTE_MS)
         note.value = null
     }
-    val scope = rememberCoroutineScope()
     // MPEG-2 との行き来ではプレーヤーごと作り直すので、プレーヤーごとに見る
     DisposableEffect(player) {
+        fun pictured() {
+            val (next, done) = state.value.pictured()
+            state.value = next
+            done?.let { tell("${it.label} にしました") }
+        }
         val listener = object : Player.Listener {
-            override fun onRenderedFirstFrame() {
-                val (next, done) = state.value.pictured()
-                state.value = next
-                done?.let { tell("${it.label} にしました") }
+            override fun onRenderedFirstFrame() = pictured()
+            // 絵の無い局 (ラジオ) では最初の絵の知らせが来ないので、流れはじめたことでも済ませる (`Recovery.onPictured` と同じ)
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) pictured()
             }
         }
         player.addListener(listener)
@@ -107,16 +110,17 @@ fun rememberCodecSwitching(
         // 元の画質で頼み直す (覚えている画質も戻す)
         repo.app.settings.setLiveQuality(next.shown)
     }
-    LaunchedEffect(failure, retrying) {
-        val reason = failure?.removePrefix(PLAYBACK_ERROR_PREFIX) ?: (if (retrying) "映像が届きません" else null) ?: return@LaunchedEffect
-        if (state.value.awaiting) giveUp(reason)
+    LaunchedEffect(failure) {
+        val reason = failure ?: return@LaunchedEffect
+        if (state.value.awaiting) giveUp(reason.removePrefix(PLAYBACK_ERROR_PREFIX))
     }
-    val waiting = state.value.pending?.takeIf { state.value.awaiting }
-    LaunchedEffect(waiting) {
-        waiting ?: return@LaunchedEffect
+    val pending = state.value.pending
+    LaunchedEffect(pending) {
+        pending ?: return@LaunchedEffect
         delay(SWITCH_GIVE_UP_MS)
-        giveUp("${SWITCH_GIVE_UP_MS / 1000} 秒待っても映りません")
+        giveUp("映像が届きません")
     }
+    val scope = rememberCoroutineScope()
     return remember(repo) { CodecSwitching(state, note, scope, repo) { flashing } }
 }
 
@@ -124,4 +128,4 @@ fun rememberCodecSwitching(
 private const val NOTE_MS = 4_000L
 
 /** 切り替えを諦めるまで (ミリ秒)。denpa が焼きはじめるのを待つ分 (ふつうは数秒) より十分に長く */
-private const val SWITCH_GIVE_UP_MS = 20_000L
+private const val SWITCH_GIVE_UP_MS = 15_000L

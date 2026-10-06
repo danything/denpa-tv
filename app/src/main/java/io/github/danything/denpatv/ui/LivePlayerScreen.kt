@@ -131,7 +131,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         onChange = flash,
     )
     CatchUp(player, buffering)
-    val codec = rememberCodecSwitching(repo, player, quality, error, recovery.active, flash)
+    val codec = rememberCodecSwitching(repo, player, quality, error, flash)
 
     LaunchedEffect(Unit) {
         if (services.isEmpty() || repo.servicesStale) {

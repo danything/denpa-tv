@@ -16,9 +16,12 @@ data class CodecSwitch(
     /** 見出しに出す画質。切り替え中ならそう言う */
     val label: String get() = pending?.let { "${it.label} に切り替え中" } ?: shown.label
 
-    /** 選んだ。同じものを選び直しただけなら null (何もしない) */
-    fun choose(next: LiveQuality): CodecSwitch? =
-        if (next == (pending ?: shown)) null else copy(pending = next, awaiting = false)
+    /** 選んだ。同じものを選び直しただけなら null (何もしない)。切り替え中に映っている画質を選び直したら、切り替えをやめる */
+    fun choose(next: LiveQuality): CodecSwitch? = when (next) {
+        pending ?: shown -> null
+        shown -> CodecSwitch(shown)
+        else -> copy(pending = next, awaiting = false)
+    }
 
     /** 流れを頼んだ。切り替え中の画質なら、次の絵を待つ。切り替え中でなければ、それが映っている画質 */
     fun requested(quality: LiveQuality): CodecSwitch = when {
