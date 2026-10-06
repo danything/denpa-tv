@@ -120,11 +120,14 @@ fun cueSpan(cues: List<Cue>, width: Int, height: Int): Pair<Float, Float>? {
 private fun cueSpan(cue: Cue, width: Float, height: Float): Pair<Float, Float> {
     val bitmap = cue.bitmap
     // 文字の1行の高さ。大きさの指定があればそれ (SubtitleView は既定で入っている大きさも使う)、無ければ既定の大きさ
-    val textSize = when (cue.textSizeType) {
+    val fallback = height * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
+    val given = when (cue.textSizeType) {
         Cue.TEXT_SIZE_TYPE_ABSOLUTE -> cue.textSize
         Cue.TEXT_SIZE_TYPE_FRACTIONAL, Cue.TEXT_SIZE_TYPE_FRACTIONAL_IGNORE_PADDING -> cue.textSize * height
-        else -> height * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
-    }.takeIf { it > 0f }.let { it ?: (height * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION) } * relativeSize(cue.text)
+        else -> fallback
+    }
+    // 字幕の中で字を大きくしていれば、そのぶんも
+    val textSize = (if (given > 0f) given else fallback) * relativeSize(cue.text)
     val row = textSize * LINE_SPACING
     val tall = when {
         cue.bitmapHeight != Cue.DIMEN_UNSET -> height * cue.bitmapHeight
