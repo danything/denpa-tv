@@ -21,19 +21,21 @@ adb logcat -c || true
 # logcat は走らせている間ずっと書き出す (途中で止められても、そこまでの記録が残る)
 adb logcat -v threadtime > "$out/logcat.txt" 2>&1 &
 logcat=$!
-# CI (`SMOKE_STOP_EMULATOR=1`) では、終わったらエミュレータもここで止める。API 28 の像は `adb emu kill` を受けても
-# 閉じきらず (「removeAll」で止まる)、android-emulator-runner がその終わりを待ったまま手順の上限まで固まった。
-# 頼んで 30 秒待ち、閉じなければ qemu を殺す (スナップショットは保存しない手順なので、殺しても困らない)
+# CI (`SMOKE_STOP_EMULATOR=1`) では、終わったらエミュレータもここで止める。API 28 の像では、エミュレータが閉じても
+# その子の crashpad_handler が出力を握ったまま残り、android-emulator-runner がその終わりを待ったまま手順の上限まで固まった
+# (ほかの API では一緒に閉じる)。頼んで 30 秒待ち、閉じなければ qemu を殺し、残った crashpad_handler も殺す
+# (スナップショットは保存しない手順なので、殺しても困らない)
 stop_emulator() {
     [ "${SMOKE_STOP_EMULATOR:-}" = 1 ] || return 0
     timeout 10 adb emu kill || true
     for _ in $(seq 1 15); do
-        pgrep -f qemu-system > /dev/null || return 0
+        pgrep -f qemu-system > /dev/null || break
         sleep 2
     done
-    echo "エミュレータが閉じないので止めます"
-    # 子の crashpad_handler も出力を握ったまま残ると、やはり終わりを待たれる
-    pkill -9 -f qemu-system || true
+    if pgrep -f qemu-system > /dev/null; then
+        echo "エミュレータが閉じないので止めます"
+        pkill -9 -f qemu-system || true
+    fi
     pkill -9 -f emulator/crashpad_handler || true
 }
 trap 'kill $logcat 2>/dev/null || true; stop_emulator' EXIT
