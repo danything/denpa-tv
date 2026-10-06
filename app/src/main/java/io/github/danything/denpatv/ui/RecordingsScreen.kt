@@ -1,6 +1,5 @@
 package io.github.danything.denpatv.ui
 
-import android.os.Build
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -28,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -40,24 +40,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import io.github.danything.denpatv.data.DenpaEvent
+import io.github.danything.denpatv.data.Images
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.codecLabels
@@ -67,10 +65,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 録画の一覧。**数が多いので格子にして、放送日ごとに見出しを挟む** (新しい順)。
@@ -197,37 +197,18 @@ fun RecordingsScreen(
     }
     if (recordings.isEmpty()) return Centered("観られる録画はまだありません")
 
-    // 上の大きな絵と見出しは、合わせている録画 (メニューや詳しくに合いがあるときは、最後に合わせていた録画)
-    val shown = recordings.firstOrNull { it.id == (focusedCard ?: lastFocused) } ?: recordings.last()
-    /*
-     * **背景の絵と説明は、合いが止まってから替える** (`HERO_SETTLE_MS`)。続けて送っている間に、通り過ぎる録画の絵を読んで
-     * 敷き直したり説明を取りに行ったりしない (力の弱いテレビで送りが重くならないように)。番組名などの文字はすぐ替える
-     */
-    var settled by remember { mutableLongStateOf(shown.id) }
-    LaunchedEffect(shown.id) {
-        if (settled != shown.id) delay(HERO_SETTLE_MS)
-        settled = shown.id
-    }
-    val backdrop = recordings.firstOrNull { it.id == settled }
-    /** 説明の頭の1行 (録画ごとに、取れるまで。説明の無い録画は空) */
-    val descriptions = remember { mutableStateMapOf<Long, String>() }
-    LaunchedEffect(settled) {
-        val id = settled
-        if (id in descriptions) return@LaunchedEffect
-        val detail = try {
-            repo.api.recordingDetail(repo.base, id)
-        } catch (_: Unauthorized) {
-            return@LaunchedEffect onUnauthorized()
-        }
-        // 取れなかったら覚えない (次にこの録画に止まったときに取り直す)
-        detail?.let { descriptions[id] = it.description.lineSequence().firstOrNull { line -> line.isNotBlank() }?.trim().orEmpty() }
-    }
+    /** カード1枚の大きさ (px)。隣の録画のポスターを先に読むときの大きさ。組むたびに書くだけで、画面は読まない */
+    val cardSize = remember { IntArray(2) }
 
     val groups = recordings.groupBy { DAY.format(Date(it.startAt)) }
     Box(modifier.fillMaxSize().background(Palette.Background)) {
-        Backdrop(repo.url(backdrop?.poster), repo.token, Modifier.align(Alignment.TopEnd).fillMaxWidth(BACKDROP_WIDTH).height(BACKDROP_HEIGHT))
+        /*
+         * 上の段 (背景の絵と見出し) だけが、合わせている録画を読む (`{ focusedCard ?: lastFocused }` を渡して中で読む)。
+         * 合いが動いても組み直すのは上の段だけで、一覧 (この関数と格子) は組み直さない
+         */
+        HeroArea(repo, recordings, { focusedCard ?: lastFocused }, cardSize, onUnauthorized)
         Column(Modifier.fillMaxSize()) {
-            Hero(repo, shown, descriptions[shown.id].orEmpty())
+            Spacer(Modifier.height(HERO_HEIGHT))
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 val density = LocalDensity.current
                 val rowTop = remember(density) { RowTop(with(density) { GRID_TOP.toPx() }) }
@@ -251,7 +232,10 @@ fun RecordingsScreen(
                                     RecordingCard(
                                         repo,
                                         recording,
-                                        modifier = Modifier.focusRequester(requester).onFocusChanged {
+                                        modifier = Modifier.focusRequester(requester).onSizeChanged {
+                                            cardSize[0] = it.width
+                                            cardSize[1] = it.height
+                                        }.onFocusChanged {
                                             if (it.isFocused) {
                                                 lastFocused = recording.id
                                                 focusedCard = recording.id
@@ -315,6 +299,54 @@ fun RecordingsScreen(
 }
 
 /**
+ * 上の段: 背景の絵と見出し。`shownId` (合わせている録画、無ければ最後に合わせていた録画) を**ここだけで**読む。
+ *
+ * - **背景の絵と説明は、合いが止まってから替える** (`HERO_SETTLE_MS`)。続けて送っている間に、通り過ぎる録画の絵を読んで
+ *   敷き直したり説明を取りに行ったりしない。番組名などの文字はすぐ替える
+ * - 止まったら、前後の録画 (`PREFETCH` 件) のポスターを先に読んでおく (送った先のカードがすぐ絵になる)
+ */
+@Composable
+private fun HeroArea(repo: Repository, recordings: List<Recording>, shownId: () -> Long?, cardSize: IntArray, onUnauthorized: () -> Unit) {
+    val shown = recordings.firstOrNull { it.id == shownId() } ?: recordings.last()
+    var settled by remember { mutableLongStateOf(shown.id) }
+    LaunchedEffect(shown.id) {
+        if (settled != shown.id) delay(HERO_SETTLE_MS)
+        settled = shown.id
+    }
+    /** 説明の頭の1行 (録画ごとに、取れるまで。説明の無い録画は空) */
+    val descriptions = remember { mutableStateMapOf<Long, String>() }
+    LaunchedEffect(settled) {
+        val id = settled
+        prefetch(repo, recordings, id, cardSize[0], cardSize[1])
+        if (id in descriptions) return@LaunchedEffect
+        val detail = try {
+            repo.api.recordingDetail(repo.base, id)
+        } catch (_: Unauthorized) {
+            return@LaunchedEffect onUnauthorized()
+        }
+        // 取れなかったら覚えない (次にこの録画に止まったときに取り直す)
+        detail?.let { descriptions[id] = it.description.lineSequence().firstOrNull { line -> line.isNotBlank() }?.trim().orEmpty() }
+    }
+    Box(Modifier.fillMaxWidth()) {
+        val backdrop = recordings.firstOrNull { it.id == settled }
+        Backdrop(repo.url(backdrop?.poster), repo.token, Modifier.align(Alignment.TopEnd).fillMaxWidth(BACKDROP_WIDTH).height(BACKDROP_HEIGHT))
+        Hero(repo, shown, descriptions[shown.id].orEmpty())
+    }
+}
+
+/** 止まった録画の前後 `PREFETCH` 件のポスターを、カードの大きさで先に読む (覚えているものは読まない)。IO の上で */
+private suspend fun prefetch(repo: Repository, recordings: List<Recording>, id: Long, width: Int, height: Int) {
+    if (width <= 0 || height <= 0) return
+    val at = recordings.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: return
+    val near = recordings.subList((at - PREFETCH).coerceAtLeast(0), (at + PREFETCH + 1).coerceAtMost(recordings.size))
+    withContext(Dispatchers.IO) {
+        near.mapNotNull { repo.url(it.poster) }.forEach { url ->
+            if (Images.cached(url, width, height, opaque = true) == null) Images.load(url, width, height, repo.token, opaque = true)
+        }
+    }
+}
+
+/**
  * 一覧の上の見出し (Google TV の「没入型の一覧」の上の段)。**合わせている録画を大きく**: 番組名・局と放送日時と長さ・
  * 札 (録画中・エンコード中・観た位置・形)・説明の頭の1行。
  * いちばん上の1行は画面の名前と手引き、新しい版の知らせ (一覧の頭の段から上キーで合う)。
@@ -354,7 +386,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (recording.recording) Badge(RECORDING_BADGE, Palette.Recording, Color.White)
-            repo.encoding[recording.id]?.let { Badge("エンコード中 ${(it * 100).toInt()}%", Palette.Accent, Palette.OnAccent) }
+            encodingOf(repo, recording.id)?.let { Badge("エンコード中 ${(it * 100).toInt()}%", Palette.Accent, Palette.OnAccent) }
             recording.watched?.let { part ->
                 Box(Modifier.width(120.dp).height(4.dp).background(Color(0x55FFFFFF), RoundedCornerShape(2.dp))) {
                     Box(Modifier.fillMaxWidth(part).height(4.dp).background(Palette.AccentBright, RoundedCornerShape(2.dp)))
@@ -378,32 +410,28 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
 
 /**
  * 上の段の後ろに敷く、合わせている録画の絵。**ぼかして暗くし、左と下を地の色へ溶かす** (上の文字が読めるように)。
- * ぼかすのは Android 12 から (RenderEffect)。それより前はぼかさず、そのぶん暗くする。
- * 絵は小さく読んで (`BACKDROP_DECODE`) 引き伸ばす (ぼかすので見分けが付かず、覚えておく量も少ない)
+ * ぼかしは読むときに済ませておく (`BlurredImage`。ごく小さく読んで引き伸ばす)。描くたびにぼかさないので軽く、どの版でも同じ見た目。
+ * 替えるときは2枚を透かし具合だけで入れ替える (Crossfade)
  */
 @Composable
 private fun Backdrop(url: String?, token: String?, modifier: Modifier) {
-    val blur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    /*
-     * **1枚の層に描いて覚えさせる** (Offscreen)。下の一覧を送るたびに画面は描き直されるが、絵と2枚の覆いは替わらないので、
-     * 層を1枚貼るだけで済む (力の弱いテレビで、送りのたびに大きな絵と覆いを重ね描きしない)
-     */
-    Box(modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
+    Box(modifier) {
         Crossfade(url, animationSpec = tween(BACKDROP_FADE_MS), label = "backdrop") { shown ->
-            if (shown != null) {
-                RemoteImage(
-                    shown,
-                    ContentScale.Crop,
-                    Modifier.fillMaxSize().then(if (blur) Modifier.blur(BACKDROP_BLUR) else Modifier),
-                    token,
-                    decode = BACKDROP_DECODE,
-                    placeholder = Color.Transparent,
-                )
-            }
+            if (shown != null) BlurredImage(shown, token, Modifier.fillMaxSize())
         }
-        Box(Modifier.matchParentSize().background(if (blur) BACKDROP_LEFT else BACKDROP_LEFT_STRONG))
+        Box(Modifier.matchParentSize().background(BACKDROP_LEFT))
         Box(Modifier.matchParentSize().background(BACKDROP_BOTTOM))
     }
+}
+
+/**
+ * その録画の焼いている進み。**その録画の値が変わったときだけ組み直す** (`derivedStateOf`)。進みの表 (`Repository.encoding`)
+ * をそのまま読むと、どれか1件の知らせ (数秒ごと) で、見えているカードが全部組み直しになる
+ */
+@Composable
+private fun encodingOf(repo: Repository, id: Long): Float? {
+    val encoding by remember(repo, id) { derivedStateOf { repo.encoding[id] } }
+    return encoding
 }
 
 /** 角の丸い小さな札 (録画中・エンコード中・形) */
@@ -446,11 +474,11 @@ private fun RecordingCard(
             glow = CardDefaults.glow(focusedGlow = Focus.glow),
         ) {
             Box(Modifier.fillMaxSize()) {
-                RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxSize(), repo.token)
+                RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxSize(), repo.token, opaque = true)
                 Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (recording.recording) Badge(RECORDING_BADGE, Palette.Recording, Color.White)
                     // 焼いている間は進み (denpa の知らせで動く)
-                    repo.encoding[recording.id]?.let { Badge("エンコード中 ${(it * 100).toInt()}%", Palette.Background.copy(alpha = 0.85f), Palette.Text) }
+                    encodingOf(repo, recording.id)?.let { Badge("エンコード中 ${(it * 100).toInt()}%", Palette.Background.copy(alpha = 0.85f), Palette.Text) }
                 }
                 // 観た割合 (続きの位置があるときだけ)。絵の下の縁に
                 recording.watched?.let { part ->
@@ -499,20 +527,18 @@ private val HERO_TEXT_WIDTH = 640.dp
 private const val HERO_SETTLE_MS = 450L
 private const val BACKDROP_FADE_MS = 250
 
-/** 背景の絵の大きさ (画面の幅・高さに対して)、読む大きさ、ぼかし */
+/** 止まった録画の前後で、先にポスターを読む件数 (前後2段ぶん) */
+private const val PREFETCH = 8
+
+/** 背景の絵の大きさ (画面の幅・高さに対して) */
 private const val BACKDROP_WIDTH = 0.72f
 private val BACKDROP_HEIGHT = HERO_HEIGHT + 32.dp
-private val BACKDROP_DECODE = IntSize(320, 180)
-private val BACKDROP_BLUR = 6.dp
 
-/** 背景の絵を、左は地の色へ溶かし、右も暗くする。ぼかせない (Android 11 まで) ときは強めに */
-private val BACKDROP_LEFT = backdropScrim(0.4f)
-private val BACKDROP_LEFT_STRONG = backdropScrim(0.55f)
-
-private fun backdropScrim(dim: Float) = Brush.horizontalGradient(
+/** 背景の絵を、左は地の色へ溶かし、右も暗くする */
+private val BACKDROP_LEFT = Brush.horizontalGradient(
     0f to Palette.Background,
-    0.4f to Palette.Background.copy(alpha = 0.6f + dim * 0.4f),
-    1f to Palette.Background.copy(alpha = dim),
+    0.4f to Palette.Background.copy(alpha = 0.78f),
+    1f to Palette.Background.copy(alpha = 0.45f),
 )
 private val BACKDROP_BOTTOM = Brush.verticalGradient(0.35f to Color.Transparent, 0.85f to Palette.Background)
 

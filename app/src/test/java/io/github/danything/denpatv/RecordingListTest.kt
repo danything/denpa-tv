@@ -2,13 +2,16 @@ package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingList
+import io.github.danything.denpatv.data.reuse
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class RecordingListTest {
@@ -39,5 +42,34 @@ class RecordingListTest {
         refreshing.await()
         assertFalse(list.items.any { it.id == 25L })
         assertEquals(24, list.items.size)
+    }
+
+    /** 読み直しても変わっていない録画は前のものを使い、何も変わっていなければ一覧ごと前のまま */
+    @Test
+    fun 変わっていない録画は前のものを使う() = runTest {
+        var answer = recordings(5)
+        val list = RecordingList { answer }
+        list.refresh()
+        val first = list.items
+        answer = recordings(5)
+        list.refresh()
+        assertSame(first, list.items)
+
+        // 1件だけ焼き上がった: その録画だけ新しく、ほかは前のもの
+        answer = recordings(5).map { if (it.id == 3L) it.copy(title = "焼けた") else it }
+        list.refresh()
+        assertNotSame(first, list.items)
+        list.items.forEach { if (it.id == 3L) assertEquals("焼けた", it.title) else assertSame(first.first { old -> old.id == it.id }, it) }
+    }
+
+    @Test
+    fun 増えた録画と並びの変化() {
+        val old = recordings(3)
+        val fresh = recordings(4)
+        val merged = reuse(old, fresh)
+        assertEquals(fresh, merged)
+        assertSame(old[0], merged[1])
+        assertNotSame(old, merged)
+        assertSame(fresh, reuse(emptyList(), fresh))
     }
 }

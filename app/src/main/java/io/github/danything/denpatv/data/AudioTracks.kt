@@ -1,8 +1,9 @@
 package io.github.danything.denpatv.data
 
-import kotlinx.serialization.Serializable
+import androidx.compose.runtime.Immutable
 import java.net.URLEncoder
 import java.util.Locale
+import kotlinx.serialization.Serializable
 
 /** 音声の1本。`named` は放送の名前 (denpa が書く「主音声ステレオ」「解説ステレオ」など) が付いているか */
 data class AudioTrack(val label: String, val named: Boolean)
@@ -54,6 +55,7 @@ enum class AudioSide(val wire: String, val fallbackLabel: String) {
  * `stream` は何本目の音声か、`side` はどちら側か。局の `now.audios` と録画の `audios` で来る (denpa の docs/api.md)。
  * 古い denpa では空のまま — デュアルモノを見分けられないので、これまでどおり左右をそのまま出す
  */
+@Immutable
 @Serializable
 data class DenpaAudio(
     val id: String = "",

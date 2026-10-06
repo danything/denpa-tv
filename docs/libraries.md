@@ -110,10 +110,24 @@ OkHttp (と Retrofit / Ktor) を採らない理由:
 `ui/RemoteImage.kt`)。Coil 3.6.3 / Glide 5 の持つディスクキャッシュ・変換・GIF などは使わない。
 
 録画の一覧の上に敷く大きな絵 (合わせている録画のポスター) と、詳しくの後ろのうすい絵も同じもので出す。
-どちらもぼかして暗くするので、**小さく読んで (320×180・160×90) 引き伸ばす**。ぼかしは Compose の `Modifier.blur`
-(Android 12 からの RenderEffect。それより前はぼかさず暗くするだけ) で、絵を変える部品も要らない。
+どちらもぼかして暗くするので、**読むときに 64×36 まで縮めて箱でぼかし、描くときは引き伸ばすだけ** (`Images.loadBlurred`)。
+描くたびにぼかす RenderEffect (`Modifier.blur`、Android 12 から) は使わない — 軽く、Android の版で見た目も変わらない。
+ほかに、**出す大きさちょうどに読む** (2 の冪で縮めたあと BitmapFactory の拡大率で)、**ポスターは RGB_565**
+(透けないので ARGB の半分)、覚えておく量は端末のメモリの級の 1/8 (8〜64MB)。どれも BitmapFactory だけで足りる。
 一覧の上の段の組み方は Google TV の「没入型の一覧」に倣ったが、その部品 (`ImmersiveList`) は
 tv-material 1.1.0 には無い (alpha の頃にあって外された) ので、Box に絵と見出しと格子を重ねて組んだ (`ui/RecordingsScreen.kt`)
+
+### Baseline Profile: 入れない (手で書いた `app/src/main/baseline-prof.txt`)
+
+入れたときに、よく通るコードを先に機械語にしておく ([Baseline Profile](https://developer.android.com/topic/performance/baselineprofiles/overview))。
+**ライブラリは足していない。** APK に入った profile を端末に置く `androidx.profileinstaller` は Compose がもともと連れてきていて
+(Play ストアを通さずに入れても効く)、Compose・tv-material・Media3 は自分の profile を持っている。足したのはアプリの分だけで、
+`app/src/main/baseline-prof.txt` に起動・録画の一覧・ライブで通るクラス (`ui/**`・`data/**`・`DenpaApp`・`MainActivity`) を書いた。
+AGP がライブラリの分とまとめ、R8 で縮めた名前に書き換えて `assets/dexopt/baseline.prof` に入れる (縮めた APK で確かめた)。
+
+`androidx.baselineprofile` (Gradle の plugin と、Macrobenchmark で端末を動かして profile を作る組) は入れない。
+作るには root の取れる (userdebug の) エミュレータで Macrobenchmark を走らせる別のモジュールが要り、CI の手間に見合わない。
+アプリのコードは小さいので、包みごと書いておけば足りる
 
 ### QR コード: Project Nayuki の QR Code generator を同梱する (MIT)
 

@@ -1,0 +1,12 @@
+# アプリの Baseline Profile (手で書いたもの。docs/libraries.md の「Baseline Profile」)。
+# 起動・録画の一覧・ライブ (局の列・操作の帯・再生) で通るアプリのクラスとメソッドを、入れたときに先に機械語にしておく。
+# Compose・tv-material・Media3 のぶんは各ライブラリが自分の profile を持っていて、AGP がまとめて APK に入れる。
+# R8 で縮めた APK では、AGP が名前を縮めたあとのものに書き換える。
+HSPLio/github/danything/denpatv/DenpaApp;->**(**)**
+HSPLio/github/danything/denpatv/MainActivity;->**(**)**
+Lio/github/danything/denpatv/DenpaApp;
+Lio/github/danything/denpatv/MainActivity;
+HSPLio/github/danything/denpatv/ui/**;->**(**)**
+Lio/github/danything/denpatv/ui/**;
+HSPLio/github/danything/denpatv/data/**;->**(**)**
+Lio/github/danything/denpatv/data/**;

@@ -6,6 +6,8 @@ package io.github.danything.denpatv.data
  *
  * - 消したものは手元から抜く (読み直さない。並びが変わると合わせ直す先がずれる)
  * - **読み直している最中に消したら、その答えから弾く** (消す前に作られた答えに混ざって戻りうる)
+ * - **読み直しても変わっていない録画は、前のものをそのまま使う** (`reuse`)。denpa の知らせ (録画が増えた・焼き上がった) で
+ *   読み直すたびに全件が新しくなると、画面は変わっていないカードまで比べ直す。何も変わっていなければ一覧ごと前のまま
  */
 class RecordingList(private val fetch: suspend () -> List<Recording>) {
     var items: List<Recording> = emptyList()
@@ -16,7 +18,7 @@ class RecordingList(private val fetch: suspend () -> List<Recording>) {
     /** 読み直す */
     suspend fun refresh() {
         val all = fetch()
-        items = all.filterNot { it.id in removed }
+        items = reuse(items, all.filterNot { it.id in removed })
         removed.clear()
     }
 
@@ -28,4 +30,12 @@ class RecordingList(private val fetch: suspend () -> List<Recording>) {
         items = items.filterNot { it.id == id }
         return neighbor
     }
+}
+
+/** `fresh` のうち `old` と同じ中身の録画は `old` のものに替える。全部同じ (並びも) なら `old` をそのまま返す */
+fun reuse(old: List<Recording>, fresh: List<Recording>): List<Recording> {
+    if (old.isEmpty()) return fresh
+    val before = old.associateBy { it.id }
+    val merged = fresh.map { recording -> before[recording.id]?.takeIf { it == recording } ?: recording }
+    return if (merged.size == old.size && merged.indices.all { merged[it] === old[it] }) old else merged
 }
