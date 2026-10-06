@@ -27,6 +27,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          cache-read-only: false
       # Android SDK はランナーに入っている。足りない platform は AGP が取ってくる
       - name: Lint / unit tests / debug APK
         run: ./gradlew lintDebug testDebugUnitTest assembleDebug --console=plain
@@ -85,6 +86,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          cache-read-only: false
       - if: needs.changes.outputs.code == 'true'
         name: Build APKs
         # lintVital (縮める版に付く lint の致命の分だけ) は外す。同じ検査は build の列の lintDebug が全部やっていて、
@@ -206,48 +208,25 @@ jobs:
             smoke-results/
             apks/app/build/outputs/mapping/minified/mapping.txt
 
-  # 一時: 像だけ戻して素で起こす (-no-snapshot-load) と何秒かかるか測る
-  avd-probe:
-    name: avd-probe (API ${{ matrix.api-level }})
+  # 一時: Gradle のヒープ・GC で R8 が速くなるか測る
+  apks-probe:
+    name: apks-probe (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { api-level: 24, arch: x86 }
-          - { api-level: 28, arch: x86 }
-          - { api-level: 31, arch: x86 }
-          - { api-level: 34, arch: x86 }
-          - { api-level: 36, arch: x86_64 }
+          - { name: default, jvmargs: "-Xmx3g -Dfile.encoding=UTF-8" }
+          - { name: 6g-parallel, jvmargs: "-Xmx6g -XX:+UseParallelGC -Dfile.encoding=UTF-8" }
+          - { name: 8g-g1, jvmargs: "-Xmx8g -Dfile.encoding=UTF-8" }
     steps:
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - uses: actions/cache/restore@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-            /usr/local/lib/android/sdk/system-images/android-${{ matrix.api-level }}/android-tv/${{ matrix.arch }}
-          key: avd-android-tv-${{ matrix.api-level }}-${{ matrix.arch }}-4c-2g-img
-      # 像だけのキャッシュの大きさ (actions/cache と同じ zstd) と、AVD (スナップショット・userdata) の大きさ。AVD は消して作り直させる
-      - run: |
-          img=/usr/local/lib/android/sdk/system-images/android-${{ matrix.api-level }}/android-tv/${{ matrix.arch }}
-          echo "image-only zstd: $(tar -cf - -C / "${img#/}" | zstd -T0 | wc -c)"
-          echo "avd zstd: $(tar -cf - -C ~ .android/avd | zstd -T0 | wc -c)"
-          rm -rf ~/.android/avd/*
-      - uses: reactivecircus/android-emulator-runner@v2
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
         with:
-          api-level: ${{ matrix.api-level }}
-          target: android-tv
-          arch: ${{ matrix.arch }}
-          profile: tv_1080p
-          cores: 4
-          ram-size: 2048M
-          force-avd-creation: true
-          emulator-boot-timeout: 600
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: true
-          script: echo booted
+          cache-read-only: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - run: ./gradlew :app:assembleMinified :smoke:assembleMinified -x lintVitalMinified --console=plain "-Dorg.gradle.jvmargs=${{ matrix.jvmargs }}"
