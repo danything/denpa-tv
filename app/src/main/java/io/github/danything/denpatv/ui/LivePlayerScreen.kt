@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
  *   下の端に、ブラウザの denpa のライブの操作列にあたる**操作の列** (画質・字幕・音声・録画) と、その下に**局の列**
  *   (地上波 / BS / CS ごとの列。ブラウザのタブにあたる) が覗く。下キーで局の列に入り、左右で選んで決定で替える。
  *   **上で開くと、はじめから局の列のいま映している局に合う** (一覧から局を選ぶ近道)。
+ *   **操作の列 (いちばん上) でもう一度上を押すと閉じて映像に戻る** (`UpToClose`)。
  *   画質はすぐ切り替わってこの端末で覚える (既定は端末がハードで MPEG-2 を解ければ生の TS)。**戻るで閉じる** (もう一度でメニューの画面へ)。
  *   8 秒触らなければ閉じる
  * - **録画** はいま観ている番組を denpa に予約する (ブラウザのライブの録画ボタンと同じ。何度押しても二重には録らない)
@@ -332,6 +333,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 // 上で開いたときは、操作の列ではなく局の列のいま映している局に合わせる (下の LaunchedEffect)
                 focusActions = start == MenuStart.Controls,
                 onActivity = { touched = System.nanoTime() },
+                // 操作の列がいちばん上の列。そこで上キーを押すと閉じて映像に戻る (戻ると同じ。局の列から押し続けて上がってきた分では閉じない)
+                onUp = { menu = null },
                 // いまの番組の進み
                 header = now?.let { program ->
                     { ProgressLine(System.currentTimeMillis() - program.startAt, program.endAt - program.startAt) }
