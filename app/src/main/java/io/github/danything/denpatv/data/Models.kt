@@ -1,10 +1,12 @@
 package io.github.danything.denpatv.data
 
+import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 
 /**
  * denpa の `GET /api/services` の1件 (denpa の docs/api.md)。URL は denpa の根からの相対 (`api/…`)
  */
+@Immutable
 @Serializable
 data class Service(
     val id: Long,
@@ -52,6 +54,7 @@ fun neighbor(services: List<Service>, currentId: Long, step: Int): Service? {
 val SERVICE_TYPES = listOf("GR" to "地上波", "BS" to "BS", "CS" to "CS")
 
 /** 局のいま放送中の番組 (`now`)。時刻は UNIX ミリ秒 */
+@Immutable
 @Serializable
 data class NowProgram(
     val title: String,
@@ -77,6 +80,7 @@ data class NowProgram(
 }
 
 /** `GET /api/recordings` の1件。使う鍵だけ (ほかは読み捨てる) */
+@Immutable
 @Serializable
 data class Recording(
     val id: Long,
@@ -134,6 +138,7 @@ data class RecordingDetail(
 )
 
 /** 録画の出せるファイル。`source` は encoded / alt / ts、`codec` は av1 / h264 / mpeg2 */
+@Immutable
 @Serializable
 data class RecordingFile(
     val source: String,

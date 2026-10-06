@@ -1,6 +1,5 @@
 package io.github.danything.denpatv.ui
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -34,7 +33,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -50,7 +48,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -321,23 +318,15 @@ private val CHIP_HEIGHT = 30.dp
 private val BADGE_COLOR = Palette.Recording
 
 /**
- * 詳しくの後ろにうすく敷く録画の絵。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (Android 12 から)、
+ * 詳しくの後ろにうすく敷く録画の絵。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (`BlurredImage`)、
  * 地の色で大きく覆い、左と下へ溶かす。絵の要素としては出さない (縁も札も付けない)
  */
 @Composable
 private fun BoxScope.FaintBackdrop(url: String, token: String?) {
-    val blur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     Box(Modifier.align(Alignment.TopEnd).fillMaxWidth(0.7f).fillMaxHeight(0.75f)) {
-        RemoteImage(
-            url,
-            ContentScale.Crop,
-            Modifier.fillMaxSize().then(if (blur) Modifier.blur(12.dp) else Modifier),
-            token,
-            decode = IntSize(160, 90),
-            placeholder = Color.Transparent,
-        )
+        BlurredImage(url, token, Modifier.fillMaxSize())
         val surface = MaterialTheme.colorScheme.surface
-        Box(Modifier.matchParentSize().background(surface.copy(alpha = if (blur) 0.72f else 0.8f)))
+        Box(Modifier.matchParentSize().background(surface.copy(alpha = 0.75f)))
         Box(Modifier.matchParentSize().background(Brush.horizontalGradient(0f to surface, 0.6f to surface.copy(alpha = 0.4f), 1f to Color.Transparent)))
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.3f to Color.Transparent, 1f to surface)))
     }

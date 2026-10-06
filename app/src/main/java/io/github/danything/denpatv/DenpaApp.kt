@@ -6,6 +6,7 @@ import android.os.ext.SdkExtensions
 import android.util.Log
 import io.github.danything.denpatv.data.Decoders
 import io.github.danything.denpatv.data.EngineHttp
+import io.github.danything.denpatv.data.Images
 import io.github.danything.denpatv.data.Settings
 import io.github.danything.denpatv.data.WatchNextRows
 import kotlinx.coroutines.CoroutineScope
@@ -17,6 +18,12 @@ import kotlinx.coroutines.SupervisorJob
  * 数が少ないので、ここで作って画面に渡すほうが追いやすい
  */
 class DenpaApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        // 絵を覚えておく量を、端末のメモリに合わせる
+        Images.init(this)
+    }
+
     val settings: Settings by lazy { Settings(this) }
     val decoders: Decoders by lazy { Decoders.detect() }
     val updater: Updater by lazy { Updater(this) }
