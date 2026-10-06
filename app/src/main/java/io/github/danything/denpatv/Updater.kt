@@ -61,7 +61,7 @@ sealed interface UpdateState {
     /**
      * 「不明なアプリのインストール」の許可の画面を開いた。**戻れば、押さなくても続けて入れる** (`resume`)。
      * 許可が見えなくても入れてみる (テレビによっては許可しても見えない。本当に無ければ OS が尋ねるか断る。`installStep`)。
-     * 許可の画面を開けなかった (`opened` が false) ときは、戻っても勝手に始めない (押せば入れてみる)
+     * 許可の画面を開けなかった (`opened` が false) ときは、戻っても勝手に始めない。どちらでも、押せば (30 分のうちは) そのまま入れてみる
      */
     data class NeedsPermission(
         val update: Update,
