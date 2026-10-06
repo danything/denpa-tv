@@ -346,6 +346,8 @@ class Updater(private val app: DenpaApp) {
         if (step == InstallStep.AskPermission) {
             remember(InstallRequest(update.version, System.currentTimeMillis()))
             val (opened, message) = askPermission()
+            // 開けなければ戻っても開き直しても勝手に始めない (押すのを待つ)。押したときに入れてみるよう asked だけ残す
+            if (!opened) forgetSaved()
             _state.value = UpdateState.NeedsPermission(update, message, downloaded, opened)
             return
         }
