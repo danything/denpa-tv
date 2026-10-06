@@ -60,9 +60,15 @@ sealed interface UpdateState {
     data class Installing(val update: Update, val file: File, val confirming: Boolean = false) : UpdateState
     /**
      * 「不明なアプリのインストール」の許可の画面を開いた。**戻れば、押さなくても続けて入れる** (`resume`)。
-     * 許可が見えなくても入れてみる (テレビによっては許可しても見えない。本当に無ければ OS が尋ねるか断る。`installStep`)
+     * 許可が見えなくても入れてみる (テレビによっては許可しても見えない。本当に無ければ OS が尋ねるか断る。`installStep`)。
+     * 許可の画面を開けなかった (`opened` が false) ときは、戻っても勝手に始めない (押せば入れてみる)
      */
-    data class NeedsPermission(val update: Update, val message: String, val file: File? = null) : UpdateState
+    data class NeedsPermission(
+        val update: Update,
+        val message: String,
+        val file: File? = null,
+        val opened: Boolean = true,
+    ) : UpdateState
     /** 取れない・合わない・入らない。押すとやり直す (取れた APK があればそれを入れ直す) */
     data class Failed(val update: Update, val message: String, val file: File? = null) : UpdateState
 }
@@ -178,6 +184,8 @@ class Updater(private val app: DenpaApp) {
      */
     fun resume() {
         val state = _state.value as? UpdateState.NeedsPermission ?: return
+        // 許可の画面を開けなかった: ほかのアプリ・ホームから戻っただけなので、勝手に始めない
+        if (!state.opened) return
         Log.i(TAG, "許可の画面から戻りました")
         start(state.update, state.file?.takeIf { it.exists() })
     }
@@ -209,6 +217,11 @@ class Updater(private val app: DenpaApp) {
     private fun remember(request: InstallRequest?) {
         asked = request
         app.scope.launch(requestWriter) { app.settings.setInstallRequest(request) }
+    }
+
+    /** 書いておいた頼みだけ消す (`asked` は残す) */
+    private fun forgetSaved() {
+        app.scope.launch(requestWriter) { app.settings.setInstallRequest(null) }
     }
 
     /** 許可の画面へ送った版 (書いたもの・開き直したときに読んだもの)。押したときにすぐ見る */
@@ -327,11 +340,13 @@ class Updater(private val app: DenpaApp) {
         Log.i(TAG, "${update.label} を入れます: $step (${permissionReport()}、APK ${if (downloaded == null) "なし" else "あり"})")
         if (step == InstallStep.AskPermission) {
             remember(InstallRequest(update.version, System.currentTimeMillis()))
-            _state.value = UpdateState.NeedsPermission(update, askPermission(), downloaded)
+            val (opened, message) = askPermission()
+            _state.value = UpdateState.NeedsPermission(update, message, downloaded, opened)
             return
         }
-        // 許可が見えないまま入れるときは、頼みを残す (確認の画面を閉じて押し直しても、許可の画面へ戻さない)
-        if (allowed) remember(null)
+        // 入れはじめたので、開き直したときに勝手に始めないよう覚えた頼みは消す。ただ許可が見えないまま入れるときは、
+        // このプロセスの中では覚えておく (確認の画面を閉じて押し直しても、許可の画面へ戻さない)
+        if (allowed) remember(null) else forgetSaved()
         // 続けて押されても2本取らないよう、先に「取ってきている」にする
         _state.value = if (downloaded == null) UpdateState.Downloading(update, 0) else UpdateState.Installing(update, downloaded)
         app.scope.launch {
@@ -405,8 +420,8 @@ class Updater(private val app: DenpaApp) {
             Settings.Secure.getInt(app.contentResolver, Settings.Secure.INSTALL_NON_MARKET_APPS, 0) == 1
         }
 
-    /** 許可の画面を開いて、出す1行を返す (許可して戻れば続けて入れる) */
-    private fun askPermission(): String {
+    /** 許可の画面を開いて、開けたかと出す1行を返す (許可して戻れば続けて入れる) */
+    private fun askPermission(): Pair<Boolean, String> {
         val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${app.packageName}".toUri())
         } else {
@@ -415,10 +430,12 @@ class Updater(private val app: DenpaApp) {
         val opened = open(intent) || open(Intent(Settings.ACTION_SETTINGS))
         Log.i(TAG, "許可の画面を開きました: ${if (opened) "開けた" else "開けない"}")
         // 頭の1行に収まる長さで。開けなければ、どこで許可するかを足す
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            (if (opened) "" else "テレビの設定で ") + "「不明なアプリのインストール」を許可して戻ると、続けて入れます"
+        // 開けなければ戻っても勝手に始めない (`resume`) ので、押してもらう
+        val then = if (opened) "して戻ると、続けて入れます" else "してから押すと入れます"
+        return opened to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            (if (opened) "" else "テレビの設定で ") + "「不明なアプリのインストール」を許可$then"
         } else {
-            (if (opened) "" else "テレビの設定の「セキュリティ」で ") + "「提供元不明のアプリ」を許可して戻ると、続けて入れます"
+            (if (opened) "" else "テレビの設定の「セキュリティ」で ") + "「提供元不明のアプリ」を許可$then"
         }
     }
 
