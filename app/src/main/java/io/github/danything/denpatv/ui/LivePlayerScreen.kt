@@ -84,6 +84,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     var detail by remember { mutableStateOf(false) }
     /** 詳しくの「録画」を押した結果 (詳しくの札の下に出す) */
     var recordNote by remember { mutableStateOf<String?>(null) }
+    /** 詳しくの「録画」を押した回数。続けて押したときに、前の押しの答えで最後の答えを上書きしない */
+    var recordPresses by remember { mutableIntStateOf(0) }
     /** キーの手引きを出したか (開いて最初の1回だけ) */
     var hinted by remember { mutableStateOf(false) }
     /** 裏に回っている (ホーム・別のアプリ)。その間は流さない (`OnBackground`) */
@@ -289,6 +291,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     fun record(fromDetail: Boolean) {
         val service = current
         menu = null
+        val press = if (fromDetail) ++recordPresses else 0
         if (fromDetail) recordNote = "録画を頼んでいます…"
         scope.launch {
             val result = try {
@@ -303,7 +306,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 is RecordResult.Failed -> "録画できません: ${result.message}"
                 RecordResult.Unsupported -> "この denpa はアプリからの録画に対応していません (denpa を新しくしてください)"
             }
-            if (fromDetail) recordNote = message else flash(message)
+            if (!fromDetail) flash(message) else if (press == recordPresses) recordNote = message
             if (result is RecordResult.Recorded) refresh()
         }
     }

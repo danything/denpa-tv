@@ -205,6 +205,10 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
     var viewport by remember { mutableIntStateOf(0) }
     val scrollable = scroll.maxValue > 0
     val frame = if (focused) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else Color.Transparent
+    // 本文に合っている間に中身が縮んで収まった (ライブで番組が替わった) ら、先頭の札へ戻す (合いの行き場が無くならないように)
+    LaunchedEffect(scrollable) {
+        if (!scrollable && focused) runCatching { up.requestFocus() }
+    }
     Box(
         Modifier
             .weight(1f)
@@ -213,14 +217,18 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
             .offset(x = -BODY_PADDING)
             .onSizeChanged { viewport = it.height }
             .border(2.dp, frame, RoundedCornerShape(12.dp))
+            .onFocusChanged { focused = it.isFocused }
+            .focusProperties {
+                // 収まっていれば合わせない (下キーで止まるだけになる)
+                canFocus = scrollable
+                // 上で抜けるときは先頭の札へ (近いもの = 真上の札に合うと、右の端の「閉じる」に飛ぶ)
+                this.up = up
+            }
             .then(
                 if (!scrollable) {
                     Modifier
                 } else {
                     Modifier
-                        .onFocusChanged { focused = it.isFocused }
-                        // 上で抜けるときは先頭の札へ (近いもの = 真上の札に合うと、右の端の「閉じる」に飛ぶ)
-                        .focusProperties { this.up = up }
                         .onKeyEvent { event ->
                             if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                             val step = viewport * 0.6f
@@ -240,9 +248,9 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
                                 else -> false
                             }
                         }
-                        .focusable()
                 },
-            ),
+            )
+            .focusable(),
     ) {
         Row(
             Modifier.verticalScroll(scroll, enabled = false).padding(horizontal = BODY_PADDING, vertical = 12.dp),
