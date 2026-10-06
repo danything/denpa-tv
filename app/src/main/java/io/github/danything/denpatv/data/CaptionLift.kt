@@ -29,11 +29,15 @@ fun captionLift(height: Float, inset: Float, top: Float, bottom: Float, gap: Flo
 fun inkRows(width: Int, height: Int, band: Int = INK_BAND, read: (Int, Int, IntArray) -> Unit): Pair<Int, Int>? {
     if (width <= 0 || height <= 0) return null
     val buffer = IntArray(width * band)
-    /** y から rows 行のうち、字のある最初 (`fromTop`) か最後の行。無ければ -1 */
+    /** y から rows 行のうち、字のある最初 (`fromTop`) か最後の行。無ければ -1 (2百万画素をなめるので、箱に入れない素の回し方で) */
     fun scan(y: Int, rows: Int, fromTop: Boolean): Int {
         read(y, rows, buffer)
-        val order = if (fromTop) 0 until rows else rows - 1 downTo 0
-        return order.firstOrNull { row -> (row * width until (row + 1) * width).any { buffer[it] ushr 24 != 0 } }?.let { y + it } ?: -1
+        for (k in 0 until rows) {
+            val row = if (fromTop) k else rows - 1 - k
+            val start = row * width
+            for (i in start until start + width) if (buffer[i] ushr 24 != 0) return y + row
+        }
+        return -1
     }
     var top = -1
     var y = 0

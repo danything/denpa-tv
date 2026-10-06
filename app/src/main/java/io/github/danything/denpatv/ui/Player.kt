@@ -220,7 +220,7 @@ fun PlayerFrame(
     val inset = rememberCaptionInset(insets)
     /** いま出している字幕 (`SubtitleView` に渡し、どこまで逃がすかも見る) */
     var cues by remember { mutableStateOf(emptyList<Cue>()) }
-    val cueSpan = remember { { width: Int, height: Int -> cueSpan(cues, width, height) } }
+    val captionSpan = remember { { width: Int, height: Int -> cueSpan(cues, width, height) } }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onCues(cueGroup: CueGroup) {
@@ -228,7 +228,11 @@ fun PlayerFrame(
             }
         }
         player.addListener(listener)
-        onDispose { player.removeListener(listener) }
+        onDispose {
+            player.removeListener(listener)
+            // プレーヤーを作り直したら、前のプレーヤーの字幕を残さない
+            cues = emptyList()
+        }
     }
     LaunchedEffect(active) {
         center.reset()
@@ -277,7 +281,7 @@ fun PlayerFrame(
             // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
             onReset = { view -> view.keepScreenOn = false },
             onRelease = { view -> view.keepScreenOn = false },
-            modifier = Modifier.fillMaxSize().liftCaptions(inset, cueSpan),
+            modifier = Modifier.fillMaxSize().liftCaptions(inset, captionSpan),
         )
         captions?.let { RawCaptionLayer(it, inset) }
         if (error == null) LoadingVeil(loading, busyLabel)

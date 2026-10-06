@@ -17,6 +17,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
+import kotlinx.coroutines.flow.collectLatest
 import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.SubtitleView
@@ -70,7 +73,8 @@ internal fun rememberCoverReport(skipTop: Dp): (IntSize) -> Unit {
 fun rememberCaptionInset(insets: OverlayInsets): () -> Float {
     val easing = remember { Animatable(0f) }
     LaunchedEffect(insets) {
-        snapshotFlow { insets.bottom.toFloat() }.collect { target ->
+        // 下ろしている間に高さが変わったら、その高さへ向け直す (前の動きを待たない)
+        snapshotFlow { insets.bottom.toFloat() }.collectLatest { target ->
             if (target >= easing.value) easing.snapTo(target) else easing.animateTo(target, tween(CAPTION_EASE_MS))
         }
     }
@@ -120,13 +124,14 @@ private fun cueSpan(cue: Cue, width: Float, height: Float): Pair<Float, Float> {
         Cue.TEXT_SIZE_TYPE_ABSOLUTE -> cue.textSize
         Cue.TEXT_SIZE_TYPE_FRACTIONAL, Cue.TEXT_SIZE_TYPE_FRACTIONAL_IGNORE_PADDING -> cue.textSize * height
         else -> height * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
-    }.takeIf { it > 0f } ?: (height * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION)
+    }.takeIf { it > 0f }.let { it ?: (height * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION) } * relativeSize(cue.text)
     val row = textSize * LINE_SPACING
     val tall = when {
         cue.bitmapHeight != Cue.DIMEN_UNSET -> height * cue.bitmapHeight
         bitmap != null && bitmap.width > 0 && cue.size != Cue.DIMEN_UNSET -> width * cue.size * bitmap.height / bitmap.width
         bitmap != null -> row
-        else -> textLines(cue.text, textSize, width * (if (cue.size != Cue.DIMEN_UNSET) cue.size else 1f)) * row
+        // SubtitlePainter は字の大きさの 1/4 を左右の余白に取る
+        else -> textLines(cue.text, textSize, width * (if (cue.size != Cue.DIMEN_UNSET) cue.size else 1f) - textSize * 0.25f) * row
     }
     val line = cue.line
     val top = when {
@@ -153,6 +158,16 @@ private fun textLines(text: CharSequence?, textSize: Float, width: Float): Int {
     if (text.isNullOrEmpty()) return 1
     val perLine = (width / textSize).toInt().coerceAtLeast(1)
     return text.split('\n').sumOf { ceil(it.length.toFloat() / perLine).toInt().coerceAtLeast(1) }
+}
+
+/**
+ * 字幕の中で字を大きくしている (TTML・WebVTT の字の大きさ → `RelativeSizeSpan`) ときの、いちばん大きい倍率。
+ * 1 より小さくはしない (多めに見積もる)
+ */
+private fun relativeSize(text: CharSequence?): Float {
+    if (text !is Spanned) return 1f
+    val spans = text.getSpans(0, text.length, RelativeSizeSpan::class.java)
+    return spans.maxOfOrNull { it.sizeChange }?.coerceAtLeast(1f) ?: 1f
 }
 
 /** 字の大きさに対する行の高さの見積もり */

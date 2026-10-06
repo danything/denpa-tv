@@ -290,7 +290,7 @@ private suspend fun decode(cue: CaptionCue): CaptionPicture? = withContext(Dispa
 
 /** 字幕の絵を映像の枠に重ねる。映像は枠いっぱいに伸ばして出している (`PlayerFrame`) ので、絵も枠いっぱいに伸ばす */
 @Composable
-fun RawCaptionLayer(state: RawCaptionState, inset: () -> Float = { 0f }) {
+fun RawCaptionLayer(state: RawCaptionState, inset: () -> Float) {
     val picture = state.picture ?: return
     // 下に重ねたもの (帯・メニュー) があれば、字のある行がその上に来るまで持ち上げる
     val lifted = Modifier.fillMaxSize().liftCaptions(inset) { _, height ->
