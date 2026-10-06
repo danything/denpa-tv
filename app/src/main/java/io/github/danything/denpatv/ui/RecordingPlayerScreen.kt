@@ -72,7 +72,17 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
         return
     }
     val clock = remember { TsClock() }
-    val (player, error, dualMono) = rememberPlayer(repo, Buffering.Recording, onUnauthorized, clock)
+    /*
+     * 録画のファイルは、回線が切れたときだけいまの位置から読み直す (`prepare` し直すと、Media3 は止まった位置から続ける)。
+     * Media3 が中で読み直したうえでの失敗なので、何度か (`Reconnect.FEW`) まで。中身が読めない・解けないのは繋ぎ直しても同じなので出して止める
+     */
+    val (player, error, dualMono, recovery) = rememberPlayer(
+        repo,
+        Buffering.Recording,
+        onUnauthorized,
+        clock,
+        ReconnectPlan("recording 録画 ${recording.id}", stream = false) { it.prepare() },
+    )
     val (overlay, flash) = rememberFlash()
     val scope = rememberCoroutineScope()
     /** 飛んだ回数。生の TS の字幕を、飛んだ先から頼み直す */
@@ -297,7 +307,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     val deleteControl = Control(deleteLabel(delete.armed), icon = R.drawable.ic_delete) { if (delete.press()) deleteNow() }
     val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, error, active = bar == null && !ended && !leaving, captions = captions, above = {
+    PlayerFrame(player, overlay, error, active = bar == null && !ended && !leaving, captions = captions, recovery = recovery, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
