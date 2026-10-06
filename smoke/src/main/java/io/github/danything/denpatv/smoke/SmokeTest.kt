@@ -69,8 +69,12 @@ class SmokeTest {
         openMenu()
         val record = node { it.text?.toString() == "録画" }?.let(::clickable) ?: throw AssertionError("「録画」がありません: ${texts()}")
         assertTrue("「録画」を押せません", record.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-        awaitText { it == "録画を始めます: ${FakeDenpa.PROGRAM_TITLE}" }
-        assertRequested("POST /api/services/${FakeDenpa.SERVICE_ID}/record")
+        /*
+         * 届いたかは偽の denpa の記録で見る。「録画を始めます」の1行は 4 秒で消えるので、遅いエミュレータでは
+         * 画面の木を読み終える前に消えていることがある (CI の API 36 で、出たのに見落として落ちた)
+         */
+        val recordRequest = "POST /api/services/${FakeDenpa.SERVICE_ID}/record"
+        assertTrue("$recordRequest が来ていません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { recordRequest in denpa.requests })
 
         openMenu()
         press(KeyEvent.KEYCODE_BACK)
