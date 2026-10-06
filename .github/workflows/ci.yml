@@ -232,9 +232,12 @@ jobs:
             ~/.android/adb*
             /usr/local/lib/android/sdk/system-images/android-${{ matrix.api-level }}/android-tv/${{ matrix.arch }}
           key: avd-android-tv-${{ matrix.api-level }}-${{ matrix.arch }}-4c-2g-img
+      # 像だけのキャッシュの大きさ (actions/cache と同じ zstd) と、AVD (スナップショット・userdata) の大きさ。AVD は消して作り直させる
       - run: |
-          du -sh ~/.android/avd /usr/local/lib/android/sdk/system-images/android-${{ matrix.api-level }}/android-tv/${{ matrix.arch }}
-          du -sh ~/.android/avd/*/* | sort -h | tail
+          img=/usr/local/lib/android/sdk/system-images/android-${{ matrix.api-level }}/android-tv/${{ matrix.arch }}
+          echo "image-only zstd: $(tar -cf - -C / "${img#/}" | zstd -T0 | wc -c)"
+          echo "avd zstd: $(tar -cf - -C ~ .android/avd | zstd -T0 | wc -c)"
+          rm -rf ~/.android/avd/*
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -243,8 +246,8 @@ jobs:
           profile: tv_1080p
           cores: 4
           ram-size: 2048M
-          force-avd-creation: false
+          force-avd-creation: true
           emulator-boot-timeout: 600
-          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: echo booted
