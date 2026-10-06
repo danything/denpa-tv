@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,11 +28,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.media3.common.text.Cue
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,6 +56,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
+import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -219,12 +217,19 @@ fun PlayerFrame(
     var focused by remember { mutableStateOf(false) }
     /** 下に重ねたものの高さ。字幕をその上へ逃がす */
     val insets = remember { OverlayInsets() }
-    val covered = insets.bottom.toFloat()
-    // 出したときは重ならないようすぐ上へ (`max`)、閉じたときは滑らかに下ろす
-    val easing by animateFloatAsState(covered, tween(CAPTION_EASE_MS), label = "captionInset")
-    val inset = { maxOf(insets.bottom.toFloat(), easing) }
-    /** いま `SubtitleView` に出している字幕 (どこまで逃がすかを見るため) */
+    val inset = rememberCaptionInset(insets)
+    /** いま出している字幕 (`SubtitleView` に渡し、どこまで逃がすかも見る) */
     var cues by remember { mutableStateOf(emptyList<Cue>()) }
+    val cueSpan = remember { { width: Int, height: Int -> cueSpan(cues, width, height) } }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onCues(cueGroup: CueGroup) {
+                cues = cueGroup.cues
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
     LaunchedEffect(active) {
         center.reset()
         if (!active) return@LaunchedEffect
@@ -260,25 +265,19 @@ fun PlayerFrame(
     ) {
         PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
         AndroidView(
-            factory = { context ->
-                SubtitleView(context).also { view ->
-                    player.addListener(object : Player.Listener {
-                        override fun onCues(cueGroup: CueGroup) {
-                            view.setCues(cueGroup.cues)
-                            cues = cueGroup.cues
-                        }
-                    })
-                }
-            },
+            factory = ::SubtitleView,
             /*
              * **流している間は画面を点けたままにする** (スクリーンセーバーを出さない)。この画面の View に付けるので、
              * 画面を離れれば一緒に外れる (ComposeView に付けると、次の画面と取り合って消し合う)
              */
-            update = { view -> view.keepScreenOn = loading.awake },
+            update = { view ->
+                view.keepScreenOn = loading.awake
+                view.setCues(cues)
+            },
             // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
             onReset = { view -> view.keepScreenOn = false },
             onRelease = { view -> view.keepScreenOn = false },
-            modifier = Modifier.fillMaxSize().liftCaptions(inset) { width, height -> cueSpan(cues, width, height) },
+            modifier = Modifier.fillMaxSize().liftCaptions(inset, cueSpan),
         )
         captions?.let { RawCaptionLayer(it, inset) }
         if (error == null) LoadingVeil(loading, busyLabel)
@@ -293,29 +292,11 @@ fun PlayerFrame(
 @Composable
 private fun BoxScope.Notice(text: String?, progress: Pair<Long, Long>?) {
     if (text == null) return
-    val cover = rememberCoverReport(skipTop = SCRIM_TOP)
-    Column(
-        Modifier
-            .align(Alignment.BottomStart)
-            .fillMaxWidth()
-            .background(SCRIM)
-            .onSizeChanged(cover)
-            .padding(start = 48.dp, end = 48.dp, top = SCRIM_TOP, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        text.lines().forEachIndexed { index, line ->
-            Text(
-                line,
-                style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
-                color = if (index == 0) Color.White else Color(0xFFD0D0D0),
-            )
-        }
+    BottomPanel(spacing = 4.dp) {
+        TitleLines(text)
         progress?.let { (at, length) -> ProgressLine(at, length) }
     }
 }
-
-/** 字幕を戻すのにかける時間 (ミリ秒) */
-private const val CAPTION_EASE_MS = 250
 
 /** 映像に合っているか見張る間 (ミリ秒) */
 private const val FOCUS_WATCH_MS = 250L

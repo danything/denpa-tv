@@ -1,11 +1,15 @@
 package io.github.danything.denpatv.ui
 
 import androidx.annotation.OptIn
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
@@ -15,7 +19,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.SubtitleView
 import io.github.danything.denpatv.data.captionLift
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /**
@@ -43,18 +49,36 @@ class OverlayInsets {
 val LocalOverlayInsets = staticCompositionLocalOf<OverlayInsets?> { null }
 
 /**
- * 下の端に重ねるもの (`ControlBar`・知らせ) の大きさを受けて、字幕を逃がす高さとして知らせる (`Modifier.onSizeChanged` に渡す)。
- * `skipTop` は上の透かし (`SCRIM` の上の空き) — そこは映像が透けて見えるだけなので、字幕が乗ってもよい。
- * 消えたら (画面から外れたら) 知らせを下ろす
+ * 下の端に重ねるもの (`BottomPanel`) の大きさを受けて、字幕を逃がす高さとして知らせる (`Modifier.onSizeChanged` に渡す)。
+ * `skipTop` は上の透かし (`SCRIM` の上の空き) — 暗くしはじめたばかりで映像がほぼ透けて見えるので、字幕が乗ってもよい
+ * (字幕は自分の縁取り・下地を持っている)。消えたら (画面から外れたら) 知らせを下ろす
  */
 @Composable
-fun rememberCoverReport(skipTop: Dp): (IntSize) -> Unit {
+internal fun rememberCoverReport(skipTop: Dp): (IntSize) -> Unit {
     val insets = LocalOverlayInsets.current
     val key = remember { Any() }
     val skip = with(LocalDensity.current) { skipTop.roundToPx() }
     DisposableEffect(insets) { onDispose { insets?.remove(key) } }
     return remember(insets, skip) { { size: IntSize -> insets?.report(key, (size.height - skip).coerceAtLeast(0)) } }
 }
+
+/**
+ * 字幕の層が読む、下に重ねたものの高さ (px)。**出したときは同じこまで上へ** (重なるこまを作らない)、**閉じたときは滑らかに下ろす**。
+ * 読むのは配置の段 (`liftCaptions`) だけなので、帯を開け閉めしても組み直さない
+ */
+@Composable
+fun rememberCaptionInset(insets: OverlayInsets): () -> Float {
+    val easing = remember { Animatable(0f) }
+    LaunchedEffect(insets) {
+        snapshotFlow { insets.bottom.toFloat() }.collect { target ->
+            if (target >= easing.value) easing.snapTo(target) else easing.animateTo(target, tween(CAPTION_EASE_MS))
+        }
+    }
+    return remember(insets) { { maxOf(insets.bottom.toFloat(), easing.value) } }
+}
+
+/** 字幕を下ろすのにかける時間 (ミリ秒) */
+private const val CAPTION_EASE_MS = 250
 
 /** 字幕と重ねたものの間 */
 private val CAPTION_GAP = 12.dp
@@ -76,7 +100,10 @@ fun Modifier.liftCaptions(inset: () -> Float, span: (Int, Int) -> Pair<Float, Fl
 /**
  * Media3 の字幕 (`SubtitleView` に渡すもの) の、層の上からの上の端と下の端 (px)。**`SubtitleView` (SubtitlePainter) の置き方を
  * なぞる** — 絵の字幕 (焼いたものの PGS) は置き場所と大きさがそのまま入っている。文字の字幕は高さが描くまで分からないので、
- * 既定の字の大きさ (層の高さの 5.33%) の行の数で見積もる
+ * 字の大きさと行の数 (折り返しも) で見積もる。
+ *
+ * `SubtitleView` に下の余白 (padding) を付けて逃がさないのは、**絵の字幕は余白を除いた高さに合わせて縮むから** (PGS の高さは
+ * 層の高さに対する割合で入っている)。層ごと持ち上げれば、絵の字幕も大きさを変えずに動く
  */
 @OptIn(UnstableApi::class)
 fun cueSpan(cues: List<Cue>, width: Int, height: Int): Pair<Float, Float>? {
@@ -88,22 +115,24 @@ fun cueSpan(cues: List<Cue>, width: Int, height: Int): Pair<Float, Float>? {
 @OptIn(UnstableApi::class)
 private fun cueSpan(cue: Cue, width: Float, height: Float): Pair<Float, Float> {
     val bitmap = cue.bitmap
+    // 文字の1行の高さ。大きさの指定があればそれ (SubtitleView は既定で入っている大きさも使う)、無ければ既定の大きさ
+    val textSize = when (cue.textSizeType) {
+        Cue.TEXT_SIZE_TYPE_ABSOLUTE -> cue.textSize
+        Cue.TEXT_SIZE_TYPE_FRACTIONAL, Cue.TEXT_SIZE_TYPE_FRACTIONAL_IGNORE_PADDING -> cue.textSize * height
+        else -> height * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
+    }.takeIf { it > 0f } ?: (height * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION)
+    val row = textSize * LINE_SPACING
     val tall = when {
         cue.bitmapHeight != Cue.DIMEN_UNSET -> height * cue.bitmapHeight
         bitmap != null && bitmap.width > 0 && cue.size != Cue.DIMEN_UNSET -> width * cue.size * bitmap.height / bitmap.width
-        else -> {
-            val lines = (cue.text?.count { it == '\n' } ?: 0) + 1
-            lines * height * TEXT_SIZE_FRACTION * LINE_SPACING
-        }
+        bitmap != null -> row
+        else -> textLines(cue.text, textSize, width * (if (cue.size != Cue.DIMEN_UNSET) cue.size else 1f)) * row
     }
     val line = cue.line
     val top = when {
-        // 置き場所の無い文字の字幕は、下の端から少し上 (SubtitleView の bottomPaddingFraction) に下揃え
-        line == Cue.DIMEN_UNSET -> height * (1 - BOTTOM_PADDING_FRACTION) - tall
-        cue.lineType == Cue.LINE_TYPE_NUMBER -> {
-            val row = height * TEXT_SIZE_FRACTION * LINE_SPACING
-            if (line >= 0) line * row else height + (line + 1) * row - tall
-        }
+        // 置き場所の無い字幕は、下の端から少し上 (SubtitleView の bottomPaddingFraction) に下揃え
+        line == Cue.DIMEN_UNSET -> height * (1 - SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION) - tall
+        cue.lineType == Cue.LINE_TYPE_NUMBER -> if (line >= 0) line * row else height + (line + 1) * row - tall
         else -> {
             val anchor = height * line
             when (cue.lineAnchor) {
@@ -116,11 +145,15 @@ private fun cueSpan(cue: Cue, width: Float, height: Float): Pair<Float, Float> {
     return top to top + tall
 }
 
-/** `SubtitleView` の既定の字の大きさ (層の高さに対して。`SubtitleView.DEFAULT_TEXT_SIZE_FRACTION`) */
-private const val TEXT_SIZE_FRACTION = 0.0533f
+/**
+ * 文字の字幕が何行になるか。改行に加えて、**幅に収まらず折り返すぶんも数える** (字の幅は大きさと同じとみなす。日本語の全角)。
+ * 多めに見積もるほうが安全 (下揃えなら下の端は変わらず、上揃えなら下の端が下に出て、よけいに持ち上げるだけ)
+ */
+private fun textLines(text: CharSequence?, textSize: Float, width: Float): Int {
+    if (text.isNullOrEmpty()) return 1
+    val perLine = (width / textSize).toInt().coerceAtLeast(1)
+    return text.split('\n').sumOf { ceil(it.length.toFloat() / perLine).toInt().coerceAtLeast(1) }
+}
 
 /** 字の大きさに対する行の高さの見積もり */
 private const val LINE_SPACING = 1.3f
-
-/** `SubtitleView` の既定の下の空き (`SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION`) */
-private const val BOTTOM_PADDING_FRACTION = 0.08f

@@ -280,10 +280,10 @@ private suspend fun follow(url: URI, token: String?, state: RawCaptionState, kee
     }
 }
 
-/** 絵を解く。PNG は RGBA で、1920x1080 まるごと。字のある行もここで探す (上と下から1行ずつ見て、字に当たったら止める) */
+/** 絵を解く。PNG は RGBA で、1920x1080 まるごと。字のある行もここで探す (上と下から見て、字に当たったら止める) */
 private suspend fun decode(cue: CaptionCue): CaptionPicture? = withContext(Dispatchers.Default) {
     BitmapFactory.decodeByteArray(cue.png, 0, cue.png.size)?.let { bitmap ->
-        val ink = inkRows(bitmap.width, bitmap.height) { y, into -> bitmap.getPixels(into, 0, bitmap.width, 0, y, bitmap.width, 1) }
+        val ink = inkRows(bitmap.width, bitmap.height) { y, rows, into -> bitmap.getPixels(into, 0, bitmap.width, 0, y, bitmap.width, rows) }
         CaptionPicture(bitmap.asImageBitmap(), cue, ink)
     }
 }
