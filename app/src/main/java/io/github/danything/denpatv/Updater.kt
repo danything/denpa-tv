@@ -214,7 +214,8 @@ class Updater(private val app: DenpaApp) {
                 else -> Unit
             }
             Resume.Wait -> Unit
-            Resume.Forget -> remember(null)
+            // 確かめている間に押されて新しい頼みを覚えていたら、それは消さない
+            Resume.Forget -> if (asked == request) remember(null)
         }
     }
 
