@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -25,14 +26,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
+import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import io.github.danything.denpatv.DenpaApp
+import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.ConnectStep
 import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.PairingOutcome
@@ -132,7 +134,7 @@ fun SetupScreen(app: DenpaApp) {
                     Text("スマホで denpa にログインしてください", style = MaterialTheme.typography.headlineSmall)
                     Text("スマホが denpa の画面に移ります。ログインが済むと、テレビは自動で次に進みます。", style = MaterialTheme.typography.bodyLarge)
                     Text("スマホが移らないときは、左の QR か次の URL を開いてください: ${current.verificationUrl}", style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = { polling?.cancel(); state = SetupState.Waiting }) { Text("やめる") }
+                    DenpaButton(onClick = { polling?.cancel(); state = SetupState.Waiting }, primary = false) { Text("やめる") }
                 }
             }
             else -> {
@@ -143,7 +145,11 @@ fun SetupScreen(app: DenpaApp) {
                     }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("denpa に繋ぐ", style = MaterialTheme.typography.headlineMedium)
+                    // アプリの印 (左のメニューの頭・アイコンと同じ電波塔)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Icon(painterResource(R.drawable.ic_brand), contentDescription = null, tint = Palette.AccentBright, modifier = Modifier.size(40.dp))
+                        Text("denpa に繋ぐ", style = MaterialTheme.typography.headlineMedium)
+                    }
                     if (serverUrl != null) {
                         Text("1. スマホをテレビと同じ Wi-Fi に繋ぎ、左の QR を読む", style = MaterialTheme.typography.bodyLarge)
                         Text("2. 開いたページに、ブラウザで denpa を開いている URL を入れる", style = MaterialTheme.typography.bodyLarge)
@@ -166,7 +172,7 @@ fun SetupScreen(app: DenpaApp) {
                             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                             .padding(14.dp),
                     )
-                    Button(
+                    DenpaButton(
                         onClick = { scope.launch { submit(text) } },
                         enabled = state != SetupState.Checking,
                         modifier = Modifier.focusRequester(connectButton),

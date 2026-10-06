@@ -1,6 +1,8 @@
 package io.github.danything.denpatv.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -12,20 +14,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
-import io.github.danything.denpatv.data.liveCenter
-import io.github.danything.denpatv.data.liveCommand
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.NowProgram
 import io.github.danything.denpatv.data.RecordResult
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.audioQuery
+import io.github.danything.denpatv.data.liveCenter
+import io.github.danything.denpatv.data.liveCommand
 import io.github.danything.denpatv.data.neighbor
 import io.github.danything.denpatv.data.number
 import kotlinx.coroutines.delay
@@ -367,6 +371,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                     { ProgressLine(System.currentTimeMillis() - program.startAt, program.endAt - program.startAt) }
                 },
                 down = currentCard,
+                // 局ロゴ (拾えている局だけ。無ければ題だけ)
+                leading = current.logo?.let { { ChannelLogo(repo, current, Modifier.width(56.dp).height(32.dp)) } },
                 below = {
                     ChannelRows(repo, services, current, currentCard) { picked ->
                         playing = picked

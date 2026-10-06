@@ -33,7 +33,6 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import androidx.tv.material3.darkColorScheme
 import io.github.danything.denpatv.DenpaApp
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.chasing
@@ -57,7 +56,7 @@ import kotlinx.serialization.Serializable
 
 @Composable
 fun DenpaTv(app: DenpaApp, link: MutableState<DeepLink?>) {
-    MaterialTheme(colorScheme = darkColorScheme()) {
+    DenpaTheme {
         val back = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
         Surface(modifier = Modifier.fillMaxSize().backKeyGoesBack(back)) {
             // 未設定 (null) と読み込み中を分ける。読み込み中は何も出さない

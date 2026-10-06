@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 左のメニューの頭に出す denpa の電波塔 (ic_launcher_foreground と同じ形)。色は使う側で付ける (Palette.AccentBright) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path android:pathData="M11,9a8,8 0,0 0,0 10" android:strokeColor="#FFFFFF" android:strokeWidth="2" android:strokeLineCap="round" />
+    <path android:pathData="M21,9a8,8 0,0 1,0 10" android:strokeColor="#FFFFFF" android:strokeWidth="2" android:strokeLineCap="round" />
+    <path android:pathData="M7.5,5.5a13,13 0,0 0,0 17" android:strokeColor="#FFFFFF" android:strokeWidth="2" android:strokeLineCap="round" />
+    <path android:pathData="M24.5,5.5a13,13 0,0 1,0 17" android:strokeColor="#FFFFFF" android:strokeWidth="2" android:strokeLineCap="round" />
+    <path android:pathData="M16,14m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M16,16.5L13,27h6z" android:fillColor="#FFFFFF" />
+</vector>

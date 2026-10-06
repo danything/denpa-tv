@@ -1,16 +1,19 @@
 package io.github.danything.denpatv.ui
 
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -43,14 +47,14 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import io.github.danything.denpatv.data.splitExtended
 import kotlinx.coroutines.launch
@@ -70,6 +74,8 @@ data class DetailFacts(
     val description: String = "",
     /** 放送の詳細 (見出し → 本文) */
     val extended: List<Pair<String, String>> = emptyList(),
+    /** 局ロゴの URL (ライブ。「局 ・ 日時」の行の頭に出す)。無ければ出さない */
+    val logo: String? = null,
 )
 
 /** 詳しくの札。並べた順に左から。**先頭が主な操作で、開いたときにそこに合う** */
@@ -100,6 +106,10 @@ fun ProgramDetailDialog(
     note: String? = null,
     /** 映像の上に開く (再生中・ライブ)。右へ行くほど少し透かして映像を覗かせる。一覧の上では透かさない */
     overVideo: Boolean = false,
+    /** 後ろにうすく敷く絵 (録画のポスター)。null なら地の色だけ */
+    backdrop: String? = null,
+    /** 絵を取るときの鍵 */
+    token: String? = null,
 ) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
@@ -118,17 +128,16 @@ fun ProgramDetailDialog(
                     },
                 ),
         ) {
+            if (!overVideo && backdrop != null) FaintBackdrop(backdrop, token)
             Column(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 40.dp, bottom = 24.dp)) {
-                Header(facts)
+                Header(facts, token)
                 Spacer(Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     actions.forEachIndexed { index, action ->
                         val modifier = if (index == 0) Modifier.focusRequester(first) else Modifier
                         // 札の文字は1行のまま伸ばす (「もう一度押すと削除」になっても切れないように)
-                        if (index == 0) {
-                            Button(onClick = action.onClick, modifier = modifier) { Text(action.label, maxLines = 1, softWrap = false) }
-                        } else {
-                            OutlinedButton(onClick = action.onClick, modifier = modifier) { Text(action.label, maxLines = 1, softWrap = false) }
+                        DenpaButton(onClick = action.onClick, modifier = modifier, primary = index == 0) {
+                            Text(action.label, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -144,7 +153,7 @@ fun ProgramDetailDialog(
 }
 
 @Composable
-private fun Header(facts: DetailFacts) {
+private fun Header(facts: DetailFacts, token: String?) {
     Text(
         facts.title,
         style = MaterialTheme.typography.headlineMedium,
@@ -153,7 +162,10 @@ private fun Header(facts: DetailFacts) {
         modifier = Modifier.widthIn(max = 760.dp),
     )
     Spacer(Modifier.height(6.dp))
-    Text(facts.meta, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        facts.logo?.let { RemoteImage(it, ContentScale.Fit, Modifier.width(48.dp).height(27.dp), token, placeholder = Color.Transparent) }
+        Text(facts.meta, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     facts.progress?.let { (at, length) ->
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -307,3 +319,26 @@ private val CHIP_HEIGHT = 30.dp
 
 /** 録画中の印の赤 (一覧のカードの「● 録画中」と同じ) */
 private val BADGE_COLOR = Color(0xFFC62828)
+
+/**
+ * 詳しくの後ろにうすく敷く録画の絵。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (Android 12 から)、
+ * 地の色で大きく覆い、左と下へ溶かす。絵の要素としては出さない (縁も札も付けない)
+ */
+@Composable
+private fun BoxScope.FaintBackdrop(url: String, token: String?) {
+    val blur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    Box(Modifier.align(Alignment.TopEnd).fillMaxWidth(0.7f).fillMaxHeight(0.75f)) {
+        RemoteImage(
+            url,
+            ContentScale.Crop,
+            Modifier.fillMaxSize().then(if (blur) Modifier.blur(12.dp) else Modifier),
+            token,
+            decode = IntSize(160, 90),
+            placeholder = Color.Transparent,
+        )
+        val surface = MaterialTheme.colorScheme.surface
+        Box(Modifier.matchParentSize().background(surface.copy(alpha = if (blur) 0.72f else 0.8f)))
+        Box(Modifier.matchParentSize().background(Brush.horizontalGradient(0f to surface, 0.6f to surface.copy(alpha = 0.4f), 1f to Color.Transparent)))
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.3f to Color.Transparent, 1f to surface)))
+    }
+}
