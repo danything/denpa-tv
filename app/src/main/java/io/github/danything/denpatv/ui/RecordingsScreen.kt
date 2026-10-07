@@ -48,8 +48,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.LocaleList
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
@@ -60,6 +65,7 @@ import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.codecLabels
 import io.github.danything.denpatv.data.durationLabel
+import io.github.danything.denpatv.data.shortServiceName
 import io.github.danything.denpatv.data.watched
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -371,16 +377,16 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
             UpdateNotice(repo.app.updater)
         }
         Spacer(Modifier.height(4.dp))
-        Text(
+        // 1行に収まらなければ話数を残して途中を切る (カードと同じ)
+        EpisodeTitle(
             recording.title,
-            style = MaterialTheme.typography.headlineMedium,
-            color = Palette.Text,
+            MaterialTheme.typography.headlineMedium.merge(TITLE_TEXT),
+            Palette.Text,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = HERO_TEXT_WIDTH),
         )
         Text(
-            listOfNotNull(recording.serviceName, WHEN.format(Date(recording.startAt)), recording.durationMs?.let(::durationLabel)).joinToString("  ・  "),
+            listOfNotNull(recording.serviceName?.let(::shortServiceName), WHEN.format(Date(recording.startAt)), recording.durationMs?.let(::durationLabel)).joinToString("  ・  "),
             style = MaterialTheme.typography.titleSmall,
             color = Palette.TextMuted,
             maxLines = 1,
@@ -453,9 +459,15 @@ private fun Badge(label: String, background: Color, color: Color) {
 }
 
 /**
- * 録画のカード。**絵を大きく** (16:9。Google TV の横長のカード。角 12dp) し、下に番組名を1行だけ (全部は上の段に)。局・日時・長さ・形は上の段に出す。
+ * 録画のカード。**絵を大きく** (16:9。Google TV の横長のカード。角 12dp) し、**番組名を絵の下の縁に重ねて2行まで、大きく太く**
+ * (暗い帯の上に白い字)。絵の下には局と放送の時刻を1行。長さ・形・説明は上の段に出す。
+ *
+ * 絵は放送から切り出したもの (暗転・CM・字幕の無い場面のこともある) で、絵だけでは何の番組か分からないことがあるので、
+ * **合わせていないカードも題で見分けられるように**する。題を絵の下に置くと1段が高くなり、下の段は絵だけ見えて題が切れる
+ * (いちばん見たいものが見えない) ので、絵に重ねて段の高さを前と同じにしている。収まらない題は話数を残して途中を切る (`EpisodeTitle`)。
+ *
  * 絵の上に、録っている最中なら「● 録画中」、焼いている最中なら進み、下の縁に観た割合の帯。
- * 合わせると膨らみ、azure の縁と光 (`Focus`)。番組名も明るくする
+ * 合わせると膨らみ、azure の縁と光 (`Focus`)
  */
 @Composable
 private fun RecordingCard(
@@ -467,14 +479,13 @@ private fun RecordingCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
     val shape = CardShape
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // 決定の長押しは繰り返しが来なくても押した長さで決める (`centerPresses`)。カードの onClick・onLongClick は手で触れたとき・読み上げ用
         Card(
             onClick = onClick,
             onLongClick = onLongClick,
-            modifier = modifier.onFocusChanged { focused = it.isFocused }.centerPresses(onClick, onLongClick).fillMaxWidth().aspectRatio(16f / 9f),
+            modifier = modifier.centerPresses(onClick, onLongClick).fillMaxWidth().aspectRatio(16f / 9f),
             shape = CardDefaults.shape(shape),
             colors = CardDefaults.colors(containerColor = Palette.Surface, focusedContainerColor = Palette.Surface),
             scale = CardDefaults.scale(focusedScale = Focus.CARD_SCALE),
@@ -493,6 +504,16 @@ private fun RecordingCard(
                     // 焼いている間は進み (denpa の知らせで動く)
                     encodingOf(repo, recording.id)?.let { Badge("エンコード中 ${(it * 100).toInt()}%", Palette.Background.copy(alpha = 0.85f), Palette.Text) }
                 }
+                // 番組名は下の縁に。上は暗い帯へ溶かす (明るい絵・字の入った絵でも読めるように)
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .background(TITLE_SCRIM)
+                        .padding(start = 10.dp, end = 10.dp, top = 24.dp, bottom = 10.dp),
+                ) {
+                    EpisodeTitle(recording.title, CARD_TITLE, Color.White, maxLines = 2)
+                }
                 // 観た割合 (続きの位置があるときだけ)。絵の下の縁に
                 recording.watched?.let { part ->
                     Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(5.dp).background(Color(0x99000000))) {
@@ -502,14 +523,39 @@ private fun RecordingCard(
             }
         }
         Text(
-            recording.title,
-            style = MaterialTheme.typography.titleSmall,
-            color = if (focused) Palette.Text else Palette.TextMuted,
+            cardMeta(recording),
+            style = MaterialTheme.typography.labelLarge,
+            color = Palette.TextMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }
 }
+
+/**
+ * 番組名の折り方: 文節で折り (日本語として組む。端末の言語が英語でも)、行頭に「っ」「ー」などを置かない。
+ * `WordBreak.Phrase` は Android 13 から (それより前は字ごとに折る)
+ */
+private val TITLE_TEXT = TextStyle(
+    lineBreak = LineBreak(LineBreak.Strategy.Balanced, LineBreak.Strictness.Strict, LineBreak.WordBreak.Phrase),
+    localeList = LocaleList("ja-JP"),
+)
+
+/** カードの番組名 (カードは 4 列で幅 180dp ほど。離れても読める大きさと太さ) */
+private val CARD_TITLE = TITLE_TEXT.copy(
+    fontSize = 17.sp,
+    lineHeight = 23.sp,
+    fontWeight = FontWeight.SemiBold,
+)
+
+/** 番組名の下に敷く帯 (上は透かし、字のあたりは濃く) */
+private val TITLE_SCRIM = Brush.verticalGradient(0f to Color.Transparent, 0.3f to Color(0xC0000000), 1f to Color(0xF0000000))
+
+/** カードの2行目: 局と放送の時刻 (日は見出しにある) */
+private fun cardMeta(recording: Recording): String =
+    listOfNotNull(recording.serviceName?.let(::shortServiceName), TIME.format(Date(recording.startAt))).joinToString("  ・  ")
+
+private val TIME = SimpleDateFormat("HH:mm", Locale.JAPAN)
 
 /** 格子の中の位置 (日の見出しも数える。下の LazyVerticalGrid の並びと同じ) */
 private fun gridIndex(recordings: List<Recording>, id: Long): Int? {
