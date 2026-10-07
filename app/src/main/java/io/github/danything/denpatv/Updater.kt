@@ -129,7 +129,7 @@ enum class InstallStep {
  * 許可が見えるか (`allowed` = `canRequestPackageInstalls()`)、REQUEST_INSTALL_PACKAGES の appop (`appop`。Android 7.x は null)、
  * この版でもう許可の画面へ送ったか (`asked`) から決める。
  * **許可が見えなくても、一度送ったあとはセッションで入れてみる**: テレビによっては許可しても false のまま (denpa-tv#32 の
- * BRAVIA。設定に denpa が2つ並ぶ)、許可の画面と行き来するだけになる。本当に許可されていなければ、OS が確認の画面で尋ねるか断る。
+ * BRAVIA。設定には「許可」と出るのに appop は未設定のまま)、許可の画面と行き来するだけになる。本当に許可されていなければ、OS が確認の画面で尋ねるか断る。
  * ただ**はっきり拒否** (MODE_ERRORED) なら入れてみない: 確認の画面を経て拒否になったのなら、また尋ねても同じなので
  * 許可の画面を直接開く (denpa-tv#32 のログ。確認の画面のあとに 2 になり、押し直しても入らなかった)
  */
@@ -140,7 +140,7 @@ fun installStep(allowed: Boolean, appop: Int?, asked: InstallRequest?, version: 
     else -> InstallStep.AskPermission
 }
 
-/** REQUEST_INSTALL_PACKAGES がはっきり拒否になっている (未設定の MODE_DEFAULT は拒否とみなさない。BRAVIA は許可してもこれ) */
+/** REQUEST_INSTALL_PACKAGES がはっきり拒否になっている (未設定の MODE_DEFAULT は拒否とみなさない。BRAVIA は設定に「許可」と出ていてもこれ) */
 fun denied(appop: Int?): Boolean = appop == AppOpsManager.MODE_ERRORED
 
 /**
@@ -467,7 +467,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * 許可の画面を開いて「許可を待つ」にする (許可して戻れば続けて入れる)。アプリが閉じられても開き直したときに続けられるよう、
-     * 先に頼みを覚えておく。`denied` (はっきり拒否) なら、拒否になっていることと2つ並ぶことを添える
+     * 先に頼みを覚えておく。`denied` (はっきり拒否) なら、拒否になっていることと切り直すことを添える
      */
     private fun askPermission(update: Update, downloaded: File?, denied: Boolean) {
         remember(InstallRequest(update.version, System.currentTimeMillis()))
@@ -488,7 +488,7 @@ class Updater(private val app: DenpaApp) {
         val then = if (opened) "して戻ってください" else "してから、もう一度押してください"
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             (if (denied) "拒否になっています。" else "") + (if (opened) "" else "テレビの設定で") +
-                "「不明なアプリのインストール」を許可$then" + (if (denied) " ($TWO_ENTRIES)" else "")
+                "「不明なアプリのインストール」を許可$then" + (if (denied) " ($RETOGGLE)" else "")
         } else {
             (if (opened) "" else "テレビの設定の「セキュリティ」で") + "「提供元不明のアプリ」を許可$then"
         }
@@ -547,7 +547,7 @@ class Updater(private val app: DenpaApp) {
             _state.value = if (e is SecurityException && !allowedToInstall()) {
                 // セッションを作れない・渡せない: 許可が無いせい。次に押すと許可の画面を開き直す (頼みを忘れて AskPermission に)
                 remember(null)
-                UpdateState.Failed(update, "インストールの許可がありません。もう一度押して許可してください ($TWO_ENTRIES)", file)
+                UpdateState.Failed(update, "インストールの許可がありません。もう一度押して許可してください ($RETOGGLE)", file)
             } else {
                 UpdateState.Failed(update, "インストールに失敗しました (${e.message ?: e.javaClass.simpleName})", file)
             }
@@ -631,9 +631,9 @@ class Updater(private val app: DenpaApp) {
             PackageInstaller.STATUS_FAILURE_ABORTED if !allowedToInstall() && denied(appop()) ->
                 askPermission(installing.update, installing.file, denied = true)
             // 許可が見えないときにやめたのは、OS の「このアプリからは入れられません」かもしれない。ただ確認の画面を閉じても同じ
-            // (User rejected permissions) で見分けられないので、許可の画面へは戻さず (押すとまた OS が尋ねる)、2つ並ぶことだけ添える
+            // (User rejected permissions) で見分けられないので、許可の画面へは戻さず (押すとまた OS が尋ねる)、切り直すことだけ添える
             PackageInstaller.STATUS_FAILURE_ABORTED -> failed(
-                "インストールを中止しました" + (if (allowedToInstall()) "" else " ($TWO_ENTRIES)"),
+                "インストールを中止しました" + (if (allowedToInstall()) "" else " ($RETOGGLE)"),
             )
             PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
                 failed("署名が違うため上書きできません (docs/install.md)")
@@ -651,8 +651,8 @@ class Updater(private val app: DenpaApp) {
         const val CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000L
         const val STATUS_TIMEOUT_MS = 30_000L
         const val ACTION_STATUS = "io.github.danything.denpatv.UPDATE_STATUS"
-        /** テレビの設定に同じアプリが2つ並ぶことがあり (denpa-tv#32)、片方だけ許可しても効かないことがある */
-        const val TWO_ENTRIES = "denpa が2つあれば両方を許可"
+        /** BRAVIA は未設定でも設定に「許可」と出す (denpa-tv#32)。一度オフにしてオンにすると許可が書かれる */
+        const val RETOGGLE = "許可と出ていても一度オフにしてオンに"
         /** AppOpsManager の OPSTR_REQUEST_INSTALL_PACKAGES (SDK には出ていない名前) */
         const val OPSTR_REQUEST_INSTALL_PACKAGES = "android:request_install_packages"
     }
