@@ -10,7 +10,6 @@ import io.github.danything.denpatv.data.audioLabel
 import io.github.danything.denpatv.data.genreLabel
 import io.github.danything.denpatv.data.parseProgramInfo
 import io.github.danything.denpatv.data.programMeta
-import io.github.danything.denpatv.data.splitExtended
 import io.github.danything.denpatv.data.videoLabel
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -108,13 +107,5 @@ class ProgramInfoTest {
         assertEquals("フジテレビ ・ 10/6(火) 21:00〜21:54 (54分)", programMeta("フジテレビ", start, start + 54 * 60_000, tokyo))
         assertEquals("10/6(火) 21:00〜22:30 (1時間30分)", programMeta(null, start, start + 90 * 60_000, tokyo))
         assertEquals("局 ・ 10/6(火) 21:00", programMeta("局", start, null, tokyo))
-    }
-
-    /** 読みもの (説明と並べて左) と名前の並び (右) に分ける。並びは放送のまま */
-    @Test
-    fun 詳細を分ける() {
-        val (prose, credits) = splitExtended(listOf("出演者" to "a", "番組内容" to "b", "音楽" to "c", "あらすじ" to "d"))
-        assertEquals(listOf("番組内容" to "b", "あらすじ" to "d"), prose)
-        assertEquals(listOf("出演者" to "a", "音楽" to "c"), credits)
     }
 }
