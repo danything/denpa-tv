@@ -207,7 +207,8 @@ private fun RailItem(destination: Destination, selected: Boolean, open: Boolean,
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Icon(painterResource(destination.icon), contentDescription = null, modifier = Modifier.size(RAIL_ICON))
+            // 畳んでいる間は名前を出さないので、読み上げには印に名前を付ける
+            Icon(painterResource(destination.icon), contentDescription = if (open) null else destination.label, modifier = Modifier.size(RAIL_ICON))
             if (open) Text(destination.label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
         }
     }
