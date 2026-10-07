@@ -1,5 +1,7 @@
 package io.github.danything.denpatv.data
 
+import java.text.Normalizer
+
 /** 放送の詳細の見出しの種類。詳しくの本文で、どこにどの大きさで出すかを決める */
 enum class DetailKind {
     /** 番組内容・あらすじ。説明と1つの読みものにまとめて先頭に */
@@ -20,24 +22,31 @@ enum class DetailKind {
 
 /**
  * 見出しの種類。局ごとの書き方の揺れ (「番組内容1」「番組内容①」「今回の番組内容」「あらすじ◇」「スタッフ2」) は、
- * 空白・飾りの記号・番号・「今回の」を外してから見る。知らない見出しは [DetailKind.Credit]
+ * NFKC で揃え (全角英数字・半角カナ・丸数字)、空白・飾りの記号・番号・「今回の」を外してから見る。
+ * 知らない見出しは [DetailKind.Credit]
  */
 fun detailKind(heading: String): DetailKind {
-    val key = heading
-        .filterNot { it.isWhitespace() || it in DECORATION || it.isDigit() || it in '①'..'⑳' }
+    val key = nfkc(heading)
+        .filterNot { it.isWhitespace() || it in DECORATION || it.isDigit() }
         .removePrefix("今回の")
         .uppercase()
     return when {
-        "ホームページ" in key || key.endsWith("HP") || "サイト" in key || key == "URL" || key == "WEB" -> DetailKind.Link
+        // おしらせが先 (「お知らせ・ホームページ」の本文を消さない。URL の行だけは外れる)
         "お知らせ" in key || "おしらせ" in key || "告知" in key || key == "ご案内" -> DetailKind.Notice
-        "番組内容" in key || "あらすじ" in key || "ストーリー" in key || key in STORY_KEYS -> DetailKind.Story
+        "ホームページ" in key || key.endsWith("HP") || key.endsWith("サイト") || key == "URL" || key == "WEB" -> DetailKind.Link
+        // 出演者が番組内容より先 (「出演者紹介」は出演者)
         "出演" in key || "キャスト" in key || "ゲスト" in key || "司会" in key || key in CAST_KEYS -> DetailKind.Cast
+        "あらすじ" in key || "アラスジ" in key || "ストーリー" in key || STORY_ENDS.any { key.endsWith(it) } || key in STORY_KEYS -> DetailKind.Story
         else -> DetailKind.Credit
     }
 }
 
-private const val DECORATION = "◇◆■□●○◎★☆▼▽▲△♪【】［］[]（）()「」〈〉＜＞<>:："
-private val STORY_KEYS = setOf("内容", "みどころ", "見どころ", "解説", "番組紹介", "概要")
+/** 飾りの記号 (NFKC の後に比べるので、全角の括弧・コロンは半角で書く) */
+private const val DECORATION = "◇◆■□●○◎★☆▼▽▲△♪【】「」〈〉《》[]()<>:"
+
+/** 「番組内容」「放送内容」「番組概要」「作品紹介」のような見出しの終わり */
+private val STORY_ENDS = listOf("内容", "概要", "紹介")
+private val STORY_KEYS = setOf("みどころ", "見どころ")
 private val CAST_KEYS = setOf("語り", "ナレーション", "ナレーター", "MC", "声優")
 
 /** 詳しくの本文。上から読みもの → 出演者 → ほか (知らせは最後) の順に1列で出す */
@@ -46,7 +55,7 @@ data class DetailText(
     val story: List<String> = emptyList(),
     /** 出演者 (見出し → 1行に詰めた本文。1人1行のままだと縦に長くなる) */
     val cast: List<Pair<String, String>> = emptyList(),
-    /** 制作・音楽など、最後におしらせ (見出し → 1行に詰めた本文) */
+    /** 制作・音楽など → おしらせ の順 (見出し → 1行に詰めた本文) */
     val notes: List<Pair<String, String>> = emptyList(),
 ) {
     val isEmpty: Boolean get() = story.isEmpty() && cast.isEmpty() && notes.isEmpty()
@@ -55,7 +64,7 @@ data class DetailText(
 /**
  * 説明と放送の詳細を、詳しくの本文の並びにする。並びは放送のまま (番組内容1 → 2)。
  * - 説明と番組内容・あらすじは段落にまとめる。**ほかの段落に含まれる段落は出さない** (説明は番組内容の頭や一部のことが多い)
- * - ホームページは出さない。どの本文も、URL だけの行は外す (開けない)
+ * - ホームページは出さない。どの本文も、URL を含む行は外す (開けない)
  * - 出演者・制作・音楽・おしらせなどは改行を「／」で繋いで詰める
  */
 fun arrangeDetail(description: String, extended: List<Pair<String, String>>): DetailText {
@@ -66,10 +75,12 @@ fun arrangeDetail(description: String, extended: List<Pair<String, String>>): De
     }
     val paragraphs = listOf(withoutUrls(description)).filter { it.isNotEmpty() } +
         sections.filter { it.first == DetailKind.Story }.map { it.third }
-    val keys = paragraphs.map { squash(it).trimEnd('…', '‥', '.') }
+    // 比べるときは NFKC で揃え、終わりの省略 (…・‥・．．．・・・・) を外す
+    val keys = paragraphs.map { squash(nfkc(it)).trimEnd('.', '・', '･') }
     val story = paragraphs.filterIndexed { i, _ ->
-        // 同じ段落は先の1つだけ、ほかの段落に含まれる段落は除く
-        keys.indices.none { j -> j != i && keys[i] in keys[j] && (keys[j].length > keys[i].length || j < i) }
+        // 「…」だけの段落は除く。同じ段落は先の1つだけ、ほかの段落に含まれる段落は除く
+        keys[i].isNotEmpty() &&
+            keys.indices.none { j -> j != i && keys[i] in keys[j] && (keys[j].length > keys[i].length || j < i) }
     }
     fun of(kind: DetailKind) = sections.filter { it.first == kind }.map { it.second to it.third }
     return DetailText(
@@ -79,19 +90,23 @@ fun arrangeDetail(description: String, extended: List<Pair<String, String>>): De
     )
 }
 
-private val URL_LINE = Regex("""^\s*(https?://|www\.)\S*\s*$""")
+private val URL = Regex("""https?://|www\.""", RegexOption.IGNORE_CASE)
 
+/** URL を含む行を外す (「番組HP：https://…」の行ごと。テレビでは開けない)。全角の URL も */
 private fun withoutUrls(text: String): String =
-    text.lines().filterNot { URL_LINE.matches(it) }.joinToString("\n").trim()
+    text.lines().filterNot { URL.containsMatchIn(nfkc(it)) }.joinToString("\n").trim()
+
+private fun nfkc(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFKC)
 
 private fun squash(text: String): String = text.filterNot { it.isWhitespace() }
 
-/** 改行を「／」で繋ぐ。「【スタッフ】」「演出：」のような見出しの行は、次の行と空白で繋ぐ */
+/** 改行を「／」で繋ぐ。「【スタッフ】」「演出：」のような見出しだけの行は、次の行と空白で繋ぐ */
 private fun oneLine(text: String): String {
     val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    fun heading(line: String) = line.last() in "：:" || (line.first() == '【' && line.last() == '】')
     return buildString {
         lines.forEachIndexed { i, line ->
-            if (i > 0) append(if (lines[i - 1].last() in "】：:") "　" else " ／ ")
+            if (i > 0) append(if (heading(lines[i - 1])) "　" else " ／ ")
             append(line)
         }
     }

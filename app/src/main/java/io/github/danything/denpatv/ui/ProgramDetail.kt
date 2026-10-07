@@ -306,8 +306,10 @@ private fun DetailColumn(text: DetailText, modifier: Modifier) {
                 text.notes.forEach { (heading, body) ->
                     Text(
                         buildAnnotatedString {
-                            withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Medium)) { append(heading) }
-                            append("　")
+                            if (heading.isNotEmpty()) {
+                                withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Medium)) { append(heading) }
+                                append("　")
+                            }
                             append(body)
                         },
                         style = MaterialTheme.typography.bodyMedium,

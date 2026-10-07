@@ -13,11 +13,11 @@ class DetailTextTest {
     @Test
     fun 見出しの種類() {
         val cases = mapOf(
-            DetailKind.Story to listOf("番組内容", "番組内容1", "番組内容2", "番組内容①", "番組内容②", "今回の番組内容", "あらすじ◇", "◇あらすじ", "【あらすじ】", "内容", "みどころ"),
-            DetailKind.Cast to listOf("出演者", "声の出演", "【出演】", "ゲスト", "キャスト", "語り"),
-            DetailKind.Credit to listOf("制作", "スタッフ", "スタッフ2", "音楽", "主題歌", "楽曲", "原作", "原作脚本", "原作・脚本", "監督・演出", "脚本", "知らない見出し", ""),
-            DetailKind.Notice to listOf("おしらせ", "お知らせ", "◇おしらせ", "ご案内"),
-            DetailKind.Link to listOf("ホームページ", "HP", "番組HP", "公式ホームページ", "公式サイト", "hp"),
+            DetailKind.Story to listOf("番組内容", "番組内容1", "番組内容2", "番組内容①", "番組内容②", "番組内容１", "今回の番組内容", "あらすじ◇", "◇あらすじ", "【あらすじ】", "内容", "みどころ", "番組概要", "放送内容", "作品紹介", "ｱﾗｽｼﾞ"),
+            DetailKind.Cast to listOf("出演者", "声の出演", "【出演】", "ゲスト", "キャスト", "語り", "出演者紹介"),
+            DetailKind.Credit to listOf("制作", "スタッフ", "スタッフ2", "音楽", "主題歌", "楽曲", "原作", "原作脚本", "原作・脚本", "監督・演出", "脚本", "解説", "実況", "知らない見出し", ""),
+            DetailKind.Notice to listOf("おしらせ", "お知らせ", "◇おしらせ", "ご案内", "お知らせ・ホームページ"),
+            DetailKind.Link to listOf("ホームページ", "HP", "番組HP", "公式ホームページ", "公式サイト", "hp", "ＨＰ", "ホームページ：", "ﾎｰﾑﾍﾟｰｼﾞ"),
         )
         cases.forEach { (kind, headings) ->
             headings.forEach { assertEquals("「$it」", kind, detailKind(it)) }
@@ -60,6 +60,8 @@ class DetailTextTest {
             listOf("番組内容①" to "第3話。港町で古い友人と再会する。", "あらすじ◇" to "友人には秘密があった。", "番組内容②" to "友人には秘密があった。"),
         )
         assertEquals(listOf("第3話。港町で古い友人と再会する。", "友人には秘密があった。"), text.story)
+        // 「・・・」で切れた説明・全角の数字でも重なりと見る
+        assertEquals(listOf("第3話。港町で再会する。"), arrangeDetail("第３話。港町で・・・", listOf("番組内容" to "第3話。港町で再会する。")).story)
     }
 
     /** 説明のほうが長く番組内容を含むなら、説明だけ。重ならなければ説明 → 番組内容 */
@@ -68,16 +70,27 @@ class DetailTextTest {
         assertEquals(listOf("説明の文。番組内容の文。"), arrangeDetail("説明の文。番組内容の文。", listOf("番組内容" to "番組内容の文。")).story)
         assertEquals(listOf("説明の文。", "番組内容の文。"), arrangeDetail("説明の文。", listOf("今回の番組内容" to "番組内容の文。")).story)
         assertEquals(listOf("説明だけ。"), arrangeDetail(" 説明だけ。\n", emptyList()).story)
+        assertEquals(listOf("番組内容の文。"), arrangeDetail("…", listOf("番組内容" to "番組内容の文。")).story)
+        assertTrue(arrangeDetail("…", emptyList()).isEmpty)
     }
 
-    /** URL だけの行は外し、空になった見出しは出さない */
+    /** 「／」で詰める。見出しだけの行 (「【スタッフ】」「演出：」) は次と空白で繋ぎ、【】で終わるだけの行は区切る */
+    @Test
+    fun 詰める() {
+        val notes = arrangeDetail("", listOf("主題歌" to "「鍵」【ソラノネ】\n「海」【ミナト】", "制作" to "【スタッフ】\n演出：\n上原 健一\n\n音楽：森永 響")).notes
+        assertEquals(listOf("主題歌" to "「鍵」【ソラノネ】 ／ 「海」【ミナト】", "制作" to "【スタッフ】　演出：　上原 健一 ／ 音楽：森永 響"), notes)
+    }
+
+    /** URL を含む行は外し、空になった見出しは出さない */
     @Test
     fun URLの行を外す() {
         val text = arrangeDetail(
             "",
-            listOf("おしらせ" to "詳しくは番組のサイトで。\nhttps://example.jp/a", "HP" to "番組サイト\nhttps://example.jp", "スタッフ2" to "www.example.jp"),
+            listOf("おしらせ" to "詳しくは番組のサイトで。\nhttps://example.jp/a", "HP" to "番組サイト\nhttps://example.jp", "スタッフ2" to "www.example.jp", "制作" to "ｈｔｔｐｓ：／／ｅｘａｍｐｌｅ．ｊｐ\n　https://example.jp/b　"),
         )
         assertEquals(listOf("おしらせ" to "詳しくは番組のサイトで。"), text.notes)
+        // URL を含む行は行ごと
+        assertEquals(listOf("おしらせ" to "再放送は来週です。"), arrangeDetail("", listOf("おしらせ" to "再放送は来週です。\n番組HP：https://example.jp")).notes)
         assertTrue(arrangeDetail("", listOf("ホームページ" to "https://example.jp")).isEmpty)
     }
 }
