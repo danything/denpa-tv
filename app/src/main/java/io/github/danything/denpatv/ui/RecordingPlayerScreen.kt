@@ -185,7 +185,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
 
             /*
              * **最後まで来たら、すぐ終わりの位置を預ける。** 終わりの CM を飛ばして終わると、閉じるまで預けないうちは
-             * denpa が観終えたと分からない (ブラウザの denpa の `finished()` と同じ)。末尾の位置を渡せば denpa が続きを消す
+             * denpa が観終えたと分からない (ブラウザの denpa の `finished()` と同じ)。末尾の位置を渡せば denpa が続きを消し、観終えた印 (`watchedAt`) を付ける
              */
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != Player.STATE_ENDED || ended) return
@@ -195,6 +195,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
                 repo.app.scope.launch {
                     repo.api.saveResume(repo.base, recording.id, length, length)
                     repo.watchNext(recording, (length * 1000).toLong(), (length * 1000).toLong(), finished = true)
+                    repo.positionSaved()
                 }
             }
         }
@@ -230,6 +231,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         if (at > 0 && !deleted) repo.app.scope.launch {
             repo.api.saveResume(repo.base, recording.id, at, length)
             repo.watchNext(recording, (at * 1000).toLong(), (length * 1000).toLong(), finished = ended)
+            repo.positionSaved()
         }
     }
     // 閉じるときに1回。player を畳むのは rememberPlayer の後始末で、こちらが先に走る

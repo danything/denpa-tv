@@ -218,7 +218,10 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         val scheduled = recording.endAt?.let { (it - recording.startAt) / 1000.0 } ?: 0.0
         repo.app.scope.launch {
             repo.api.saveResume(repo.base, recording.id, seconds, if (finished) seconds else scheduled)
-            if (stopped) repo.watchNext(recording, atMs, (scheduled * 1000).toLong(), finished)
+            if (stopped) {
+                repo.watchNext(recording, atMs, (scheduled * 1000).toLong(), finished)
+                repo.positionSaved()
+            }
         }
     }
     LaunchedEffect(player) {

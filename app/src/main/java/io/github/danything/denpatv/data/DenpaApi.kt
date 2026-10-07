@@ -43,7 +43,8 @@ class DenpaApi(
 
     /**
      * どこまで観たかを預ける (`POST /api/recordings/<id>/resume`)。秒で渡す。
-     * 末尾まで観たものは denpa が消す (次に開いたときエンドロールから始まらないように)
+     * 末尾 (尺の 30 秒手前より後) を渡すと、denpa は続きを消し (次に開いたときエンドロールから始まらないように)、
+     * 観終えた印 (`watchedAt`。v1.45.0 から) を付ける
      */
     suspend fun saveResume(base: URI, id: Long, atSeconds: Double, lengthSeconds: Double) =
         withContext(Dispatchers.IO) {

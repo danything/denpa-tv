@@ -3,6 +3,7 @@ package io.github.danything.denpatv
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.RecordResult
+import io.github.danything.denpatv.data.unwatched
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -92,6 +93,23 @@ class DenpaApiTest {
         assertTrue(services[0].now!!.recording)
         assertFalse(services[1].now!!.reserved)
         assertFalse(services[1].now!!.recording)
+    }
+
+    /**
+     * 未視聴は `watchedAt` も `resumeMs` も null のもの。`watchedAt` を送らない古い denpa (v1.45.0 より前) では分からないので、
+     * 印を付けない。形が違っても一覧は読む
+     */
+    @Test
+    fun 未視聴を見分ける() = runTest {
+        denpa.enqueue(
+            """[{"id":1,"title":"a","startAt":1,"watchedAt":null,"resumeMs":null},
+               {"id":2,"title":"b","startAt":1,"watchedAt":null,"resumeMs":754000},
+               {"id":3,"title":"c","startAt":1,"watchedAt":1790000000000,"resumeMs":null},
+               {"id":4,"title":"d","startAt":1,"resumeMs":null},
+               {"id":5,"title":"e","startAt":1,"watchedAt":"2026-10-07"}]""",
+        )
+        val recordings = api.recordings(BaseUrl.normalize(denpa.url())!!)
+        assertEquals(listOf(true, false, false, false, false), recordings.map { it.unwatched })
     }
 
     /** 観た位置は秒で預ける (denpa の POST api/recordings/<id>/resume は {at, length} を秒で受ける) */
