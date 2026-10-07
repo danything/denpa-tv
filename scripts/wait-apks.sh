@@ -41,7 +41,10 @@ while :; do
     fi
     if [ "$status" = completed ]; then
         if [ "$conclusion" = success ]; then
-            echo "::error::apks の列は通りましたが、手順「$step」が見当たりません (ci.yml の手順の名前と合わせる)"
+            # 列は通ったのに手順の結果が読めない (Actions の API が手順を pending のまま返すことがあった)。上げたものを探しに行く
+            # (無ければ下で落ちる)
+            echo "::warning::apks の列は通りましたが、手順「$step」の結果が読めません ($uploaded)。$artifact を探します"
+            break
         else
             echo "::error::apks の列が $artifact を上げずに終わりました ($conclusion)。APK が無いので試験できません"
         fi

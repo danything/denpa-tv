@@ -24,7 +24,11 @@ import kotlin.concurrent.thread
  * 1つの要求ごとに繋ぎを閉じる (`Connection: close`)。映像は Range に答える。`api/events` (SSE) は閉じるまで開けておく。
  * 届いた要求は `requests` に `GET /api/…` の形で溜める
  */
-class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
+class FakeDenpa(
+    private val assets: AssetManager,
+    /** 画面の絵を撮るときの作り物の録画を返す (`Showcase`。`Screenshots`) */
+    private val showcase: Boolean = false,
+) : AutoCloseable {
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
     private val pool = Executors.newCachedThreadPool()
     val requests = ConcurrentLinkedQueue<String>()
@@ -85,7 +89,7 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
     }
 
     private fun route(method: String, path: String, range: String?, out: OutputStream) {
-        val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file)").matchEntire(path)
+        val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file|poster)").matchEntire(path)
         val live = Regex("/api/services/(\\d+)/live").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
             path == "/api/health" -> json(out, """{"ok":true,"version":"v1.44.0"}""")
@@ -106,9 +110,11 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
                 json(out, """{"recorded":"$PROGRAM_TITLE","programId":1,"reserved":true}""")
             path == "/api/programs/$PROGRAM_ID" ->
                 json(out, """{"name":"$PROGRAM_TITLE[字]","service_name":"$SERVICE_NAME","description":"$PROGRAM_DESCRIPTION","extended":{"出演者":"偽の人"},"genre_detail":[{"lv1":0,"lv2":0}],"audios":[{"componentType":3,"langs":["jpn"]}],"video_type":"mpeg2","video_resolution":"1080i","is_free":true}""")
-            path == "/api/recordings" -> json(out, recordings())
+            path == "/api/recordings" -> json(out, if (showcase) Showcase.recordings() else recordings())
             path == "/api/events" -> events(out)
             recording != null && method == "POST" -> respond(out, 204, "text/plain", ByteArray(0))
+            showcase && recording?.groupValues?.get(2) == "poster" -> respond(out, 200, "image/jpeg", Showcase.poster(recording.groupValues[1].toLong()))
+            showcase && recording?.groupValues?.get(2) == "detail" -> json(out, Showcase.detail(recording.groupValues[1].toLong()))
             recording?.groupValues?.get(2) == "detail" -> json(out, """{"description":"$RECORDING_DESCRIPTION","extended":{}}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
             // 追っかけはライブと同じ焼き方の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリは居た場所から頼み直す)
@@ -136,12 +142,14 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
             "recording":true,"chase":"api/recordings/$CHASE_ID/chase","files":[]}]"""
     }
 
-    /** 知らせ (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る */
+    /** 知らせ (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る。作り物の録画を返すときは、焼いている進み (`encode`) も一緒に */
     private fun events(out: OutputStream) {
         out.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n: connected\n\n".toByteArray())
         out.flush()
         try {
             while (!server.isClosed) {
+                if (showcase) out.write("event: encode\ndata: {\"recordingId\":${Showcase.ENCODING_ID},\"percent\":${Showcase.ENCODING_PERCENT}}\n\n".toByteArray())
+                out.flush()
                 Thread.sleep(5_000)
                 out.write("event: ping\ndata: {}\n\n".toByteArray())
                 out.flush()
