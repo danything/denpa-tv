@@ -90,7 +90,7 @@ class DetailTextTest {
         )
         assertEquals(listOf("おしらせ" to "詳しくは番組のサイトで。"), text.notes)
         // 「番組HP：」だけが残る行は行ごと、文の中の URL は URL だけ
-        assertEquals(listOf("おしらせ" to "再放送は来週です。"), arrangeDetail("", listOf("おしらせ" to "再放送は来週です。\n番組HP：https://example.jp")).notes)
+        assertEquals(listOf("おしらせ" to "再放送は来週です。"), arrangeDetail("", listOf("おしらせ" to "再放送は来週です。\n番組HP：https://example.jp\n公式サイト https://example.jp/a")).notes)
         assertEquals(listOf("第3話。詳しくは へ。"), arrangeDetail("", listOf("番組内容" to "第3話。詳しくは https://www.example.jp/p/x へ。")).story)
         assertTrue(arrangeDetail("", listOf("ホームページ" to "https://example.jp")).isEmpty)
     }

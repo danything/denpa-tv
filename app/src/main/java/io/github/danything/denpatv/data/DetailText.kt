@@ -100,14 +100,14 @@ private val URL = Regex("""(?:https?|ｈｔｔｐｓ?)[:：][/／]{2}[!-~！-～
 private val SPACES = Regex(" {2,}")
 
 /**
- * URL を外す (テレビでは開けない)。URL だけの行と、外すと「番組HP：」のような見出しだけが残る行は、行ごと外す。
+ * URL を外す (テレビでは開けない)。URL だけの行と、外すと「番組HP：」「公式サイト」のような見出しだけが残る行は、行ごと外す。
  * 文の中の URL は URL だけ外す (1行の番組内容が丸ごと消えないように)
  */
 private fun withoutUrls(text: String): String =
     text.lines().mapNotNull { line ->
         if (!URL.containsMatchIn(line)) return@mapNotNull line
         val rest = URL.replace(line, "").replace(SPACES, " ").trim()
-        rest.takeUnless { it.isEmpty() || it.last() in "：:" }
+        rest.takeUnless { it.isEmpty() || it.last() in "：:" || detailKind(it) == DetailKind.Link }
     }.joinToString("\n").trim()
 
 private fun nfkc(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFKC)
