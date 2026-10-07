@@ -86,8 +86,11 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     var denpaWarning by mutableStateOf<String?>(null)
         private set
 
-    /** 繋いだ denpa の版を確かめる (繋いだとき1度)。届かなければ何も言わない */
-    suspend fun checkVersion() {
+    /**
+     * 繋いだ denpa の版を確かめる。知らせ (`api/events`) に繋がるたび (denpa を上げて立ち上げ直したときも) に1度。
+     * 届かなければ前のまま
+     */
+    private suspend fun checkVersion() {
         val health = api.health(base) ?: return
         denpaVersion = health.version
         denpaWarning = denpaTooOld(health.version)?.also { Log.w(TAG, it) }
@@ -134,8 +137,12 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     private fun CoroutineScope.sort(event: DenpaEvent) {
         when (event) {
-            // 切れていた間の知らせは来ないので、どちらも古いかもしれない
-            DenpaEvent.Opened -> { recordingsStale = true; servicesStale = true }
+            // 切れていた間の知らせは来ないので、どちらも古いかもしれない。denpa が上がったかもしれない
+            DenpaEvent.Opened -> {
+                recordingsStale = true
+                servicesStale = true
+                launch { checkVersion() }
+            }
             is DenpaEvent.Changed -> when (event.name) {
                 "recordings" -> recordingsStale = true
                 "services", "programs" -> servicesStale = true
