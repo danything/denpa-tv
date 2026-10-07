@@ -2,6 +2,7 @@ package io.github.danything.denpatv.smoke
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Instrumentation
+import android.app.UiAutomation
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -125,6 +126,8 @@ class SmokeTest {
          */
         val recordRequest = "POST /api/services/${FakeDenpa.SERVICE_ID}/record"
         assertTrue("$recordRequest が来ていません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { recordRequest in denpa.requests })
+        // 「録画」はメニューを閉じる。閉じ終えるのを待ってから次の決定を送る (閉じている途中の決定は消える札に届いて捨てられる)
+        assertTrue("「録画」でメニューが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "地上波" !in texts() })
 
         openMenu()
         press(KeyEvent.KEYCODE_BACK)
@@ -320,8 +323,13 @@ class SmokeTest {
      */
     private fun openMenu() = pressUntil(KeyEvent.KEYCODE_DPAD_CENTER, "決定でメニューが開きません") { "地上波" in texts() }
 
-    /** `done` になるまで `code` を押す (届かなかったときだけ押し直す)。ならなければ `message` で失敗にする */
+    /**
+     * `done` になるまで `code` を押す (届かなかったときだけ押し直す)。ならなければ `message` で失敗にする。
+     * **押す前に `done` でないのを確かめる** — 前の操作で閉じるはずのもの (「録画」で閉じるメニュー) は次のこまで消えるので、
+     * 押してすぐ読むと閉じかけのものを「開いた」と取り違え、キーが届いていない (閉じかけの札に届いて捨てられた) のに先へ進んでしまう
+     */
     private fun pressUntil(code: Int, message: String, done: () -> Boolean) {
+        assertTrue("キーを送る前から待つ先の様子のままです ($message): ${texts()}", poll(TEXT_TIMEOUT_MS) { !done() })
         for (i in 0 until MENU_TRIES) {
             press(code)
             if (poll(MENU_WAIT_MS, done)) return
@@ -354,6 +362,7 @@ class SmokeTest {
         assertTrue("$request が来ていません: ${denpa.requests.distinct()}", request in denpa.requests)
 
     private fun press(code: Int) {
+        awaitAppFocus()
         val at = SystemClock.uptimeMillis()
         for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
             val event = KeyEvent(at, SystemClock.uptimeMillis(), action, code, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
@@ -363,6 +372,7 @@ class SmokeTest {
 
     /** 押し続ける: 押して、繰り返しを `repeats` 回送ってから離す (リモコンで押し続けたときと同じ並び) */
     private fun holdKey(code: Int, repeats: Int) {
+        awaitAppFocus()
         val at = SystemClock.uptimeMillis()
         fun send(action: Int, repeat: Int) {
             val event = KeyEvent(at, SystemClock.uptimeMillis(), action, code, repeat, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
@@ -378,6 +388,7 @@ class SmokeTest {
 
     /** 繰り返しを送らずに押し続ける: 押して、`HELD_MS` たってから離す (繰り返しを送らないリモコンと同じ並び) */
     private fun holdWithoutRepeat(code: Int) {
+        awaitAppFocus()
         val at = SystemClock.uptimeMillis()
         fun send(action: Int) {
             val event = KeyEvent(at, SystemClock.uptimeMillis(), action, code, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
@@ -390,6 +401,7 @@ class SmokeTest {
 
     /** 長押し: 押して、長押しの印つきの繰り返しを送ってから離す (リモコンで押し続けたときと同じ並び) */
     private fun longPress(code: Int) {
+        awaitAppFocus()
         val at = SystemClock.uptimeMillis()
         fun send(action: Int, repeat: Int, flags: Int) {
             val event = KeyEvent(at, SystemClock.uptimeMillis(), action, code, repeat, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, flags, InputDevice.SOURCE_KEYBOARD)
@@ -437,10 +449,26 @@ class SmokeTest {
             denpa = FakeDenpa(instrumentation.context.assets)
             shell("pm clear $APP")
             shell("logcat -b crash -c")
-            val launch = instrumentation.context.packageManager.getLeanbackLaunchIntentForPackage(APP)
-                ?: error("$APP が入っていません")
-            instrumentation.context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            awaitText { it == "繋ぐ" }
+            val launch = (instrumentation.context.packageManager.getLeanbackLaunchIntentForPackage(APP) ?: error("$APP が入っていません"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            /*
+             * pm clear で前の画面ごと消えると、ランチャーが前に出て、あとから自分の知らせの画面 (Google TV の ShowDialogsActivity)
+             * をアプリの上に重ねることがある (手元の API 36 で、開いたアプリが隠れたまま「繋ぐ」を待ち切った)。
+             * アプリでない窓に合いがあるまま `RELAUNCH_MS` たったら、もう一度前に出す
+             */
+            val deadline = SystemClock.uptimeMillis() + TEXT_TIMEOUT_MS
+            var started = SystemClock.uptimeMillis()
+            instrumentation.context.startActivity(launch)
+            while (texts().none { it == "繋ぐ" }) {
+                assertNoCrash()
+                val now = SystemClock.uptimeMillis()
+                if (now > deadline) fail("繋ぐ画面が出ません。合いのある窓: ${focusedWindow()}、画面の文字: ${texts()}")
+                if (now - started > RELAUNCH_MS && focusedWindow().let { it != null && it != APP }) {
+                    instrumentation.context.startActivity(launch)
+                    started = now
+                }
+                SystemClock.sleep(POLL_MS)
+            }
             val field = node { it.isEditable } ?: error("URL を入れる欄がありません: ${texts()}")
             val text = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, denpa.url) }
             assertTrue("URL を入れられません", field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, text))
@@ -498,7 +526,41 @@ class SmokeTest {
 
         private fun pid(): String = shell("pidof $APP").trim()
 
-        private fun activeWindow(): AccessibilityNodeInfo? = instrumentation.uiAutomation.rootInActiveWindow
+        /**
+         * **キーを送る前に、アプリの窓 (ダイアログも) に入力の合いが来ているのを待つ。** キーは合いのある窓に届くので、
+         * 開き直した直後 (ホームから戻した・リンクで開き直した) にまだ前の窓に合いがあると、送ったキーはそちらへ行って消える
+         * (映像は合いより先に映るので、映ったのを見てからでも早すぎることがある)
+         */
+        private fun awaitAppFocus() {
+            assertTrue("アプリの窓に入力の合いが来ません: ${focusedWindow()}", poll(TEXT_TIMEOUT_MS) { focusedWindow() == APP })
+        }
+
+        /** 入力の合いがある窓のパッケージ (WindowManager の mCurrentFocus。ダイアログは題が無いのでパッケージ名だけで出る) */
+        private fun focusedWindow(): String? =
+            Regex("mCurrentFocus=Window\\{\\S+ u\\d+ ([^ /}]+)").find(shell("dumpsys window"))?.groupValues?.get(1)
+
+        private fun activeWindow(): AccessibilityNodeInfo? = freshAutomation().rootInActiveWindow
+
+        /**
+         * **画面の木を読む前に、毎回アクセシビリティのキャッシュを捨てる。** UiAutomation は読んだ部品をキャッシュし、アプリからの
+         * 「中身が替わった」の知らせで捨てる。Compose の画面では知らせで捨てられない枝が残り、**閉じた帯・ダイアログを何十秒も返し続ける**
+         * ことがある (CI の API 31 で、上キーで閉じた帯が 30 秒たっても木に残り、ダイアログを閉じたあとはアプリの窓が1つも取れなかった。
+         * 手元の API 31 でも、古い木が返っている間に部品ごとに取り直す (refresh) と閉じていて、キャッシュを捨てると読み直せた)。キャッシュは API 34 からは clearCache() で、
+         * それより前は setServiceInfo (中で捨ててから設定する) で捨てる。ダイアログも読むので、アプリの窓を全部取る印も一緒に付ける
+         */
+        private fun freshAutomation(): UiAutomation {
+            val automation = instrumentation.uiAutomation
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && interactiveWindows) {
+                automation.clearCache()
+            } else {
+                automation.serviceInfo = automation.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
+                interactiveWindows = true
+            }
+            return automation
+        }
+
+        /** アプリの窓を全部取る印 (FLAG_RETRIEVE_INTERACTIVE_WINDOWS) を付けたか */
+        private var interactiveWindows = false
 
         private fun nodes(): List<AccessibilityNodeInfo> {
             val out = mutableListOf<AccessibilityNodeInfo>()
@@ -514,12 +576,7 @@ class SmokeTest {
 
         /** アプリの窓 (ダイアログも) すべての文字 */
         private fun windowTexts(): List<String> {
-            val automation = instrumentation.uiAutomation
-            val info = automation.serviceInfo
-            if (info.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS == 0) {
-                info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-                automation.serviceInfo = info
-            }
+            val automation = freshAutomation()
             val out = mutableListOf<String>()
             fun walk(node: AccessibilityNodeInfo) {
                 node.text?.let { out += it.toString() }
@@ -559,6 +616,8 @@ class SmokeTest {
         private const val POLL_MS = 500L
         private const val MENU_TRIES = 4
         private const val STOP_WAIT_MS = 3_000L
+        /** 開いたアプリがほかの画面に隠れたままなら、開き直すまで */
+        private const val RELAUNCH_MS = 5_000L
         private const val TEST_TIMEOUT_S = 150L
         private const val MENU_WAIT_MS = 3_000L
         /** 繰り返し無しで押し続ける長さ (アプリが長押しとみなす 0.7 秒より十分長く) */
