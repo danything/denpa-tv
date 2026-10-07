@@ -1,5 +1,6 @@
 package io.github.danything.denpatv
 
+import android.app.AppOpsManager
 import io.github.danything.denpatv.data.ApkCache
 import io.github.danything.denpatv.data.GitHubAsset
 import io.github.danything.denpatv.data.GitHubRelease
@@ -31,6 +32,9 @@ import java.security.MessageDigest
 
 /** アプリの中のアップデート: 版の比べ方・SHA256SUMS の読み方・リリースの選び方 (scripts/install.sh と同じ) */
 class UpdateTest {
+    /** REQUEST_INSTALL_PACKAGES が未設定 (許可の画面で触っていない) */
+    private val unset = AppOpsManager.MODE_DEFAULT
+
     private val github = FakeDenpa()
 
     @After fun stop() = github.close()
@@ -222,17 +226,46 @@ class UpdateTest {
         val at = 1_000_000L
         val asked = InstallRequest("0.8.0", at)
         // 許可が見える: いつでも入れる
-        assertEquals(InstallStep.Install, installStep(true, null, "0.8.0", at))
-        assertEquals(InstallStep.Install, installStep(true, asked, "0.8.0", at))
+        assertEquals(InstallStep.Install, installStep(true, unset, null, "0.8.0", at))
+        assertEquals(InstallStep.Install, installStep(true, unset, asked, "0.8.0", at))
         // 見えない: 初めは許可の画面を開く
-        assertEquals(InstallStep.AskPermission, installStep(false, null, "0.8.0", at))
+        assertEquals(InstallStep.AskPermission, installStep(false, unset, null, "0.8.0", at))
         // この版で一度送ったあと (戻ってきた・押し直した): 見えなくても入れてみる (本当に無ければ OS が尋ねる)
-        assertEquals(InstallStep.Install, installStep(false, asked, "0.8.0", at + 5_000))
-        assertEquals(InstallStep.Install, installStep(false, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS))
+        assertEquals(InstallStep.Install, installStep(false, unset, asked, "0.8.0", at + 5_000))
+        assertEquals(InstallStep.Install, installStep(false, unset, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS))
         // ほかの版・古い頼み・時計が戻った: もう一度許可の画面を開く
-        assertEquals(InstallStep.AskPermission, installStep(false, asked, "0.8.1", at))
-        assertEquals(InstallStep.AskPermission, installStep(false, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS + 1))
-        assertEquals(InstallStep.AskPermission, installStep(false, asked, "0.8.0", at - 1))
+        assertEquals(InstallStep.AskPermission, installStep(false, unset, asked, "0.8.1", at))
+        assertEquals(InstallStep.AskPermission, installStep(false, unset, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS + 1))
+        assertEquals(InstallStep.AskPermission, installStep(false, unset, asked, "0.8.0", at - 1))
+    }
+
+    /** はっきり拒否 (MODE_ERRORED) なら、送ったあとでも入れてみずに許可の画面を開く (denpa-tv#32 のログで確認の画面のあとに 2 になった) */
+    @Test
+    fun 拒否になっていれば_入れてみずに許可の画面を開く() {
+        val at = 1_000_000L
+        val asked = InstallRequest("0.8.0", at)
+        assertEquals(InstallStep.AskPermission, installStep(false, AppOpsManager.MODE_ERRORED, asked, "0.8.0", at + 5_000))
+        assertEquals(InstallStep.AskPermission, installStep(false, AppOpsManager.MODE_ERRORED, null, "0.8.0", at))
+        // 既定 (未設定) は拒否とみなさない (BRAVIA は許可しても既定のまま)。Android 7.x (null) も
+        assertEquals(InstallStep.Install, installStep(false, null, asked, "0.8.0", at + 5_000))
+        assertEquals(InstallStep.Install, installStep(false, AppOpsManager.MODE_IGNORED, asked, "0.8.0", at + 5_000))
+        // 許可が見えれば appop は見ない
+        assertEquals(InstallStep.Install, installStep(true, AppOpsManager.MODE_ERRORED, null, "0.8.0", at))
+        assertTrue(denied(AppOpsManager.MODE_ERRORED))
+        assertFalse(denied(unset))
+        assertFalse(denied(AppOpsManager.MODE_ALLOWED))
+        assertFalse(denied(null))
+    }
+
+    /** 確認の画面を出した直後に続けて押されても、セッションを作り直さない (denpa-tv#32 で6秒に6本作った) */
+    @Test
+    fun 確認の画面を出した直後の押し直しは受けない() {
+        val shown = 10_000L
+        assertFalse(reopenConfirm(shown, shown))
+        assertFalse(reopenConfirm(shown, shown + CONFIRM_GRACE_MS - 1))
+        // 戻るで閉じてから押した: 出し直す
+        assertTrue(reopenConfirm(shown, shown + CONFIRM_GRACE_MS))
+        assertTrue(reopenConfirm(shown, shown + 13_000))
     }
 
     @Test
