@@ -38,6 +38,12 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
     /** この数だけ、次のライブの要求で映像を半分だけ送って黙る (チューナーのドライバが止まったつもり。アプリが見張りで気付くかを見る) */
     val stallLive = AtomicInteger(0)
 
+    /**
+     * この数だけ、次のライブの要求に 200 を返して何も送らずに閉じる (denpa が選局・焼くのに失敗したときと同じ。
+     * Media3 は「形が分からない」と言うので、アプリがそれを見分けて言い換えるかを見る)
+     */
+    val emptyLive = AtomicInteger(0)
+
     /** アプリに覚えさせる繋ぐ先 */
     val url = "http://127.0.0.1:${server.localPort}/"
 
@@ -87,7 +93,9 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
             // 局送りの行き先も同じ映像を流す
             live == SERVICE_ID || live == NEXT_SERVICE_ID ->
                 // 黙るのが先 (黙らせてから 503 を返し続ける並びを作れるように)
-                if (stallLive.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) {
+                if (emptyLive.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) {
+                    empty(out, "video/mp4")
+                } else if (stallLive.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) {
                     stall(out, "live.mp4", "video/mp4")
                 } else if (failLive.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) {
                     respond(out, 503, "text/plain", "restarting".toByteArray())
@@ -140,6 +148,12 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
             }
         } catch (_: InterruptedException) {
         }
+    }
+
+    /** 長さを言わずに (denpa のライブと同じ) 200 を返し、何も送らずに閉じる */
+    private fun empty(out: OutputStream, type: String) {
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\nConnection: close\r\n\r\n".toByteArray())
+        out.flush()
     }
 
     /** 長さを言わずに (denpa のライブと同じ) 半分だけ送り、閉じずに黙る */

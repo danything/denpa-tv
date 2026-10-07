@@ -57,6 +57,24 @@ class SmokeTest {
     }
 
     /**
+     * **denpa が 200 のまま何も送らずに閉じたら** (選局・焼くのに失敗した)、何度か頼み直してから「映像を送らずに閉じました」と言う
+     * (Media3 の `ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED` をそのまま出さない)。denpa が戻ってから局を替えれば、また映る
+     */
+    @Test
+    fun liveEmpty() = watching {
+        shell("logcat -c")
+        denpa.emptyLive.set(Int.MAX_VALUE)
+        open("denpa://live/${FakeDenpa.SERVICE_ID}")
+        awaitText { it.startsWith("denpa が映像を送らずに閉じました") }
+        // 縮めた APK では例外の名前が変わるので、文で見る (`EmptyStreamException`)
+        assertTrue("空だったのが logcat にありません: ${appLog()}", "denpa が何も送らずに閉じました" in appLog())
+        denpa.emptyLive.set(0)
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        awaitVideo(LIVE_COLOR)
+        assertTrue("映っても文が消えません: ${texts()}", poll(TEXT_TIMEOUT_MS) { texts().none { it.startsWith("denpa が映像を送らずに") } })
+    }
+
+    /**
      * ライブのキーとメニュー。**左右で局を送る** (右で次の局を、左で元の局を denpa に頼む)。**決定の長押しで番組の詳しく**
      * (`api/programs/<now.id>` の説明が出る。メニューは開かない。離しても決定にならない)。**繰り返しを送らずに押したままでも
      * 長押しになる** (押した・離したの2つだけを送るリモコン)。戻るで詳しくだけが閉じる。**上で、局の列のいま映している局に合わせてメニューが開く。**

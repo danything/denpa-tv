@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
  *   操作の列の「最新」で最新の少し手前へ
  * - 録り終えて最後まで来たら「最後まで観ました」。焼き上がった録画は、次に開くとふつうのファイルで観る
  * - **切れたら (エラー・録り終える前に流れが閉じた・10 秒進まない) 居た場所から頼み直す** (`Recovery`。ライブと同じ決まり)
- * - H.264 / AV1 を焼くのを denpa が断ると (焼く数の上限など)、空の 200 が返る。映る前に終わったらそう出す
+ * - H.264 / AV1 を denpa が焼けないと (ffmpeg が降りた・録画を読めない)、空の 200 が返る。映る前に終わった・空だったらそう出す
  *
  * キーは録画の再生と同じ (左右で 10 秒、決定で止める・動かす、下でシークバー、上・Menu で操作の列、決定の長押しで詳しく)
  */
@@ -408,4 +408,4 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }
 
-private const val REFUSED = "denpa が焼くのを断りました (混んでいるかも)。少し待つか、画質を替えてください"
+private const val REFUSED = "denpa が映像を送らずに閉じました (焼けなかったかも)。少し待つか、画質を替えてください"
