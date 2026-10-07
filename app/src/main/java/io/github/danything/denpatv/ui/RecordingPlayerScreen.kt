@@ -23,20 +23,21 @@ import androidx.media3.common.util.UnstableApi
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.ChapterMark
+import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingCenter
 import io.github.danything.denpatv.data.recordingCenter
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.skipCmAtStart
 import io.github.danything.denpatv.data.RecordingCommand
-import io.github.danything.denpatv.data.Unauthorized
-import io.github.danything.denpatv.data.nextSpeed
 import io.github.danything.denpatv.data.resyncAfterSpeedChange
+import io.github.danything.denpatv.data.nextSpeed
 import io.github.danything.denpatv.data.speedLabel
 import io.github.danything.denpatv.data.cmSkipTarget
 import io.github.danything.denpatv.data.nextChapter
 import io.github.danything.denpatv.data.pickFile
 import io.github.danything.denpatv.data.previousChapter
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -57,17 +58,11 @@ import kotlinx.coroutines.launch
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Unit, onUnauthorized: () -> Unit, fromStart: Boolean = false) {
+fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
     /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
     var leaving by remember { mutableStateOf(false) }
     // 戻るを続けて押しても、1つだけ戻る (2回目は受けない)
     val leave = { if (!leaving) { leaving = true; onLeave() } }
-    // 「最初から」は続きの位置を持たないものとして開く (頭から流し、観た位置はいつもどおり預ける)
-    val recording = remember { repo.recordings.firstOrNull { it.id == recordingId }?.let { if (fromStart) it.copy(resumeMs = null) else it } }
-    if (recording == null) {
-        Centered("録画が見つかりません")
-        return
-    }
     val file = remember { pickFile(recording.files, repo.app.decoders) }
     if (file == null) {
         Centered("この端末で再生できる形のファイルがありません")
@@ -260,18 +255,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
     )
 
     /** 消して一覧へ戻る。一覧からも抜き、隣に合わせる */
-    fun deleteNow() {
-        scope.launch {
-            val done = try {
-                deleteFromPlayer(repo, recording.id)
-            } catch (_: Unauthorized) {
-                return@launch onUnauthorized()
-            }
-            if (!done) return@launch flash(NOT_DELETED)
-            deleted = true
-            leave()
-        }
-    }
+    fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; leave() }
     /** 止める・動かす。止めている間は位置の帯 (シークバーと同じ見た目、合わせない) を出したままにする */
     fun togglePause() {
         player.playWhenReady = !player.playWhenReady
@@ -333,16 +317,13 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
                 "${recording.title}\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}",
                 listOf(
                     "" to listOf(
-                        Control(if (playing) "一時停止" else "再生", on = true, icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play) { togglePause() },
+                        playControl(playing) { togglePause() },
                         // 札は短く (リモコンの「前へ」「次へ」と同じ名前)。帯が1行に収まるように
                         Control("前へ", icon = R.drawable.ic_previous, description = "前のチャプター") { previousChapterNow() },
                         Control("次へ", icon = R.drawable.ic_next, description = "次のチャプター") { nextChapterNow() },
                     ),
-                    // 速さは1つの札で送る (1 → 1.25 → 1.5 → 2 → 1)。列を短くして、押す回数も少なく
                     "" to listOf(
-                        Control("速さ ${speedLabel(speed)}", on = speed != 1f, icon = R.drawable.ic_speed) {
-                            scope.launch { repo.app.settings.setPlaybackSpeed(nextSpeed(speed)) }
-                        },
+                        speedControl(speed) { scope.stepSpeed(repo, speed) },
                     ),
                     "" to listOf(
                         Control(if (skipCm) "CM 飛ばし 入" else "CM 飛ばし 切", on = skipCm, icon = R.drawable.ic_skip_cm) {
@@ -370,13 +351,7 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
             RecordingCommand.NextChapter -> { nextChapterNow(); true }
             RecordingCommand.PreviousChapter -> { previousChapterNow(); true }
             RecordingCommand.PlayPause -> { togglePause(); true }
-            // 速さを1段送る (1 → 1.25 → 1.5 → 2 → 1)
-            RecordingCommand.NextSpeed -> {
-                val next = nextSpeed(speed)
-                scope.launch { repo.app.settings.setPlaybackSpeed(next) }
-                flash("速さ ${speedLabel(next)}")
-                true
-            }
+            RecordingCommand.NextSpeed -> { flash(scope.stepSpeed(repo, speed)); true }
             null -> false
         }
     }, onCenter = { press ->
@@ -391,6 +366,21 @@ fun RecordingPlayerScreen(repo: Repository, recordingId: Long, onLeave: () -> Un
 
 /** 録画・追っかけの帯をどこに合わせて開いたか。下キーならシークバー、上キー・Menu なら操作の列 */
 internal enum class Bar { SeekBar, Actions }
+
+/** 止める・動かすの札 (録画・追っかけ) */
+internal fun playControl(playing: Boolean, onClick: () -> Unit) =
+    Control(if (playing) "一時停止" else "再生", on = true, icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, onClick = onClick)
+
+/** 速さの札 (録画・追っかけ)。1つの札で送る (`stepSpeed`)。列を短くして、押す回数も少なく */
+internal fun speedControl(speed: Float, onClick: () -> Unit) =
+    Control("速さ ${speedLabel(speed)}", on = speed != 1f, icon = R.drawable.ic_speed, onClick = onClick)
+
+/** 速さを1段送る (1 → 1.25 → 1.5 → 2 → 1。端末ごとに覚える)。知らせる文を返す */
+internal fun CoroutineScope.stepSpeed(repo: Repository, speed: Float): String {
+    val next = nextSpeed(speed)
+    launch { repo.app.settings.setPlaybackSpeed(next) }
+    return "速さ ${speedLabel(next)}"
+}
 
 /** 録画・追っかけのキーの手引き */
 internal const val SEEK_HINT = "下でシークバー・上でメニュー"

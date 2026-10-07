@@ -280,11 +280,14 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         // 行き先を出す (映ったら同じものを出し直して、数秒残す)
         flash(describe(next, codec.label))
     }
-    fun openMenu(start: MenuStart) {
-        // 送っている途中なら、待たずにそこへ替える (メニューの局の列と映しているものを揃える)
+    /** 送っている途中なら、待たずにそこへ替える (メニューの局の列・詳しくの番組と、映しているものを揃える) */
+    fun settle() {
         stepping?.let { playing = it }
         stepping = null
         held = false
+    }
+    fun openMenu(start: MenuStart) {
+        settle()
         touched = System.nanoTime()
         menu = start
     }
@@ -320,10 +323,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         LiveCommand.Menu -> openMenu(MenuStart.Controls)
         LiveCommand.Channels -> openMenu(MenuStart.Channels)
         LiveCommand.Details -> {
-            // 送っている途中なら、待たずにそこへ替えてから (詳しくの番組と映しているものを揃える)
-            stepping?.let { playing = it }
-            stepping = null
-            held = false
+            settle()
             menu = null
             recordNote = null
             detail = true

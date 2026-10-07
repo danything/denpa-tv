@@ -30,12 +30,10 @@ import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.chaseEnd
-import io.github.danything.denpatv.data.nextSpeed
 import io.github.danything.denpatv.data.RecordingCenter
 import io.github.danything.denpatv.data.recordingCenter
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.resyncAfterSpeedChange
-import io.github.danything.denpatv.data.speedLabel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -365,11 +363,9 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                 "録画中  ${recording.title}\n${position(at)} / ${position(length)} (録れたところまで)  ${codec.heading}",
                 listOf(
                     "" to listOfNotNull(
-                        Control(if (playing) "一時停止" else "再生", on = true, icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play) { togglePause() },
+                        playControl(playing) { togglePause() },
                         if (Chase.atEdge(at, length)) null else Control("最新", icon = R.drawable.ic_edge) { toEdge() },
-                        Control("速さ ${speedLabel(speed)}", on = speed != 1f, icon = R.drawable.ic_speed) {
-                            scope.launch { repo.app.settings.setPlaybackSpeed(nextSpeed(speed)) }
-                        },
+                        speedControl(speed) { scope.stepSpeed(repo, speed) },
                     ),
                     "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
                         // 選んだらすぐ入れて、居た場所から頼み直す (映るまでは前の絵のまま「… に切り替え中」)
@@ -394,12 +390,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
             RecordingCommand.SeekBar -> { open(Bar.SeekBar); true }
             RecordingCommand.Actions -> { open(Bar.Actions); true }
             RecordingCommand.PlayPause -> { togglePause(); true }
-            RecordingCommand.NextSpeed -> {
-                val next = nextSpeed(speed)
-                scope.launch { repo.app.settings.setPlaybackSpeed(next) }
-                flash("速さ ${speedLabel(next)}")
-                true
-            }
+            RecordingCommand.NextSpeed -> { flash(scope.stepSpeed(repo, speed)); true }
             // 追っかけの流れにはチャプターが無い
             RecordingCommand.NextChapter, RecordingCommand.PreviousChapter -> { flash("チャプターがありません"); true }
             null -> false
@@ -412,18 +403,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     })
 
     /** 消して一覧へ戻る (録画の再生と同じ。録っている間は denpa が断る)。消したら観た位置は預けない */
-    fun deleteNow() {
-        scope.launch {
-            val done = try {
-                deleteFromPlayer(repo, recording.id)
-            } catch (_: Unauthorized) {
-                return@launch onUnauthorized()
-            }
-            if (!done) return@launch flash(NOT_DELETED)
-            deleted = true
-            leave()
-        }
-    }
+    fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; leave() }
 
     if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }

@@ -64,10 +64,10 @@ class TrackControls(
 fun rememberTracks(
     repo: Repository,
     player: ExoPlayer,
-    onChange: (String) -> Unit = {},
-    rawCaptions: RawCaptionState? = null,
-    dualMono: DualMonoProcessor? = null,
-    denpaAudios: List<DenpaAudio> = emptyList(),
+    onChange: (String) -> Unit,
+    rawCaptions: RawCaptionState,
+    dualMono: DualMonoProcessor,
+    denpaAudios: List<DenpaAudio>,
 ): TrackControls {
     val subtitles by repo.app.settings.subtitles.collectAsState(initial = true)
     val remembered by repo.app.settings.audioLabel.collectAsState(initial = null)
@@ -89,11 +89,11 @@ fun rememberTracks(
     val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }
     val groupTracks = audioGroups.mapIndexed { index, group -> group.getTrackFormat(0).let { audioTrack(index, it.label, it.language) } }
     val selectedGroup = audioGroups.indexOfFirst { it.isSelected }.coerceAtLeast(0)
-    val choices = audioChoices(groupTracks, if (dualMono == null) emptyList() else denpaAudios)
+    val choices = audioChoices(groupTracks, denpaAudios)
     val selectedAudio = selectedChoice(choices, selectedGroup, side)
     // 選んでいる音声がデュアルモノなら覚えている側を両耳へ、そうでなければそのまま
     val mix = choices.getOrNull(selectedAudio)?.side ?: AudioSide.Both
-    SideEffect { dualMono?.side = mix }
+    SideEffect { dualMono.side = mix }
     val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
 
     fun selectAudio(index: Int) {
@@ -119,7 +119,7 @@ fun rememberTracks(
 
     return TrackControls(
         subtitles = subtitles,
-        hasText = textGroups.isNotEmpty() || rawCaptions?.available == true,
+        hasText = textGroups.isNotEmpty() || rawCaptions.available,
         audio = choices.map { it.track },
         selectedAudio = selectedAudio,
         toggleSubtitles = {
@@ -161,7 +161,7 @@ class BakedAudio(val ready: Boolean, val audio: DenpaAudio?, private val choices
  * @param key 観ているもの (局・録画)。替わったら、この画面で選んだものを忘れる
  */
 @Composable
-fun rememberBakedAudio(repo: Repository, audios: List<DenpaAudio>, key: Any?, onChange: (String) -> Unit = {}): BakedAudio {
+fun rememberBakedAudio(repo: Repository, audios: List<DenpaAudio>, key: Any?, onChange: (String) -> Unit): BakedAudio {
     val savedSide by repo.app.settings.dualMonoSide.collectAsState(initial = null)
     var picked by remember(key) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
