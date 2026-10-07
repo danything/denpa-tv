@@ -31,22 +31,23 @@ fun detailKind(heading: String): DetailKind {
         .removePrefix("今回の")
         .uppercase()
     return when {
-        // おしらせが先 (「お知らせ・ホームページ」の本文を消さない。URL の行だけは外れる)
-        "お知らせ" in key || "おしらせ" in key || "告知" in key || key == "ご案内" -> DetailKind.Notice
+        // おしらせが先 (「お知らせ・ホームページ」の本文を消さない。URL だけは外れる)
+        NOTICE_WORDS.any { it in key } -> DetailKind.Notice
         "ホームページ" in key || key.endsWith("HP") || key.endsWith("サイト") || key == "URL" || key == "WEB" -> DetailKind.Link
         // 出演者が番組内容より先 (「出演者紹介」は出演者)
         "出演" in key || "キャスト" in key || "ゲスト" in key || "司会" in key || key in CAST_KEYS -> DetailKind.Cast
-        "あらすじ" in key || "アラスジ" in key || "ストーリー" in key || STORY_ENDS.any { key.endsWith(it) } || key in STORY_KEYS -> DetailKind.Story
+        STORY_WORDS.any { it in key } || key.endsWith("内容") || key.endsWith("概要") -> DetailKind.Story
         else -> DetailKind.Credit
     }
 }
 
 /** 飾りの記号 (NFKC の後に比べるので、全角の括弧・コロンは半角で書く) */
-private const val DECORATION = "◇◆■□●○◎★☆▼▽▲△♪【】「」〈〉《》[]()<>:"
+private const val DECORATION = "◇◆■□●○◎★☆▼▽▲△♪※〓・【】「」『』〈〉《》〔〕≪≫«»[]()<>:"
 
-/** 「番組内容」「放送内容」「番組概要」「作品紹介」のような見出しの終わり */
-private val STORY_ENDS = listOf("内容", "概要", "紹介")
-private val STORY_KEYS = setOf("みどころ", "見どころ")
+private val NOTICE_WORDS = listOf("お知らせ", "おしらせ", "オシラセ", "告知", "ご案内")
+
+/** 含んでいれば読みもの。ほかに「〜内容」「〜概要」で終わる見出し (番組内容・放送内容・番組概要) */
+private val STORY_WORDS = listOf("あらすじ", "アラスジ", "ストーリー", "みどころ", "見どころ", "番組紹介", "作品紹介")
 private val CAST_KEYS = setOf("語り", "ナレーション", "ナレーター", "MC", "声優")
 
 /** 詳しくの本文。上から読みもの → 出演者 → ほか (知らせは最後) の順に1列で出す */
@@ -64,19 +65,19 @@ data class DetailText(
 /**
  * 説明と放送の詳細を、詳しくの本文の並びにする。並びは放送のまま (番組内容1 → 2)。
  * - 説明と番組内容・あらすじは段落にまとめる。**ほかの段落に含まれる段落は出さない** (説明は番組内容の頭や一部のことが多い)
- * - ホームページは出さない。どの本文も、URL を含む行は外す (開けない)
+ * - ホームページは出さない。どの本文も URL は外し、URL だけだった行 (「番組HP：」が残る行も) は行ごと外す (開けない)
  * - 出演者・制作・音楽・おしらせなどは改行を「／」で繋いで詰める
  */
 fun arrangeDetail(description: String, extended: List<Pair<String, String>>): DetailText {
     val sections = extended.mapNotNull { (heading, body) ->
         val kind = detailKind(heading)
         val text = withoutUrls(body)
-        if (kind == DetailKind.Link || text.isEmpty()) null else Triple(kind, heading.trim(), text)
+        if (kind == DetailKind.Link || text.isEmpty()) null else Triple(kind, heading.trim().trim { it in DECORATION || it in "【】" }, text)
     }
     val paragraphs = listOf(withoutUrls(description)).filter { it.isNotEmpty() } +
         sections.filter { it.first == DetailKind.Story }.map { it.third }
-    // 比べるときは NFKC で揃え、終わりの省略 (…・‥・．．．・・・・) を外す
-    val keys = paragraphs.map { squash(nfkc(it)).trimEnd('.', '・', '･') }
+    // 比べるときは NFKC で揃え (「…」「．」は「.」に、「･」は「・」に)、終わりの省略 (…・・・・) を外す
+    val keys = paragraphs.map { squash(nfkc(it)).trimEnd('.', '・') }
     val story = paragraphs.filterIndexed { i, _ ->
         // 「…」だけの段落は除く。同じ段落は先の1つだけ、ほかの段落に含まれる段落は除く
         keys[i].isNotEmpty() &&
@@ -90,11 +91,21 @@ fun arrangeDetail(description: String, extended: List<Pair<String, String>>): De
     )
 }
 
-private val URL = Regex("""https?://|www\.""", RegexOption.IGNORE_CASE)
+/** URL (全角も)。続く英数字・記号まで */
+private val URL = Regex("""(?:https?|ｈｔｔｐｓ?)[:：][/／]{2}[!-~！-～]*|(?:www|ｗｗｗ)[.．][!-~！-～]*""", RegexOption.IGNORE_CASE)
 
-/** URL を含む行を外す (「番組HP：https://…」の行ごと。テレビでは開けない)。全角の URL も */
+private val SPACES = Regex(" {2,}")
+
+/**
+ * URL を外す (テレビでは開けない)。URL だけの行と、外すと「番組HP：」のような見出しだけが残る行は、行ごと外す。
+ * 文の中の URL は URL だけ外す (1行の番組内容が丸ごと消えないように)
+ */
 private fun withoutUrls(text: String): String =
-    text.lines().filterNot { URL.containsMatchIn(nfkc(it)) }.joinToString("\n").trim()
+    text.lines().mapNotNull { line ->
+        if (!URL.containsMatchIn(line)) return@mapNotNull line
+        val rest = URL.replace(line, "").replace(SPACES, " ").trim()
+        rest.takeUnless { it.isEmpty() || it.last() in "：:" }
+    }.joinToString("\n").trim()
 
 private fun nfkc(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFKC)
 

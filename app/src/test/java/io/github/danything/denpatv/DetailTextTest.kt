@@ -13,11 +13,11 @@ class DetailTextTest {
     @Test
     fun 見出しの種類() {
         val cases = mapOf(
-            DetailKind.Story to listOf("番組内容", "番組内容1", "番組内容2", "番組内容①", "番組内容②", "番組内容１", "今回の番組内容", "あらすじ◇", "◇あらすじ", "【あらすじ】", "内容", "みどころ", "番組概要", "放送内容", "作品紹介", "ｱﾗｽｼﾞ"),
+            DetailKind.Story to listOf("番組内容", "番組内容1", "番組内容2", "番組内容①", "番組内容②", "番組内容１", "今回の番組内容", "あらすじ◇", "◇あらすじ", "【あらすじ】", "内容", "みどころ", "番組概要", "放送内容", "作品紹介", "ｱﾗｽｼﾞ", "今週の見どころ", "≪番組内容≫"),
             DetailKind.Cast to listOf("出演者", "声の出演", "【出演】", "ゲスト", "キャスト", "語り", "出演者紹介"),
-            DetailKind.Credit to listOf("制作", "スタッフ", "スタッフ2", "音楽", "主題歌", "楽曲", "原作", "原作脚本", "原作・脚本", "監督・演出", "脚本", "解説", "実況", "知らない見出し", ""),
-            DetailKind.Notice to listOf("おしらせ", "お知らせ", "◇おしらせ", "ご案内", "お知らせ・ホームページ"),
-            DetailKind.Link to listOf("ホームページ", "HP", "番組HP", "公式ホームページ", "公式サイト", "hp", "ＨＰ", "ホームページ：", "ﾎｰﾑﾍﾟｰｼﾞ"),
+            DetailKind.Credit to listOf("制作", "スタッフ", "スタッフ2", "音楽", "主題歌", "楽曲", "原作", "原作脚本", "原作・脚本", "監督・演出", "脚本", "解説", "実況", "スタッフ紹介", "知らない見出し", ""),
+            DetailKind.Notice to listOf("おしらせ", "お知らせ", "◇おしらせ", "ご案内", "番組のご案内", "お知らせ・ホームページ"),
+            DetailKind.Link to listOf("ホームページ", "HP", "番組HP", "公式ホームページ", "公式サイト", "hp", "ＨＰ", "ホームページ：", "ﾎｰﾑﾍﾟｰｼﾞ", "〔番組HP〕"),
         )
         cases.forEach { (kind, headings) ->
             headings.forEach { assertEquals("「$it」", kind, detailKind(it)) }
@@ -89,8 +89,17 @@ class DetailTextTest {
             listOf("おしらせ" to "詳しくは番組のサイトで。\nhttps://example.jp/a", "HP" to "番組サイト\nhttps://example.jp", "スタッフ2" to "www.example.jp", "制作" to "ｈｔｔｐｓ：／／ｅｘａｍｐｌｅ．ｊｐ\n　https://example.jp/b　"),
         )
         assertEquals(listOf("おしらせ" to "詳しくは番組のサイトで。"), text.notes)
-        // URL を含む行は行ごと
+        // 「番組HP：」だけが残る行は行ごと、文の中の URL は URL だけ
         assertEquals(listOf("おしらせ" to "再放送は来週です。"), arrangeDetail("", listOf("おしらせ" to "再放送は来週です。\n番組HP：https://example.jp")).notes)
+        assertEquals(listOf("第3話。詳しくは へ。"), arrangeDetail("", listOf("番組内容" to "第3話。詳しくは https://www.example.jp/p/x へ。")).story)
         assertTrue(arrangeDetail("", listOf("ホームページ" to "https://example.jp")).isEmpty)
+    }
+
+    /** 出す見出しからは、まわりの飾りを外す */
+    @Test
+    fun 見出しの飾りを外す() {
+        val text = arrangeDetail("", listOf("【出演】" to "a", "◇スタッフ2" to "b", "監督・演出" to "c"))
+        assertEquals(listOf("出演" to "a"), text.cast)
+        assertEquals(listOf("スタッフ2" to "b", "監督・演出" to "c"), text.notes)
     }
 }
