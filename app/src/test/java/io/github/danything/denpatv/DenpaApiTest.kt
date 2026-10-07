@@ -107,7 +107,7 @@ class DenpaApiTest {
     }
 
     /**
-     * 消すのは DELETE api/recordings/<id>。denpa は 204 を返す。断られたら false。
+     * 消すのは DELETE api/recordings/<id>。denpa は 204 を返す。もう無い (404) のも消せたとみなす。録画中 (409) は false。
      * 本文が無くても Content-Type を付ける (無いと SvelteKit がよそのサイトからのフォーム送信と見なして 403)
      */
     @Test
@@ -122,6 +122,9 @@ class DenpaApiTest {
 
         denpa.enqueue("""{"message":"録画中は消せません"}""", code = 409)
         assertFalse(api.deleteRecording(base, 13))
+
+        denpa.enqueue("""{"message":"Not Found"}""", code = 404)
+        assertTrue(api.deleteRecording(base, 14))
     }
 
     @Test

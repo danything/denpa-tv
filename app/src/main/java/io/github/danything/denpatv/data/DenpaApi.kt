@@ -107,7 +107,7 @@ class DenpaApi(
         parseProgramInfo(res.text(), warn)?.let { ProgramLookup.Found(it) } ?: ProgramLookup.Missing
     }
 
-    /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。消せたら true */
+    /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。もう無い (404) のも消せたとみなして true。録画中 (409) などは false */
     suspend fun deleteRecording(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/recordings/$id") ?: return@withContext false
         val res = try {
@@ -116,7 +116,7 @@ class DenpaApi(
             return@withContext false
         }
         if (res.code == 401) throw Unauthorized(url)
-        res.ok
+        res.ok || res.code == 404
     }
 
     /**
@@ -184,7 +184,7 @@ private data class RecordResponse(val recorded: String? = null, val reserved: Bo
 
 /** いまの番組を録った結果 (`DenpaApi.recordNow`) */
 sealed interface RecordResult {
-    /** 予約した (`reserved` が false ならチューナーが足りず競合で録らない) */
+    /** 予約した。`reserved` が false なら予約はあるが録らない (たいていはチューナーの競合。録り終えた・失敗したものも) */
     data class Recorded(val title: String, val reserved: Boolean) : RecordResult
     /** 断られた。`message` は denpa の文言 (画面にそのまま出せる) */
     data class Failed(val message: String) : RecordResult

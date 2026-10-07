@@ -48,7 +48,7 @@ fun recordingCommand(keyCode: Int): RecordingCommand? = when (keyCode) {
 
 /**
  * 録画・追っかけの決定。短押しは止める・動かす、**長押しは番組の詳しいところ** (録画の一覧のカードの長押しと同じもの)。
- * 操作の列は上キーと Menu で開く (長押しで開いていた頃は、上キーと同じことをするだけだった)。長押しのあとの離しは CenterPress が捨てる
+ * 操作の列は上キーと Menu で開く。長押しのあとの離しは CenterPress が捨てる
  */
 enum class RecordingCenter { PlayPause, Details }
 
