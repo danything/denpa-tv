@@ -6,12 +6,12 @@ import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.Http
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.connect
-import io.github.danything.denpatv.data.looksLikeDenpaHealth
+import io.github.danything.denpatv.data.DenpaHealth
+import io.github.danything.denpatv.data.parseDenpaHealth
 import io.github.danything.denpatv.ui.authorizationHeaders
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -74,11 +74,13 @@ class ConnectTest {
 
     @Test
     fun denpa_らしい_health_の返事() {
-        assertTrue(looksLikeDenpaHealth("{\"ok\":true,\"version\":\"1.40.0\"}"))
-        assertFalse(looksLikeDenpaHealth("ok"))
-        assertFalse(looksLikeDenpaHealth("[]"))
-        assertFalse(looksLikeDenpaHealth("{\"database\":\"ok\"}"))
-        assertFalse(looksLikeDenpaHealth("\uFEFF<!doctype html>"))
+        assertEquals(DenpaHealth("v1.44.0"), parseDenpaHealth("{\"ok\":true,\"version\":\"v1.44.0\",\"update\":null}"))
+        // 版を返す前の denpa (1.8.0 より前)
+        assertEquals(DenpaHealth(null), parseDenpaHealth("{\"ok\":true}"))
+        assertNull(parseDenpaHealth("ok"))
+        assertNull(parseDenpaHealth("[]"))
+        assertNull(parseDenpaHealth("{\"database\":\"ok\"}"))
+        assertNull(parseDenpaHealth("\uFEFF<!doctype html>"))
     }
 
     @Test

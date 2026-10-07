@@ -94,6 +94,8 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
         val job = scope.launch { repo.listen(unauthorized) }
         onStopOrDispose { job.cancel() }
     }
+    // 繋いだ denpa が古すぎないか (繋いだとき1度。古ければ録画の一覧の頭と設定に出す)
+    LaunchedEffect(repo) { repo.checkVersion() }
     // リンクで来たら開く。続けて来たら前のは捨てる (局や録画を探している途中でも)
     val context = LocalContext.current
     var opening by remember { mutableStateOf<Job?>(null) }

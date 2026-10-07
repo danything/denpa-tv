@@ -23,7 +23,7 @@ import io.github.danything.denpatv.notice
 import kotlinx.coroutines.launch
 
 /**
- * 設定。**繋ぐ先と、アプリの版だけ。** ライブの画質・録画の速さ・CM 飛ばしは、ブラウザの denpa と同じく
+ * 設定。**繋ぐ先と、アプリの版だけ** (下に繋いだ denpa の版)。 ライブの画質・録画の速さ・CM 飛ばしは、ブラウザの denpa と同じく
  * 再生の画面の操作の帯 (メニュー) で変える (観ながら変えて、端末ごとに覚えるもの)
  */
 @Composable
@@ -75,6 +75,16 @@ fun SettingsScreen(repo: Repository) {
                 },
                 onClick = { if (notice != null) updater.act() else updater.checkNow() },
             )
+            // 繋いだ denpa の版。古すぎれば要る版を言う (止めはしない。README の「対応する denpa の版」)
+            val warning = repo.denpaWarning
+            (warning ?: repo.denpaVersion?.let { "denpa $it" })?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (warning != null) Palette.Reserved else Palette.TextMuted,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+            }
         }
     }
 }

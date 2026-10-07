@@ -15,7 +15,7 @@ data class Service(
     val remoteControlKey: Int? = null,
     val logo: String? = null,
     val live: String,
-    /** いま放送中の番組。denpa 1.30.0 から。古い denpa には無いので null として扱う */
+    /** いま放送中の番組。番組表に無ければ null */
     val now: NowProgram? = null,
 )
 
@@ -60,15 +60,14 @@ data class NowProgram(
     val title: String,
     val startAt: Long,
     val endAt: Long,
-    /** 選べる音声 (デュアルモノの主・副を見分ける・焼くものを選ぶ。`DenpaAudio`)。古い denpa には無いので空 */
+    /** 選べる音声 (デュアルモノの主・副を見分ける・焼くものを選ぶ。`DenpaAudio`)。番組表に無ければ空 */
     val audios: List<DenpaAudio> = emptyList(),
     /**
-     * 録る予定か (予約済みか録画中。競合で弾かれた・録り終えたものは false) と、いま録っている最中か。ライブの「録画」の札の印。
-     * denpa が `POST api/services/<id>/record` を持つ版から (古い denpa には無いので false)
+     * 録る予定か (予約済みか録画中。競合で弾かれた・録り終えたものは false) と、いま録っている最中か。ライブの「録画」の札の印
      */
     val reserved: Boolean = false,
     val recording: Boolean = false,
-    /** 番組 ID (`GET api/programs/<id>` で中身を引く。ライブの詳しく)。denpa#461 から。古い denpa には無いので null */
+    /** 番組 ID (`GET api/programs/<id>` で中身を引く。ライブの詳しく)。無ければ詳しくは `now` のぶんだけ */
     val id: Long? = null,
 ) {
     /** 進み具合 (0..1) */
@@ -90,17 +89,17 @@ data class Recording(
     val durationMs: Long? = null,
     val poster: String? = null,
     val files: List<RecordingFile> = emptyList(),
-    /** 続きの位置 (ミリ秒)。denpa 1.30.0 から。無い・null なら頭から */
+    /** 続きの位置 (ミリ秒)。無い・null なら頭から */
     val resumeMs: Long? = null,
     /** 予定の終わり (UNIX ミリ秒)。追っかけで観た位置を預けるときの尺に使う */
     val endAt: Long? = null,
-    /** いま録っている (denpa 1.33.0 から)。`files` は伸びている生TSだけなので、`chase` で観る */
+    /** いま録っている。`files` は伸びている生TSだけなので、`chase` で観る */
     val recording: Boolean = false,
-    /** 追っかけ再生の口 (`api/recordings/<id>/chase`)。生TSがある間だけ。denpa 1.33.0 から */
+    /** 追っかけ再生の口 (`api/recordings/<id>/chase`)。生TSがある間だけ */
     val chase: String? = null,
     /** CM 飛ばしを観はじめに入れてよいか (ロゴでの判定に失敗した録画は false)。無ければ入れてよい */
     val cmReliable: Boolean = true,
-    /** 選べる音声 (デュアルモノの主・副を見分ける・焼くものを選ぶ。`DenpaAudio`)。古い denpa には無いので空 */
+    /** 選べる音声 (デュアルモノの主・副を見分ける・焼くものを選ぶ。`DenpaAudio`)。番組表に無かった録画は空 */
     val audios: List<DenpaAudio> = emptyList(),
 )
 
@@ -128,8 +127,7 @@ fun durationLabel(ms: Long): String {
 }
 
 /**
- * 番組の中身 (`GET api/recordings/<id>/detail`、1.32.0 より後の denpa (danything/denpa#400) から)。説明と、放送の詳細 (見出し → 本文)。
- * 古い denpa には無い (404) ので、呼ぶ側は出さないだけ
+ * 番組の中身 (`GET api/recordings/<id>/detail`)。説明と、放送の詳細 (見出し → 本文)。取れなければ、呼ぶ側は出さないだけ
  */
 @Serializable
 data class RecordingDetail(

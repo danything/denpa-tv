@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,7 +43,7 @@ class DenpaApiTest {
         val recordings = api.recordings(base)
         assertEquals("av1", recordings.single().files.single().codec)
         assertEquals("/denpa/api/recordings", denpa.requests.take().target)
-        // 古い denpa は now も resumeMs も返さない。無ければ null
+        // now (番組表に無い) も resumeMs (観ていない) も無ければ null
         assertNull(services.single().now)
         assertNull(recordings.single().resumeMs)
 
@@ -56,7 +57,7 @@ class DenpaApiTest {
 
     /**
      * いまの番組を録る (`POST api/services/<id>/record`)。本文は無くても Content-Type を付ける。
-     * 番組表に無い (404 と理由)・予約できない (400 と理由)・口の無い古い denpa (SvelteKit の「Not Found」) を分ける
+     * 番組表に無い (404 と理由)・予約できない (400 と理由) は理由をそのまま出す
      */
     @Test
     fun いまの番組を録る() = runTest {
@@ -74,14 +75,12 @@ class DenpaApiTest {
         assertEquals(RecordResult.Failed("いま流れている番組が番組表に見つかりません"), api.recordNow(base, 1))
         denpa.enqueue("""{"message":"この番組は放送が終わっています"}""", code = 400)
         assertEquals(RecordResult.Failed("この番組は放送が終わっています"), api.recordNow(base, 1))
-        denpa.enqueue("""{"message":"Not Found"}""", code = 404)
-        assertEquals(RecordResult.Unsupported, api.recordNow(base, 1))
         // 通ったのに答えが読めない (版のずれ)。予約できたとは言わない
         denpa.enqueue("<html></html>")
         assertEquals(RecordResult.Failed("denpa の答えを読めません (200)"), api.recordNow(base, 1))
     }
 
-    /** 局の now に録画の印 (denpa の新しい版)。古い denpa には無いので false */
+    /** 局の now に録画の印。無ければ false */
     @Test
     fun 局の録画の印を読む() = runTest {
         denpa.enqueue(
@@ -130,12 +129,12 @@ class DenpaApiTest {
     @Test
     fun 繋がるかを確かめる() = runTest {
         denpa.enqueue(HEALTH_OK)
-        assertTrue(api.health(BaseUrl.normalize(denpa.url())!!))
+        assertNotNull(api.health(BaseUrl.normalize(denpa.url())!!))
         assertEquals("/api/health", denpa.requests.take().target)
-        assertFalse(api.health(BaseUrl.normalize("http://127.0.0.1:1")!!))
+        assertNull(api.health(BaseUrl.normalize("http://127.0.0.1:1")!!))
     }
 
-    /** 番組の中身は別の口。古い denpa (口が無い = 404) では null で、画面は出さないだけ */
+    /** 番組の中身は別の口。無い (404) なら null で、画面は出さないだけ */
     @Test
     fun 番組の中身を読み_無ければ_null() = runTest {
         val base = BaseUrl.normalize(denpa.url())!!

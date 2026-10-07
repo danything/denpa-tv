@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
  * - 札は **「続きから再生 (0:14:22)」(続きがあれば) → 「最初から」→「削除」→「閉じる」**。開いたときは先頭に合う
  *   (決定の押し間違いで消えないように)。続きが無ければ「再生」
  * - 削除はブラウザの denpa と同じ2回押し
- * - 説明は別の口 (`api/recordings/<id>/detail`) から開いたときに取る。古い denpa には無いので、そのときは出さない
+ * - 説明は別の口 (`api/recordings/<id>/detail`) から開いたときに取る。取れなければ出さない
  * - **録画は番組表の口 (`api/programs/<id>`) を引かない。** 番組表の行は終わると消え・入れ替わり、番組 ID も使い回されるので、
  *   録り始めに写した録画自身の中身 (`detail`) だけを出す (番組表を引くのはライブの詳しくだけ)
  */
@@ -67,7 +67,7 @@ fun PlayerDetailDialog(repo: Repository, recording: Recording, onDelete: () -> U
     ProgramDetailDialog(recordingFacts(recording, rememberRecordingDetail(repo, recording, onUnauthorized), watched = false), actions, onClose, overVideo = true)
 }
 
-/** 番組の中身を取る (開いたときに1度)。古い denpa・読めなければ null のまま */
+/** 番組の中身を取る (開いたときに1度)。取れなければ null のまま */
 @Composable
 private fun rememberRecordingDetail(repo: Repository, recording: Recording, onUnauthorized: () -> Unit): RecordingDetail? {
     val detail by produceState<RecordingDetail?>(null, recording.id) {

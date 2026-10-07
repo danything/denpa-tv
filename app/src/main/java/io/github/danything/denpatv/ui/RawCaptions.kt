@@ -170,7 +170,7 @@ fun rememberRawCaptions(
         if (path == null) return@LaunchedEffect
         // 切ってあって、選べる字幕があるかはもう分かっている
         if (!enabled && state.available) return@LaunchedEffect
-        /** 続けて断られた回数。古い denpa (口が無い) や、映像が開かないままのときに頼み続けない */
+        /** 続けて断られた回数。生TSが無い・映像が開かないままのときに頼み続けない */
         var refused = 0
         while (true) {
             // 映像が流れはじめる (頼み直した映像を TS の読み手が読みはじめる) まで待つ。
@@ -187,8 +187,8 @@ fun rememberRawCaptions(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: CaptionFeed.Refused) {
-                // 404 (映像の口がまだ開いていない・繋ぎ直しの間・古い denpa)。少し待って頼み直す。
-                // 続くなら、録画はやめる (生TSが無い・古い denpa)。ライブは間を空けて頼み続ける (チューナーの立ち上がりが遅いこともある)
+                // 404 (映像の口がまだ開いていない・繋ぎ直しの間)。少し待って頼み直す。
+                // 続くなら、録画はやめる (生TSが無い)。ライブは間を空けて頼み続ける (チューナーの立ち上がりが遅いこともある)
                 if (++refused >= MAX_REFUSED) {
                     if (fromMs != null) return@LaunchedEffect
                     delay(SLOW_RETRY_MS)

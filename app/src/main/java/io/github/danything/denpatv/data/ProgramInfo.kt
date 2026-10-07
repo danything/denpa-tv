@@ -109,7 +109,7 @@ private fun number(value: JsonElement): Long? = (value as? JsonPrimitive)?.takeU
 /** 番組の口を引いた結果 (`DenpaApi.program`) */
 sealed interface ProgramLookup {
     data class Found(val info: ProgramInfo) : ProgramLookup
-    /** 番組表に無い (終わって消えた)・口の無い古い denpa・届かない。`now` のぶんだけを出す */
+    /** 番組表に無い (終わって消えた)・届かない・読めない。`now` のぶんだけを出す */
     data object Missing : ProgramLookup
 }
 

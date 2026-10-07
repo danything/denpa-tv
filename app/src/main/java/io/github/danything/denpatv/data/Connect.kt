@@ -55,10 +55,10 @@ suspend fun connect(
  * 前の候補は `preferMs` だけ待つ — 80 を黙って捨てる機械でも、繋ぐのを諦めるまで (10 秒) 待たずに 3000 に決められる
  */
 internal suspend fun firstReachable(api: DenpaApi, candidates: List<URI>, preferMs: Long = PREFER_MS): URI? {
-    if (candidates.size <= 1) return candidates.firstOrNull()?.takeIf { api.health(it) }
+    if (candidates.size <= 1) return candidates.firstOrNull()?.takeIf { api.health(it) != null }
     // 読むのはブロックするので止められない。待ち合わせない別のスコープで走らせ、要らなくなった答えは捨てる
     // (どれも Http の接続・読みの上限で終わる)
-    val probes = candidates.map { url -> CoroutineScope(Dispatchers.IO).async { api.health(url) } }
+    val probes = candidates.map { url -> CoroutineScope(Dispatchers.IO).async { api.health(url) != null } }
     // 待ちは本物の時計で (呼ぶ側がテストの仮の時計でも、前の候補を待つ間を飛ばさない)
     return withContext(Dispatchers.IO) {
         for ((i, probe) in probes.withIndex()) {
