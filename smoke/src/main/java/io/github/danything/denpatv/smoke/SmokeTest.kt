@@ -550,17 +550,16 @@ class SmokeTest {
          */
         private fun freshAutomation(): UiAutomation {
             val automation = instrumentation.uiAutomation
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && interactiveWindows) {
-                automation.clearCache()
+            // 印は UiAutomation の側で持つので、毎回確かめる (こちらで覚えておくと、作り直されたときに食い違う)
+            val info = automation.serviceInfo
+            if (info.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS == 0 || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                automation.serviceInfo = info
             } else {
-                automation.serviceInfo = automation.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
-                interactiveWindows = true
+                automation.clearCache()
             }
             return automation
         }
-
-        /** アプリの窓を全部取る印 (FLAG_RETRIEVE_INTERACTIVE_WINDOWS) を付けたか */
-        private var interactiveWindows = false
 
         private fun nodes(): List<AccessibilityNodeInfo> {
             val out = mutableListOf<AccessibilityNodeInfo>()
