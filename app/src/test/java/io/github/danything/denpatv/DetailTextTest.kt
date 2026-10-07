@@ -98,8 +98,8 @@ class DetailTextTest {
     /** 出す見出しからは、まわりの飾りを外す */
     @Test
     fun 見出しの飾りを外す() {
-        val text = arrangeDetail("", listOf("【出演】" to "a", "◇スタッフ2" to "b", "監督・演出" to "c"))
-        assertEquals(listOf("出演" to "a"), text.cast)
-        assertEquals(listOf("スタッフ2" to "b", "監督・演出" to "c"), text.notes)
+        val text = arrangeDetail("", listOf("【出演】" to "a", "出演者：" to "b", "◇スタッフ2" to "c", "監督・演出" to "d", "＜音楽＞" to "e"))
+        assertEquals(listOf("出演" to "a", "出演者" to "b"), text.cast)
+        assertEquals(listOf("スタッフ2" to "c", "監督・演出" to "d", "音楽" to "e"), text.notes)
     }
 }

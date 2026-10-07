@@ -44,6 +44,9 @@ fun detailKind(heading: String): DetailKind {
 /** 飾りの記号 (NFKC の後に比べるので、全角の括弧・コロンは半角で書く) */
 private const val DECORATION = "◇◆■□●○◎★☆▼▽▲△♪※〓・【】「」『』〈〉《》〔〕≪≫«»[]()<>:"
 
+/** 飾りの記号か (全角の「：（）＜＞」も) */
+private fun isDecoration(c: Char): Boolean = nfkc(c.toString()).let { it.length == 1 && it[0] in DECORATION }
+
 private val NOTICE_WORDS = listOf("お知らせ", "おしらせ", "オシラセ", "告知", "ご案内")
 
 /** 含んでいれば読みもの。ほかに「〜内容」「〜概要」で終わる見出し (番組内容・放送内容・番組概要) */
@@ -72,7 +75,7 @@ fun arrangeDetail(description: String, extended: List<Pair<String, String>>): De
     val sections = extended.mapNotNull { (heading, body) ->
         val kind = detailKind(heading)
         val text = withoutUrls(body)
-        if (kind == DetailKind.Link || text.isEmpty()) null else Triple(kind, heading.trim().trim { it in DECORATION || it in "【】" }, text)
+        if (kind == DetailKind.Link || text.isEmpty()) null else Triple(kind, heading.trim().trim(::isDecoration), text)
     }
     val paragraphs = listOf(withoutUrls(description)).filter { it.isNotEmpty() } +
         sections.filter { it.first == DetailKind.Story }.map { it.third }
