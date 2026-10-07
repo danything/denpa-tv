@@ -50,8 +50,8 @@ fun neighbor(services: List<Service>, currentId: Long, step: Int): Service? {
         .first { it.id in candidates }
 }
 
-/** 種別の並びと名前 (denpa の番組表・ライブと同じ) */
-val SERVICE_TYPES = listOf("GR" to "地上波", "BS" to "BS", "CS" to "CS")
+/** 種別の並びと名前 (denpa の局の一覧と同じ並び。SKY も左右の局送りで回るので、列にも出す) */
+val SERVICE_TYPES = listOf("GR" to "地上波", "BS" to "BS", "CS" to "CS", "SKY" to "SKY")
 
 /** 局のいま放送中の番組 (`now`)。時刻は UNIX ミリ秒 */
 @Immutable
@@ -63,7 +63,7 @@ data class NowProgram(
     /** 選べる音声 (デュアルモノの主・副を見分ける・焼くものを選ぶ。`DenpaAudio`)。古い denpa には無いので空 */
     val audios: List<DenpaAudio> = emptyList(),
     /**
-     * 録る予定か (予約が入っていて、競合で弾かれていない) と、いま録っている最中か。ライブの「録画」の札の印。
+     * 録る予定か (予約済みか録画中。競合で弾かれた・録り終えたものは false) と、いま録っている最中か。ライブの「録画」の札の印。
      * denpa が `POST api/services/<id>/record` を持つ版から (古い denpa には無いので false)
      */
     val reserved: Boolean = false,

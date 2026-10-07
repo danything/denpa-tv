@@ -46,7 +46,7 @@ import kotlinx.coroutines.launch
  *   denpa にチューナーを替えさせない)。替えたら局・番組・番組の進みを数秒だけ下に出す (キーの割り当ては data/Remote.kt)
  * - **下・決定・Menu でメニュー** (YouTube・Prime Video・ABEMA などのテレビのアプリと同じく下で開く)。
  *   下の端に、ブラウザの denpa のライブの操作列にあたる**操作の列** (画質・字幕・音声・録画) と、その下に**局の列**
- *   (地上波 / BS / CS ごとの列。ブラウザのタブにあたる) が覗く。下キーで局の列に入り、左右で選んで決定で替える。
+ *   (地上波 / BS / CS / SKY ごとの列。ブラウザのタブにあたる) が覗く。下キーで局の列に入り、左右で選んで決定で替える。
  *   **上で開くと、はじめから局の列のいま映している局に合う** (一覧から局を選ぶ近道)。
  *   **操作の列 (いちばん上) でもう一度上を押すと閉じて映像に戻る** (`UpToClose`)。
  *   画質は選んだらすぐ頼み直してこの端末で覚える (既定は端末がハードで MPEG-2 を解ければ生の TS)。映るまでは前の絵のまま
@@ -309,7 +309,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             val message = when (result) {
                 is RecordResult.Recorded ->
                     if (result.reserved) "録画を始めます: ${result.title}"
-                    else "予約しましたが、チューナーが足りず録れません (競合): ${result.title}"
+                    else "予約はありますが、録れない状態です (チューナーの競合など): ${result.title}"
                 is RecordResult.Failed -> "録画できません: ${result.message}"
                 RecordResult.Unsupported -> "この denpa はアプリからの録画に対応していません (denpa を新しくしてください)"
             }

@@ -67,10 +67,10 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 
 → **映像は Android 14 からは HttpEngine、それより前は DefaultHttpDataSource** (どちらも Media3 の中の
 もので依存は増えない)。どちらも頁の勧めどおり `DefaultDataSource.Factory` で包み、HttpEngine は
-アプリで1つを使い回す (`DenpaApp.httpEngine`)。
+アプリで1つを使い回す (`DenpaApp.engineHttp`)。
 
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
-読み 30 秒と書いてある)。叩くのは局と録画の一覧・番組の中身 (`detail`)・観た位置・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
+読み 30 秒と書いてある)。叩くのは局と録画の一覧・番組の中身 (`detail`・`api/programs/<id>`)・観た位置・いまの番組の録画・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
 生の TS の字幕の絵 (`api/…/captions`、長さ付きのこまが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。
 
 → **アプリの中のアップデート (GitHub のリリースを引く・APK を取る) も HttpURLConnection** (`data/Update.kt`)。入れるのは OS の

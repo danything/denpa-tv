@@ -33,9 +33,9 @@ base64 -w0 denpa-tv-release.jks > denpa-tv-release.jks.b64
 
 ```sh
 export DENPA_TV_UPDATE_API=http://10.0.2.2:8732/repos/danything/denpa-tv   # エミュレータからホストの 8732
-DENPA_TV_VERSION=0.6.3 DENPA_TV_VERSION_CODE=63 ./gradlew :app:assembleDebug   # 入れておく古い版
+DENPA_TV_VERSION=0.6.3 DENPA_TV_VERSION_CODE=603 ./gradlew :app:assembleDebug   # 入れておく古い版
 cp app/build/outputs/apk/debug/app-debug.apk old.apk
-DENPA_TV_VERSION=0.7.0 DENPA_TV_VERSION_CODE=70 ./gradlew :app:assembleDebug   # 偽のリリースに置く新しい版
+DENPA_TV_VERSION=0.7.0 DENPA_TV_VERSION_CODE=700 ./gradlew :app:assembleDebug   # 偽のリリースに置く新しい版
 ```
 
 偽のリリースは `<API>/releases` に GitHub と同じ形の JSON (`tag_name` と、`denpa-tv-0.7.0.apk`・`SHA256SUMS` の
