@@ -218,7 +218,7 @@ fun RecordingsScreen(
                 val rowTop = remember(density) { RowTop(with(density) { GRID_TOP.toPx() }) }
                 CompositionLocalProvider(LocalBringIntoViewSpec provides rowTop) {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(4),
+                        columns = GridCells.Fixed(GRID_COLUMNS),
                         state = grid,
                         modifier = Modifier.fillMaxSize(),
                         // 合わせたカードは膨らんで光るので、上と横に切れないぶん空けておく
@@ -368,7 +368,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
     /** 番組名の幅 (合いを動かして題が替わっても、前の幅で切っておく) */
     val titleWidth = remember { IntArray(1) }
     Column(
-        Modifier.fillMaxWidth().height(HERO_HEIGHT).padding(start = EDGE, end = 48.dp, top = 24.dp),
+        Modifier.fillMaxWidth().height(HERO_HEIGHT).padding(start = EDGE, end = GRID_END, top = 24.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -526,7 +526,7 @@ private fun RecordingCard(
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
                         .background(TITLE_SCRIM)
-                        .padding(start = 10.dp, end = 10.dp, top = 24.dp, bottom = 10.dp),
+                        .padding(start = CARD_TITLE_PADDING, end = CARD_TITLE_PADDING, top = 24.dp, bottom = CARD_TITLE_PADDING),
                 ) {
                     EpisodeTitle(recording.title, CARD_TITLE, Color.White, maxLines = 2, width = titleWidth, unwatched = recording.unwatched)
                 }
@@ -557,12 +557,19 @@ private val TITLE_TEXT = TextStyle(
     localeList = LocaleList("ja-JP"),
 )
 
-/** カードの番組名 (カードは 4 列で幅 180dp ほど。離れても読める大きさと太さ) */
+/**
+ * 格子の列の数。**3 列にしてカードを大きく** (幅 260dp ほど)。4 列 (180dp ほど) では番組名が2行に 9 字ほどしか入らず、
+ * 長い題はほとんど切れていた。左のメニューを細くした幅もカードに回す
+ */
+private const val GRID_COLUMNS = 3
+
+/** カードの番組名 (カードの幅に合わせた大きさ。2行に 12 字ほど入り、離れても読める大きさと太さ) と、帯の中の余白 */
 private val CARD_TITLE = TITLE_TEXT.copy(
-    fontSize = 17.sp,
-    lineHeight = 23.sp,
+    fontSize = 20.sp,
+    lineHeight = 27.sp,
     fontWeight = FontWeight.SemiBold,
 )
+private val CARD_TITLE_PADDING = 12.dp
 
 /** 番組名の下に敷く帯 (上は透かし、字のあたりは濃く) */
 private val TITLE_SCRIM = Brush.verticalGradient(0f to Color.Transparent, 0.3f to Color(0xC0000000), 1f to Color(0xF0000000))
@@ -592,7 +599,7 @@ private val DAY = SimpleDateFormat("M月d日(E)", Locale.JAPAN)
 private val WHEN = SimpleDateFormat("M/d(E) HH:mm", Locale.JAPAN)
 
 /** 一覧の左の端 (上の段の文字と揃える) */
-private val EDGE = 40.dp
+private val EDGE = 32.dp
 
 /** 上の段の高さと、文字の幅 (1行を長くしすぎない) */
 private val HERO_HEIGHT = 196.dp
@@ -603,7 +610,7 @@ private const val HERO_SETTLE_MS = 450L
 private const val BACKDROP_FADE_MS = 250
 
 /** 止まった録画の前後で、先にポスターを読む件数 (前後2段ぶん) */
-private const val PREFETCH = 8
+private const val PREFETCH = GRID_COLUMNS * 2
 
 /** 先読みの前に、カードが測られるのを待つ回数と間 (ミリ秒) */
 private const val CARD_SIZE_WAITS = 20
@@ -632,7 +639,7 @@ private val BACKDROP_BOTTOM = Brush.verticalGradient(0.35f to Color.Transparent,
 
 /** 格子の上の余白 (合わせた段のカードが膨らんで光るぶん)、右の余白、カードの間 */
 private val GRID_TOP = 14.dp
-private val GRID_END = 48.dp
+private val GRID_END = 40.dp
 private val GRID_GAP = 24.dp
 
 /**

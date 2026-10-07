@@ -1,6 +1,7 @@
 package io.github.danything.denpatv.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,8 +41,9 @@ import androidx.tv.material3.DrawerValue
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.NavigationDrawer
-import androidx.tv.material3.NavigationDrawerItem
-import androidx.tv.material3.NavigationDrawerItemDefaults
+import androidx.tv.material3.SelectableSurfaceDefaults
+import androidx.tv.material3.SelectableSurfaceScale
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import androidx.tv.material3.rememberDrawerState
 import io.github.danything.denpatv.R
@@ -120,29 +122,23 @@ fun MainScreen(
                     .fillMaxHeight()
                     // 開いたら右の画面の上に重なるので、左から地の色で覆って字を読めるように
                     .then(if (open) Modifier.background(DRAWER_SCRIM) else Modifier)
-                    .padding(12.dp),
+                    .padding(horizontal = RAIL_PADDING, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Brand(open)
                 Spacer(Modifier.weight(1f))
                 Destination.entries.forEach { destination ->
-                    NavigationDrawerItem(
+                    RailItem(
+                        destination,
                         selected = selected == destination,
+                        open = open,
                         onClick = {
                             if (destination == Destination.Live) onLive() else selected = destination
                         },
-                        leadingContent = { Icon(painterResource(destination.icon), contentDescription = null) },
-                        colors = drawerItemColors(),
-                        border = NavigationDrawerItemDefaults.border(
-                            focusedBorder = Focus.border(DRAWER_ITEM_SHAPE, 2f),
-                            focusedSelectedBorder = Focus.border(DRAWER_ITEM_SHAPE, 2f),
-                        ),
-                        glow = NavigationDrawerItemDefaults.glow(focusedGlow = Focus.glow, focusedSelectedGlow = Focus.glow),
-                        shape = NavigationDrawerItemDefaults.shape(DRAWER_ITEM_SHAPE),
                         modifier = Modifier
                             .focusRequester(items.getValue(destination))
                             .onFocusChanged { if (destination == Destination.Live) liveFocused = it.isFocused },
-                    ) { Text(destination.label) }
+                    )
                 }
                 Spacer(Modifier.weight(1f))
             }
@@ -167,29 +163,64 @@ private const val MENU_FOCUS_WAIT_MS = 50L
 @Composable
 private fun Brand(open: Boolean) {
     Row(
-        Modifier.padding(start = 12.dp, top = 12.dp).height(40.dp),
+        Modifier.padding(start = (RAIL_ITEM - BRAND_ICON) / 2, top = 12.dp).height(40.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(painterResource(R.drawable.ic_brand), contentDescription = "denpa", tint = Palette.AccentBright, modifier = Modifier.size(32.dp))
+        Icon(painterResource(R.drawable.ic_brand), contentDescription = "denpa", tint = Palette.AccentBright, modifier = Modifier.size(BRAND_ICON))
         if (open) Text("denpa", style = MaterialTheme.typography.titleLarge, color = Palette.Text)
     }
 }
 
-/** 行き先の色。選んでいるものは azure で塗り、合わせたものは白 (札と同じ) */
+/**
+ * 行き先の札。**畳んだときは印だけの小さな丸** (YouTube の Android TV と同じく細い帯にして、右の画面に幅を回す)、
+ * 開くと名前も出して横に伸びる。選んでいるものは azure で塗り、合わせたものは白 (札と同じ縁と光)
+ */
 @Composable
-private fun drawerItemColors() = NavigationDrawerItemDefaults.colors(
-    contentColor = Palette.TextMuted,
-    inactiveContentColor = Palette.TextMuted,
-    selectedContainerColor = Palette.Accent,
-    selectedContentColor = Palette.OnAccent,
-    focusedContainerColor = Color.White,
-    focusedContentColor = Palette.Background,
-    focusedSelectedContainerColor = Color.White,
-    focusedSelectedContentColor = Palette.Accent,
-)
+private fun RailItem(destination: Destination, selected: Boolean, open: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    val width by animateDpAsState(if (open) RAIL_ITEM_OPEN else RAIL_ITEM, label = "rail item")
+    val shape = PillShape
+    Surface(
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier.width(width).height(RAIL_ITEM),
+        shape = SelectableSurfaceDefaults.shape(shape),
+        colors = SelectableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = Palette.TextMuted,
+            selectedContainerColor = Palette.Accent,
+            selectedContentColor = Palette.OnAccent,
+            focusedContainerColor = Color.White,
+            focusedContentColor = Palette.Background,
+            focusedSelectedContainerColor = Color.White,
+            focusedSelectedContentColor = Palette.Accent,
+        ),
+        scale = SelectableSurfaceScale.None,
+        border = SelectableSurfaceDefaults.border(
+            focusedBorder = Focus.border(shape, 2f),
+            focusedSelectedBorder = Focus.border(shape, 2f),
+        ),
+        glow = SelectableSurfaceDefaults.glow(focusedGlow = Focus.glow, focusedSelectedGlow = Focus.glow),
+    ) {
+        Row(
+            Modifier.fillMaxHeight().padding(start = (RAIL_ITEM - RAIL_ICON) / 2),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Icon(painterResource(destination.icon), contentDescription = null, modifier = Modifier.size(RAIL_ICON))
+            if (open) Text(destination.label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        }
+    }
+}
 
-private val DRAWER_ITEM_SHAPE = RoundedCornerShape(50)
+/** 畳んだ帯の左右の余白と、札 (畳んだときは丸) の大きさ・開いたときの幅、印の大きさ。畳んだ帯は 56dp */
+private val RAIL_PADDING = 8.dp
+private val RAIL_ITEM = 40.dp
+private val RAIL_ITEM_OPEN = 200.dp
+private val RAIL_ICON = 22.dp
+
+/** 頭の印の大きさ (行き先の印と真ん中を揃える) */
+private val BRAND_ICON = 28.dp
 
 /** 開いたメニューの下地。左は地の色、右へ行くほど透かす */
 private val DRAWER_SCRIM = Brush.horizontalGradient(0f to Palette.Background, 0.75f to Palette.Background.copy(alpha = 0.92f), 1f to Palette.Background.copy(alpha = 0f))
