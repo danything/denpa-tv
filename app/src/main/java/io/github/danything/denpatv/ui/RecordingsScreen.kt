@@ -580,8 +580,8 @@ private fun gridIndex(recordings: List<Recording>, id: Long): Int? {
 private const val RECORDING_BADGE = "● 録画中"
 
 private val DAY = SimpleDateFormat("M月d日(E)", Locale.JAPAN)
-/** カードと詳しくの放送日時 */
-internal val WHEN = SimpleDateFormat("M/d(E) HH:mm", Locale.JAPAN)
+/** 上の段の放送日時 */
+private val WHEN = SimpleDateFormat("M/d(E) HH:mm", Locale.JAPAN)
 
 /** 一覧の左の端 (上の段の文字と揃える) */
 private val EDGE = 40.dp

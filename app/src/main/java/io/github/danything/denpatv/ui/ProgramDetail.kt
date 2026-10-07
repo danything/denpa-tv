@@ -247,11 +247,11 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
                             when (event.key) {
                                 // 下: 読み進める。いちばん下でも受ける (下に合わせる先は無い)
                                 Key.DirectionDown -> {
-                                    if (scroll.value < scroll.maxValue) scope.launch { scroll.animateScrollBy(step) }
+                                    if (scroll.canScrollForward) scope.launch { scroll.animateScrollBy(step) }
                                     true
                                 }
                                 // 上: 戻る。いちばん上なら受けない (上の札へ合いが移る)
-                                Key.DirectionUp -> if (scroll.value > 0) {
+                                Key.DirectionUp -> if (scroll.canScrollBackward) {
                                     scope.launch { scroll.animateScrollBy(-step) }
                                     true
                                 } else {
@@ -265,7 +265,7 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
             .focusable(),
     ) {
         DetailColumn(text, Modifier.verticalScroll(scroll, enabled = false).padding(horizontal = BODY_PADDING, vertical = 12.dp))
-        if (scroll.value < scroll.maxValue) {
+        if (scroll.canScrollForward) {
             val surface = MaterialTheme.colorScheme.surface
             Box(
                 Modifier

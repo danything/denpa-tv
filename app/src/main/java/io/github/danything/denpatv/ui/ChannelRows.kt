@@ -113,7 +113,7 @@ fun ChannelRows(
                     scope.launch { state.scrollToItem((at - 1).coerceAtLeast(0)) }
                 }
             },
-            // 最後の列 (CS) も上に揃えられるよう、下に1列ぶんに足りない分の余白
+            // 最後の列も上に揃えられるよう、下に1列ぶんに足りない分の余白
             contentPadding = PaddingValues(bottom = ROWS_HEIGHT - ROW_HEIGHT),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
