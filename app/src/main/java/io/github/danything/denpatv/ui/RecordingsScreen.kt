@@ -222,7 +222,7 @@ fun RecordingsScreen(
                         state = grid,
                         modifier = Modifier.fillMaxSize(),
                         // 合わせたカードは膨らんで光るので、上と横に切れないぶん空けておく
-                        contentPadding = PaddingValues(start = EDGE, end = GRID_END, top = GRID_TOP, bottom = 48.dp),
+                        contentPadding = PaddingValues(start = EDGE, end = GRID_END, top = GRID_TOP, bottom = GRID_BOTTOM),
                         horizontalArrangement = Arrangement.spacedBy(GRID_GAP),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
@@ -256,6 +256,8 @@ fun RecordingsScreen(
                 }
                 // 送っている途中に上の端で切れるカードを、地の色へ溶かす
                 Box(Modifier.fillMaxWidth().height(GRID_FADE_HEIGHT).background(GRID_FADE))
+                // 下の端で切れる次の段 (ポスターと番組名の頭) も溶かす。一覧の終わりの余白 (`GRID_BOTTOM`) より短く、最後の段には掛けない
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(GRID_BOTTOM_FADE_HEIGHT).background(GRID_BOTTOM_FADE))
             }
         }
         notice?.let { text ->
@@ -649,6 +651,11 @@ private val GRID_GAP = 24.dp
 private val GRID_FADE_HEIGHT = 9.dp
 
 private val GRID_FADE = Brush.verticalGradient(0f to Palette.Background, 0.5f to Palette.Background, 1f to Color.Transparent)
+
+/** 一覧の終わりの余白と、下の端の溶かし (3 列ではカードが大きく、次の段は番組名の途中で切れるので) */
+private val GRID_BOTTOM = 48.dp
+private val GRID_BOTTOM_FADE_HEIGHT = 40.dp
+private val GRID_BOTTOM_FADE = Brush.verticalGradient(0f to Color.Transparent, 1f to Palette.Background)
 
 /**
  * **合わせたカードの段を、格子の上の端に揃える** (Google TV の一覧と同じく、目の置き場を変えない)。
