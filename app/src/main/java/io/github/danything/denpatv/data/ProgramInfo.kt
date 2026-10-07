@@ -188,13 +188,3 @@ fun programMeta(serviceName: String?, startAt: Long, endAt: Long?, zone: TimeZon
     }
     return listOfNotNull(serviceName?.takeIf { it.isNotBlank() }, span).joinToString(" ・ ")
 }
-
-/**
- * 放送の詳細の見出しのうち、**読みもの** (あらすじ・番組内容のような文章) として説明と並べて左に置くもの。
- * ほか (出演者・原作・脚本・音楽など、名前の並び) は右に置く
- */
-private val PROSE_HEADINGS = setOf("番組内容", "内容", "あらすじ", "ストーリー", "みどころ", "見どころ", "ご案内", "解説")
-
-/** 詳細を読みもの (左) と名前の並び (右) に分ける */
-fun splitExtended(extended: List<Pair<String, String>>): Pair<List<Pair<String, String>>, List<Pair<String, String>>> =
-    extended.partition { (heading, _) -> heading.trim() in PROSE_HEADINGS }

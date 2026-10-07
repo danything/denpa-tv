@@ -47,13 +47,18 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import io.github.danything.denpatv.data.splitExtended
+import io.github.danything.denpatv.data.DetailText
+import io.github.danything.denpatv.data.arrangeDetail
 import kotlinx.coroutines.launch
 
 /** 詳しくに出す中身。録画 (一覧・再生中) とライブで同じ形 (`ProgramDetailDialog`) */
@@ -87,9 +92,9 @@ class DetailAction(val label: String, val onClick: () -> Unit)
  *   (録画中の印・ジャンル・映像・音声)
  * - **その下に操作の札を横1列**。先頭が主な操作で、開いたときにそこに合う (録画は「続きから再生」、ライブは「録画」、
  *   再生中は「閉じる」— 映像に戻るだけ)
- * - 下の残りに説明と放送の詳細。**読みもの (説明・番組内容) は左、名前の並び (出演者・原作・脚本・音楽など) は右**
- *   (1080p の幅を使い、1行を長くしすぎない)。収まらなければ札の列から下キーで本文に入り、**上下で読み進める**
- *   (いちばん上でもう一度上を押すと札に戻る)
+ * - 下の残りに説明と放送の詳細を**1列で、大事な順に** (`arrangeDetail`): 説明と番組内容・あらすじをまとめた読みもの →
+ *   出演者 → 制作・音楽など (小さく詰めて) → おしらせ。ホームページは出さない。1行は画面の6割ほどまで (長すぎると読みにくい)。
+ *   収まらなければ札の列から下キーで本文に入り、**上下で読み進める** (いちばん上でもう一度上を押すと札に戻る)
  * - 絵 (ポスター) は出さない (文字を読むための画面。映像は一覧のカードと再生の画面で見える)
  *
  * 長押しで開くので、離すまでの決定はこの窓では受けない (`ignoreHeldCenter`。先頭の札が押されないように)。戻るで閉じる
@@ -197,17 +202,13 @@ private fun Header(facts: DetailFacts, token: String?) {
 }
 
 /**
- * 説明と放送の詳細。読みものを左、名前の並びを右に。**収まらなければ合わせられて、上下で読み進める**
+ * 説明と放送の詳細を1列で (`arrangeDetail` の並び)。**収まらなければ合わせられて、上下で読み進める**
  * (合っている間は縁を出す。続きがあれば下の端に「▼」)。いちばん上で上を押すと、合いが先頭の札へ戻る
  */
 @Composable
 private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
-    val (prose, credits) = remember(facts.extended) { splitExtended(facts.extended) }
-    val left = buildList {
-        if (facts.description.isNotBlank()) add(null to facts.description)
-        prose.forEach { add(it.first to it.second) }
-    }
-    if (left.isEmpty() && credits.isEmpty()) return
+    val text = remember(facts.description, facts.extended) { arrangeDetail(facts.description, facts.extended) }
+    if (text.isEmpty) return
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     var focused by remember { mutableStateOf(false) }
@@ -221,6 +222,8 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
     Box(
         Modifier
             .weight(1f)
+            // 1行を長くしすぎない (縁も字の幅に合わせる)
+            .widthIn(max = TEXT_WIDTH + BODY_PADDING * 2)
             .fillMaxWidth()
             // 縁の内側の余白のぶん左へ出して、本文の字を番組名と揃える
             .offset(x = -BODY_PADDING)
@@ -261,21 +264,7 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
             )
             .focusable(),
     ) {
-        Row(
-            Modifier.verticalScroll(scroll, enabled = false).padding(horizontal = BODY_PADDING, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(48.dp),
-        ) {
-            if (left.isNotEmpty()) {
-                Column(Modifier.weight(1.3f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    left.forEach { (heading, body) -> Section(heading, body, MaterialTheme.colorScheme.onSurface) }
-                }
-            }
-            if (credits.isNotEmpty()) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    credits.forEach { (heading, body) -> Section(heading, body, MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-            }
-        }
+        DetailColumn(text, Modifier.verticalScroll(scroll, enabled = false).padding(horizontal = BODY_PADDING, vertical = 12.dp))
         if (scroll.value < scroll.maxValue) {
             val surface = MaterialTheme.colorScheme.surface
             Box(
@@ -300,13 +289,40 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
     }
 }
 
+/** 読みもの (大きく) → 出演者 → 制作・音楽・おしらせ (小さく、薄く、「見出し 本文」を詰めて) */
 @Composable
-private fun Section(heading: String?, body: String, color: Color) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        heading?.let { Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary) }
-        Text(body, style = MaterialTheme.typography.bodyLarge, color = color)
+private fun DetailColumn(text: DetailText, modifier: Modifier) {
+    val colors = MaterialTheme.colorScheme
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        text.story.forEach { Text(it, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface) }
+        text.cast.forEach { (heading, body) ->
+            Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(heading, style = MaterialTheme.typography.titleSmall, color = colors.primary)
+                Text(body, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface)
+            }
+        }
+        if (text.notes.isNotEmpty()) {
+            Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                text.notes.forEach { (heading, body) ->
+                    Text(
+                        buildAnnotatedString {
+                            if (heading.isNotEmpty()) {
+                                withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Medium)) { append(heading) }
+                                append("　")
+                            }
+                            append(body)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
+
+/** 本文の1行の幅 (1080p で画面の6割ほど。読みものの1行が 40 字弱) */
+private val TEXT_WIDTH = 600.dp
 
 /** 本文の縁の内側の余白 */
 private val BODY_PADDING = 16.dp
