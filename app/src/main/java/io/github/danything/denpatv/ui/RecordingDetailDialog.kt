@@ -11,6 +11,8 @@ import io.github.danything.denpatv.data.chasing
 import io.github.danything.denpatv.data.codecLabels
 import io.github.danything.denpatv.data.dualMonoLabels
 import io.github.danything.denpatv.data.programMeta
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * 録画の詳しく (カードの長押しで開く)。中身の並びは `ProgramDetailDialog` (ライブ・再生中と同じもの)。
@@ -109,14 +111,28 @@ private fun recordingAudioLabels(recording: Recording): List<String> =
         }
     }.distinct()
 
-/** 再生の画面から録画を消す。消せたら一覧から抜き、戻ったときに隣の録画に合うようにして true。録画中などで断られたら false */
-suspend fun deleteFromPlayer(repo: Repository, id: Long): Boolean {
-    if (!repo.api.deleteRecording(repo.base, id)) return false
+/**
+ * 再生の画面 (録画・追っかけ) から録画を消す。消せたら一覧から抜き、戻ったときに隣の録画に合うようにして `onDeleted`
+ * (一覧へ戻る)。録画中などで断られたら1行知らせる
+ */
+fun CoroutineScope.deleteFromPlayer(
+    repo: Repository,
+    id: Long,
+    flash: (String) -> Unit,
+    onUnauthorized: () -> Unit,
+    onDeleted: () -> Unit,
+) = launch {
+    val done = try {
+        repo.api.deleteRecording(repo.base, id)
+    } catch (_: Unauthorized) {
+        return@launch onUnauthorized()
+    }
+    if (!done) return@launch flash(NOT_DELETED)
     repo.focusOnReturn = repo.forgetRecording(id)
-    return true
+    onDeleted()
 }
 
-/** 再生の画面で消せなかったときの1行 */
+/** 消せなかったときの1行 (一覧・再生の画面) */
 const val NOT_DELETED = "消せませんでした (録画中は消せません)"
 
 /** 再生位置 (1:02:03) */

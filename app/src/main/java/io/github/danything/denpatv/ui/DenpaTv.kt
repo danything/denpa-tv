@@ -119,11 +119,15 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
             entry<Watch> { key ->
                 val leave = { backStack.removeAt(backStack.lastIndex); Unit }
                 // 録画中は追っかけ (伸びている生TSを denpa に流してもらう)、録り終えたものはファイルで
+                // 「最初から」は続きの位置を持たないものとして開く (頭から流し、観た位置はいつもどおり預ける)
                 val recording = remember(key) {
                     repo.recordings.firstOrNull { it.id == key.recordingId }?.let { if (key.fromStart) it.copy(resumeMs = null) else it }
                 }
-                if (recording?.chasing == true) ChasePlayerScreen(repo, recording, leave, unauthorized)
-                else RecordingPlayerScreen(repo, key.recordingId, onLeave = leave, onUnauthorized = unauthorized, fromStart = key.fromStart)
+                when {
+                    recording == null -> Centered("録画が見つかりません")
+                    recording.chasing -> ChasePlayerScreen(repo, recording, leave, unauthorized)
+                    else -> RecordingPlayerScreen(repo, recording, leave, unauthorized)
+                }
             }
         },
     )

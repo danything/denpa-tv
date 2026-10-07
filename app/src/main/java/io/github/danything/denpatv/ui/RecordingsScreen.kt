@@ -110,10 +110,10 @@ fun RecordingsScreen(
     val grid = rememberLazyGridState()
     val scope = rememberCoroutineScope()
 
-    /** その録画のカードに合わせる (見えていなければそこまで送ってから) */
+    /** その録画のカードに合わせる (見えていなければ (一番下・消した隣) そこまで送ってから) */
     suspend fun focus(id: Long) {
         withFrameNanos { }
-        if (grid.layoutInfo.visibleItemsInfo.none { it.key == id }) gridIndex(recordings, id)?.let { grid.scrollToItem(it) }
+        if (requesters[id] == null || grid.layoutInfo.visibleItemsInfo.none { it.key == id }) gridIndex(recordings, id)?.let { grid.scrollToItem(it) }
         withFrameNanos { }
         runCatching { requesters[id]?.requestFocus() }
     }
@@ -179,14 +179,7 @@ fun RecordingsScreen(
         repo.focusOnReturn?.let { lastFocused = it; repo.focusOnReturn = null }
         // 観て戻ったら開いた録画に。初めては一番下 (いちばん古い録画): 古いものから片付けられるように (ブラウザの denpa と同じ)
         val id = lastFocused?.takeIf { id -> recordings.any { it.id == id } } ?: recordings.lastOrNull()?.id ?: return@LaunchedEffect
-        if (!takeFocus) return@LaunchedEffect
-        withFrameNanos { }
-        // 見えていなければ (一番下・消した隣)、そこまで送ってから合わせる
-        if (requesters[id] == null || grid.layoutInfo.visibleItemsInfo.none { it.key == id }) {
-            gridIndex(recordings, id)?.let { grid.scrollToItem(it) }
-            withFrameNanos { }
-        }
-        runCatching { requesters[id]?.requestFocus() }
+        if (takeFocus) focus(id)
     }
 
     if (!loaded) return Centered("読み込んでいます…")

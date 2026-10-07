@@ -10,14 +10,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,7 +72,6 @@ import io.github.danything.denpatv.data.EngineHttp
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.Http
-import io.github.danything.denpatv.data.LongPressGuard
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.Reconnect
 import androidx.media3.ui.compose.PlayerSurface
@@ -211,16 +208,15 @@ fun PlayerFrame(
     /** 知らせの下に出す進み (ライブの番組の進み)。null なら出さない */
     progress: Pair<Long, Long>? = null,
     /** 生の TS の字幕 (`rememberRawCaptions`)。焼いた映像の字幕の上、知らせの下に重ねる */
-    captions: RawCaptionState? = null,
+    captions: RawCaptionState,
     /** 映るまでの間に出す、何をしているか (ライブは「選局しています」)。流れが届いたら「映像を待っています」に替わる */
     busyLabel: String = "読み込んでいます",
     /** 繋ぎ直しの様子 (`rememberPlayer` の `recovery`)。繋ぎ直している間は前の絵を残して「繋ぎ直しています」 */
-    recovery: Recovery? = null,
+    recovery: Recovery,
     above: @Composable BoxScope.() -> Unit = {},
 ) {
     val loading = rememberLoading(player)
     val focus = remember { FocusRequester() }
-    val center = remember { CenterPress() }
     /** 映像そのものに合っているか */
     var focused by remember { mutableStateOf(false) }
     /** 下に重ねたものの高さ。字幕をその上へ逃がす */
@@ -242,19 +238,7 @@ fun PlayerFrame(
             cues = emptyList()
         }
     }
-    /**
-     * 決定を押しはじめた押し (`CenterPress.press`)。**繰り返しが来なくても、押したまま `LONG_PRESS_MS` たったら長押し**
-     * (`CenterPress.held`)。離せば `CenterPress` が押しを終えるので、時間切れが来ても何もしない
-     */
-    var centerDown by remember { mutableIntStateOf(0) }
-    val latestOnCenter by rememberUpdatedState(onCenter)
-    LaunchedEffect(centerDown) {
-        if (centerDown == 0) return@LaunchedEffect
-        delay(CenterPress.LONG_PRESS_MS)
-        center.held(centerDown)?.let(latestOnCenter)
-    }
     LaunchedEffect(active) {
-        center.reset()
         if (!active) return@LaunchedEffect
         // 閉じたものが消えるのを1こま待ってから合わせ、その後も外れたら取り戻す
         while (true) {
@@ -271,22 +255,9 @@ fun PlayerFrame(
             // 開いていたものが閉じて合いがどこにも無くなったら、映像に戻す
             .onFocusChanged { focused = it.isFocused }
             // 上に重ねたものが開いている間は受けない (そちらのキーがここまで上がってくるので)
+            .centerPresses({ onCenter(CenterPress.Action.Short) }, { onCenter(CenterPress.Action.Long) }, enabled = active)
             .onKeyEvent { event ->
                 if (!active) return@onKeyEvent false
-                if (event.nativeKeyEvent.keyCode in LongPressGuard.CENTER_KEYS) {
-                    val action = when (event.type) {
-                        KeyEventType.KeyDown -> {
-                            val before = center.press
-                            center.down(event.nativeKeyEvent.repeatCount, event.nativeKeyEvent.isLongPress).also {
-                                if (center.press != before) centerDown = center.press
-                            }
-                        }
-                        KeyEventType.KeyUp -> center.up()
-                        else -> null
-                    }
-                    action?.let(onCenter)
-                    return@onKeyEvent true
-                }
                 if (event.type == KeyEventType.KeyUp) onKeyUp(event)
                 event.type == KeyEventType.KeyDown && onKey(event)
             }
@@ -301,7 +272,7 @@ fun PlayerFrame(
              */
             update = { view ->
                 // 繋ぎ直している間も (点けっぱなしで戻ってきたときに映っていてほしい)
-                view.keepScreenOn = loading.awake || recovery?.active == true
+                view.keepScreenOn = loading.awake || recovery.active
                 view.setCues(cues)
             },
             // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
@@ -309,7 +280,7 @@ fun PlayerFrame(
             onRelease = { view -> view.keepScreenOn = false },
             modifier = Modifier.fillMaxSize().liftCaptions(inset, captionSpan),
         )
-        captions?.let { RawCaptionLayer(it, inset) }
+        RawCaptionLayer(captions, inset)
         if (error == null) LoadingVeil(loading, busyLabel, recovery)
         CompositionLocalProvider(LocalOverlayInsets provides insets) {
             Notice(error ?: overlay, if (error == null) progress else null)
@@ -390,8 +361,8 @@ private fun rememberLoading(player: ExoPlayer): LoadingState {
  * 回るものの下に、いま何をしているかを1行 (「選局しています」→「映像を待っています」。切れて繋ぎ直している間は「繋ぎ直しています」)
  */
 @Composable
-private fun BoxScope.LoadingVeil(state: LoadingState, label: String, recovery: Recovery?) {
-    val reconnecting = recovery?.active == true
+private fun BoxScope.LoadingVeil(state: LoadingState, label: String, recovery: Recovery) {
+    val reconnecting = recovery.active
     if (!state.busy && !reconnecting) return
     // 繋ぎ直しは、切れたと見つけたときから数える (待っている間はプレーヤーが読み込んでいないので)
     val since = if (reconnecting) recovery.since else state.since
@@ -496,9 +467,9 @@ data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono:
 
 /**
  * ExoPlayer を画面の寿命に合わせる。エラーは文にして返す。
- * `clock` は生の TS の字幕を出す画面だけが渡す (`rememberRawCaptions` と同じものを)。
+ * `clock` は生の TS の字幕の時計 (`rememberRawCaptions` と同じものを渡す)。
  *
- * `reconnect` を渡すと、**切れた・止まったら繋ぎ直す** (`Recovery`)。繋ぎ直している間はエラーを出さず、前の絵を残して幕が
+ * `reconnect` の決まりで、**切れた・止まったら繋ぎ直す** (`Recovery`)。繋ぎ直している間はエラーを出さず、前の絵を残して幕が
  * 「繋ぎ直しています」を出す。諦めたとき (直らないもの・回数を使い切った) だけエラーを返す
  */
 @OptIn(UnstableApi::class)
@@ -506,15 +477,15 @@ data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono:
 fun rememberPlayer(
     repo: Repository,
     buffering: Buffering,
-    onUnauthorized: () -> Unit = {},
-    clock: TsClock = remember { TsClock() },
-    reconnect: ReconnectPlan? = null,
+    onUnauthorized: () -> Unit,
+    clock: TsClock,
+    reconnect: ReconnectPlan,
 ): PlayerHandle {
     val context = LocalContext.current
     val dualMono = remember(buffering) { DualMonoProcessor() }
     val player = remember(buffering) { buildPlayer(context, repo.app.engineHttp, repo.token, buffering, clock, dualMono) }
     val scope = rememberCoroutineScope()
-    val recovery = remember(player) { Recovery(player, scope) }
+    val recovery = remember(player) { Recovery(player, scope, reconnect) }
     recovery.plan = reconnect
     val unauthorized by rememberUpdatedState(onUnauthorized)
     var error by remember { mutableStateOf<String?>(null) }
@@ -535,8 +506,7 @@ fun rememberPlayer(
                 error = PLAYBACK_ERROR_PREFIX + (code?.let { "denpa の答えが HTTP $it (${e.errorCodeName})" } ?: e.errorCodeName)
             }
             override fun onPlaybackStateChanged(state: Int) {
-                val plan = recovery.plan ?: return
-                if (state != Player.STATE_ENDED || !plan.endedIsLost) return
+                if (state != Player.STATE_ENDED || !recovery.plan.endedIsLost) return
                 // 映したあとに終わったのは denpa の入れ替え。映る前に終わったのは、焼くのを断られたのかもしれない (何度か)
                 val verdict = if (recovery.pictured) Reconnect.Verdict.Retry else Reconnect.Verdict.RetryFew
                 if (!recovery.retry("ended 流れが終わった (映して ${recovery.playedSeconds()} 秒)", verdict)) error = ENDED_EMPTY

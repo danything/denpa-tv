@@ -41,7 +41,7 @@ class ReconnectPlan(
  * - 繋ぎ直すたびに、理由を logcat に1行 (`Log.i`、タグ `denpa`)。チューナーのドライバ・denpa・アプリのどこで切れたかを追うため
  */
 @Stable
-class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope) {
+class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope, var plan: ReconnectPlan) {
     /** 繋ぎ直しの最中 (見つけてから次の絵が出るまで) */
     var active by mutableStateOf(false)
         private set
@@ -49,8 +49,6 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope)
     /** `active` になったとき (uptime ミリ秒)。幕が回るものを出すまで数える */
     var since by mutableLongStateOf(0L)
         private set
-
-    var plan: ReconnectPlan? = null
 
     /** アプリが前に出ているか (`Lifecycle.State.STARTED` 以上) */
     var started = true
@@ -112,10 +110,9 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope)
 
     /**
      * 繋ぎ直す (待ってから)。繋ぎ直すことにした・もう待っている・あとで繋ぎ直すなら true。
-     * 諦めた (`verdict` が直らないもの・回数を使い切った・決まりが無い) なら false (画面は理由を出す)
+     * 諦めた (`verdict` が直らないもの・回数を使い切った) なら false (画面は理由を出す)
      */
     fun retry(reason: String, verdict: Reconnect.Verdict = Reconnect.Verdict.Retry): Boolean {
-        val plan = plan ?: return false
         if (job != null) return true
         if (!Reconnect.shouldRetry(verdict, plan.stream, attempts, few)) {
             Log.i(TAG, "繋ぎ直しません (${plan.label}): $reason。続けて $attempts 回失敗")
@@ -156,7 +153,7 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope)
 
     /** 止まったかを見る (1 秒おき)。流しっぱなしのものを、映したあと・動かしている間・繋ぎ直しを待っていない間だけ */
     fun watch() {
-        val watching = plan?.stream == true && pictured && job == null && player.playWhenReady &&
+        val watching = plan.stream && pictured && job == null && player.playWhenReady &&
             (player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY)
         val stalled = stall.check(SystemClock.uptimeMillis(), watching, player.currentPosition, player.bufferedPosition) ?: return
         retry("stall ${stalled / 1000} 秒進まない (映して ${playedSeconds()} 秒)")

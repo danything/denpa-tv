@@ -40,8 +40,6 @@ class ProgramInfoTest {
         val base = BaseUrl.normalize(denpa.url("/denpa"))!!
         val info = (api.program(base, 32740010640) as ProgramLookup.Found).info
         assertEquals("/denpa/api/programs/32740010640", denpa.requests.take().target)
-        assertEquals("フジテレビ", info.serviceName)
-        assertEquals(1790003600000, info.endAt)
         assertEquals(listOf("番組内容" to "内容", "出演者" to "誰か"), info.extended)
         // ブラウザの denpa の札と同じ並び。同じジャンルは1つに
         assertEquals(
@@ -71,19 +69,19 @@ class ProgramInfoTest {
     @Test
     fun 形のずれは言って続ける() {
         val info = parseProgramInfo(
-            """{"name":"番組","service_name":42,"start_at":"10時","end_at":null,"description":"説明",
-               "extended":{"出演者":"誰か","数":3},"genre_detail":[{"lv1":"3"},{"lv1":7,"lv2":0}],
-               "audios":[{"componentType":2,"langs":["jpn","eng"]},"ステレオ"],"video_type":null,"is_free":1}""",
+            """{"name":"番組","description":42,"extended":{"出演者":"誰か","数":3},"genre_detail":[{"lv1":"3"},{"lv1":7,"lv2":0}],
+               "audios":[{"componentType":2,"langs":["jpn","eng"]},"ステレオ"],"video_type":null,"video_resolution":1080,"is_free":1}""",
         ) { warnings += it }!!
         assertEquals("番組", info.name)
-        assertEquals("", info.serviceName)
-        assertNull(info.startAt)
-        assertNull(info.endAt)
+        assertEquals("", info.description)
+        assertNull(info.videoType)
+        assertNull(info.videoResolution)
         assertEquals(listOf("出演者" to "誰か"), info.extended)
         assertEquals(listOf(Genre(7, 0)), info.genres)
         assertEquals(listOf(ProgramAudio(2, listOf("jpn", "eng"))), info.audios)
         assertEquals(listOf("アニメ／特撮 > 国内アニメ", "デュアルモノ (日本語/英語)"), info.chips)
-        assertEquals(listOf("service_name", "start_at", "extended.数", "genre_detail", "audios"), warnings.map { w -> listOf("service_name", "start_at", "extended.数", "genre_detail", "audios").first { it in w } })
+        val keys = listOf("description", "extended.数", "genre_detail", "audios", "video_resolution")
+        assertEquals(keys, warnings.map { w -> keys.first { it in w } })
         assertNull(parseProgramInfo("[]") { warnings += it })
     }
 

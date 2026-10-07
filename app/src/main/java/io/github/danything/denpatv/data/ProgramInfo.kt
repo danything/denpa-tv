@@ -18,9 +18,6 @@ import java.util.TimeZone
  */
 data class ProgramInfo(
     val name: String = "",
-    val serviceName: String = "",
-    val startAt: Long? = null,
-    val endAt: Long? = null,
     val description: String = "",
     /** 放送の詳細 (見出し → 本文)。並びは放送のまま */
     val extended: List<Pair<String, String>> = emptyList(),
@@ -59,9 +56,6 @@ fun parseProgramInfo(text: String, warn: (String) -> Unit): ProgramInfo? {
     val read = Fields(root, warn)
     return ProgramInfo(
         name = read.string("name") ?: "",
-        serviceName = read.string("service_name") ?: "",
-        startAt = read.long("start_at"),
-        endAt = read.long("end_at"),
         description = read.string("description") ?: "",
         extended = read.obj("extended")?.mapNotNull { (heading, body) ->
             (body as? JsonPrimitive)?.takeIf { it.isString }?.let { heading to it.content }
@@ -103,7 +97,6 @@ private class Fields(private val root: JsonObject, private val warn: (String) ->
     }
 
     fun string(key: String) = typed(key) { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
-    fun long(key: String) = typed(key, ::number)
     /** 真偽。denpa の DB は 0/1 で持つので、数でも受ける */
     fun boolean(key: String) = typed(key) { (it as? JsonPrimitive)?.takeUnless { p -> p.isString }?.let { p -> p.booleanOrNull ?: p.longOrNull?.let { n -> n != 0L } } }
     fun obj(key: String) = typed(key) { it as? JsonObject }
