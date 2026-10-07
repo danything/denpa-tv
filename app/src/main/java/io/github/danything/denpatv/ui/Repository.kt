@@ -58,7 +58,18 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
      * 一覧が古くなった (追っかけで観た録画が録り終えた・焼き上がったかもしれない、denpa から `recordings` が来た)。
      * 一覧に戻ったら読み直す
      */
+    @Volatile
     var recordingsStale = false
+
+    /**
+     * 観た位置を預けた (閉じた・裏に回った・観終えた)。一覧の観た割合の帯と未視聴の点を直すため、読み直してもらう。
+     * denpa は観終えたときしか知らせない (途中で止めた位置では来ない) ので、手元から知らせる。
+     * 一覧が出ていればすぐ (知らせ)、まだなら戻ったときに (`recordingsStale`)
+     */
+    fun positionSaved() {
+        recordingsStale = true
+        incoming.tryEmit(DenpaEvent.Changed("recordings"))
+    }
 
     /** 局が古くなった (denpa から `services` / `programs` が来た)。ライブを開いたら読み直す */
     var servicesStale = false

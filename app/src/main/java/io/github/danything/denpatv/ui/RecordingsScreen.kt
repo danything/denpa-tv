@@ -66,6 +66,7 @@ import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.codecLabels
 import io.github.danything.denpatv.data.durationLabel
 import io.github.danything.denpatv.data.shortServiceName
+import io.github.danything.denpatv.data.unwatched
 import io.github.danything.denpatv.data.watched
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -132,8 +133,8 @@ fun RecordingsScreen(
     }
 
     LaunchedEffect(retry) {
-        // 戻ってきたときは読み直さない (並びが変わると合わせ直す先がずれる)。追っかけで観て戻ったときだけ読み直す
-        // (録り終えた・焼き上がったかもしれない)。合わせ直す先は id で探すので、並びが変わっても戻れる
+        // 戻ってきたときは読み直さない (並びが変わると合わせ直す先がずれる)。観て戻ったとき (`positionSaved`)・追っかけで観て戻ったときだけ読み直す
+        // (観た位置・未視聴の点が変わった、録り終えた・焼き上がったかもしれない)。合わせ直す先は id で探すので、並びが変わっても戻れる
         if (repo.recordings.isEmpty() || retry > 0 || repo.recordingsStale) {
             repo.recordingsStale = false
             guarded { repo.refreshRecordings() }
@@ -396,6 +397,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
             maxLines = 1,
             width = titleWidth,
             modifier = Modifier.widthIn(max = HERO_TEXT_WIDTH),
+            unwatched = recording.unwatched,
         )
         Text(
             listOfNotNull(recording.serviceName?.let(::shortServiceName), WHEN.format(Date(recording.startAt)), recording.durationMs?.let(::durationLabel)).joinToString("  ・  "),
@@ -478,7 +480,7 @@ private fun Badge(label: String, background: Color, color: Color) {
  * **合わせていないカードも題で見分けられるように**する。題を絵の下に置くと1段が高くなり、下の段は絵だけ見えて題が切れる
  * (いちばん見たいものが見えない) ので、絵に重ねて段の高さを前と同じにしている。収まらない題は話数を残して途中を切る (`EpisodeTitle`)。
  *
- * 絵の上に、録っている最中なら「● 録画中」、焼いている最中なら進み、下の縁に観た割合の帯。
+ * 絵の上に、録っている最中なら「● 録画中」、焼いている最中なら進み、下の縁に観た割合の帯。まだ観ていないものは番組名の頭に点 (`unwatched`)。
  * 合わせると膨らみ、azure の縁と光 (`Focus`)
  */
 @Composable
@@ -526,7 +528,7 @@ private fun RecordingCard(
                         .background(TITLE_SCRIM)
                         .padding(start = 10.dp, end = 10.dp, top = 24.dp, bottom = 10.dp),
                 ) {
-                    EpisodeTitle(recording.title, CARD_TITLE, Color.White, maxLines = 2, width = titleWidth)
+                    EpisodeTitle(recording.title, CARD_TITLE, Color.White, maxLines = 2, width = titleWidth, unwatched = recording.unwatched)
                 }
                 // 観た割合 (続きの位置があるときだけ)。絵の下の縁に
                 recording.watched?.let { part ->

@@ -130,7 +130,7 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
     private fun recordings(): String {
         val now = System.currentTimeMillis()
         val start = now - 86_400_000
-        return """[{"id":$RECORDING_ID,"title":"$RECORDING_TITLE","serviceName":"$SERVICE_NAME","startAt":$start,"durationMs":10000,
+        return """[{"id":$RECORDING_ID,"title":"$RECORDING_TITLE","serviceName":"$SERVICE_NAME","startAt":$start,"durationMs":10000,"watchedAt":null,
             "files":[{"source":"encoded","codec":"h264","url":"api/recordings/$RECORDING_ID/file"}]},
             {"id":$CHASE_ID,"title":"$CHASE_TITLE","serviceName":"$SERVICE_NAME","startAt":${now - 120_000},"endAt":${now + 3_600_000},
             "recording":true,"chase":"api/recordings/$CHASE_ID/chase","files":[]}]"""
