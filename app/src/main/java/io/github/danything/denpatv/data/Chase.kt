@@ -22,7 +22,7 @@ object Chase {
     fun atEdge(positionMs: Long, recordedMs: Long): Boolean = recordedMs - positionMs < 20_000
 
     /**
-     * 映る前のエラーが、焼くのを断られた (空の 200) ものか。空の返事は、端末によっては形が分からないと言われる (HTTP の番号が無い)。
+     * 映る前のエラーが、焼くのを断られた (空の 200) ものか。空の返事は `EmptyStreamException` (`ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED`。HTTP の番号が無い) になる。
      * 生の TS (`baked` でない) は断られない。**繋がらない・読めない (`Reconnect.Verdict.Retry`。denpa の入れ替えの最中) は
      * 断られたのではない** ので、繋ぎ直しに任せる
      */

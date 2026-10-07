@@ -68,12 +68,17 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.ui.SubtitleView
+import io.github.danything.denpatv.data.EMPTY_STREAM_MESSAGE
+import io.github.danything.denpatv.data.EmptyGuardDataSource
+import io.github.danything.denpatv.data.EmptyStreamException
 import io.github.danything.denpatv.data.EngineHttp
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.Http
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.Reconnect
+import io.github.danything.denpatv.data.isMediaContentType
+import io.github.danything.denpatv.data.playbackMessage
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -112,10 +117,12 @@ fun dataSourceFactory(context: Context, engine: EngineHttp?, token: String?): Da
         DefaultHttpDataSource.Factory()
             .setConnectTimeoutMs(Http.CONNECT_TIMEOUT_MS)
             .setReadTimeoutMs(Http.READ_TIMEOUT_MS)
+            .setContentTypePredicate(::isMediaContentType)
     }
     // 家の外の denpa に登録してあれば、映像にもトークンを付ける
     http.setDefaultRequestProperties(authorizationHeaders(token))
-    return DefaultDataSource.Factory(context, http)
+    // 200 のまま空で閉じた流れ (選局・焼くのに失敗した) を見分ける (`EmptyStreamException`)
+    return DefaultDataSource.Factory(context, EmptyGuardDataSource.Factory(http))
 }
 
 /** 映像の要求に足すヘッダ。トークンが無ければ空 */
@@ -503,13 +510,18 @@ fun rememberPlayer(
                     error = null
                     return
                 }
-                error = PLAYBACK_ERROR_PREFIX + (code?.let { "denpa の答えが HTTP $it (${e.errorCodeName})" } ?: e.errorCodeName)
+                error = if (e.cause is EmptyStreamException) {
+                    EMPTY_STREAM_MESSAGE
+                } else {
+                    val type = (e.cause as? HttpDataSource.InvalidContentTypeException)?.contentType
+                    PLAYBACK_ERROR_PREFIX + playbackMessage(e.errorCode, e.errorCodeName, code, type)
+                }
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != Player.STATE_ENDED || !recovery.plan.endedIsLost) return
                 // 映したあとに終わったのは denpa の入れ替え。映る前に終わったのは、焼くのを断られたのかもしれない (何度か)
                 val verdict = if (recovery.pictured) Reconnect.Verdict.Retry else Reconnect.Verdict.RetryFew
-                if (!recovery.retry("ended 流れが終わった (映して ${recovery.playedSeconds()} 秒)", verdict)) error = ENDED_EMPTY
+                if (!recovery.retry("ended 流れが終わった (映して ${recovery.playedSeconds()} 秒)", verdict)) error = EMPTY_STREAM_MESSAGE
             }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = recovery.onPlayWhenReady(playWhenReady)
             override fun onRenderedFirstFrame() = recovery.onPictured()
@@ -552,9 +564,6 @@ fun rememberPlayer(
 
 /** 再生のエラーの頭 (画質の切り替えに失敗したときは外して理由だけ出す) */
 const val PLAYBACK_ERROR_PREFIX = "再生できません: "
-
-/** ライブが映る前に何度か終わった (denpa が焼くのを断った空の返事など) */
-private const val ENDED_EMPTY = "denpa が映像を送らずに閉じました (焼く数の上限かも)。少し待つか、画質・局を替えてください"
 
 fun MediaItem.Builder.uri(url: String, mime: String): MediaItem = setUri(url).setMimeType(mime).build()
 
