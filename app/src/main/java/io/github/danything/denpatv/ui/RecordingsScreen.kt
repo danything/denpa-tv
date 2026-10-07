@@ -373,8 +373,17 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("録画", style = MaterialTheme.typography.titleMedium, color = Palette.AccentBright)
             Text("長押しで詳しく (説明・削除)", style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted)
-            // 繋いだ denpa が古すぎる (Repository.checkVersion)
-            repo.denpaWarning?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Reserved, maxLines = 1) }
+            // 繋いだ denpa が古すぎる (Repository.checkVersion)。新しい版の知らせを押し出さないよう、余りの幅で切る
+            repo.denpaWarning?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Palette.Reserved,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
             // 新しい版があれば (上キーで合う)
             UpdateNotice(repo.app.updater)
         }
