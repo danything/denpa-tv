@@ -205,6 +205,8 @@ fun RecordingsScreen(
 
     /** カード1枚の大きさ (px)。隣の録画のポスターを先に読むときの大きさ。組むたびに書くだけで、画面は読まない */
     val cardSize = remember { IntArray(2) }
+    /** カードの番組名の幅 (px)。どのカードも同じ幅なので、組んだものから分け合う (`EpisodeTitle`) */
+    val titleWidth = remember { IntArray(1) }
 
     val groups = recordings.groupBy { DAY.format(Date(it.startAt)) }
     Box(modifier.fillMaxSize().background(Palette.Background)) {
@@ -239,6 +241,7 @@ fun RecordingsScreen(
                                         repo,
                                         recording,
                                         cardSize = cardSize,
+                                        titleWidth = titleWidth,
                                         modifier = Modifier.focusRequester(requester).onFocusChanged {
                                             if (it.isFocused) {
                                                 lastFocused = recording.id
@@ -366,6 +369,8 @@ private suspend fun prefetch(repo: Repository, recordings: List<Recording>, id: 
  */
 @Composable
 private fun Hero(repo: Repository, recording: Recording, description: String) {
+    /** 番組名の幅 (合いを動かして題が替わっても、前の幅で切っておく) */
+    val titleWidth = remember { IntArray(1) }
     Column(
         Modifier.fillMaxWidth().height(HERO_HEIGHT).padding(start = EDGE, end = 48.dp, top = 24.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -383,6 +388,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
             MaterialTheme.typography.headlineMedium.merge(TITLE_TEXT),
             Palette.Text,
             maxLines = 1,
+            width = titleWidth,
             modifier = Modifier.widthIn(max = HERO_TEXT_WIDTH),
         )
         Text(
@@ -475,6 +481,8 @@ private fun RecordingCard(
     recording: Recording,
     /** 絵の大きさ (px) を書いておく所 (先読みを、絵と同じ大きさ = 同じ覚えの鍵で読むため) */
     cardSize: IntArray,
+    /** 番組名の幅を分け合う所 (`EpisodeTitle`) */
+    titleWidth: IntArray,
     modifier: Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -512,7 +520,7 @@ private fun RecordingCard(
                         .background(TITLE_SCRIM)
                         .padding(start = 10.dp, end = 10.dp, top = 24.dp, bottom = 10.dp),
                 ) {
-                    EpisodeTitle(recording.title, CARD_TITLE, Color.White, maxLines = 2)
+                    EpisodeTitle(recording.title, CARD_TITLE, Color.White, maxLines = 2, width = titleWidth)
                 }
                 // 観た割合 (続きの位置があるときだけ)。絵の下の縁に
                 recording.watched?.let { part ->

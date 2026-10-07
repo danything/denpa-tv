@@ -24,7 +24,8 @@ private val EPISODE = Regex("""[#＃]\s*\d{1,4}|第\s*\d{1,4}\s*[話回]|[(（]\
 fun keepEpisode(title: String, visible: Int, room: (tail: String) -> Int, fits: (String) -> Boolean): String {
     val episode = EPISODE.find(title) ?: return title
     val head = title.substring(0, episode.range.first).trimEnd()
-    // 頭が無い (題が話数から始まる)、または話数と終わりの … まで見えている
+    // 頭が無い (題が話数から始まる)、または話数と終わりの … まで見えている。話数がちょうど最後の字なら、縮める
+    // (末尾の … が話数の終わりに掛かる)。縮めるときは頭を少なくとも1字落とす (何も落とさずに … を付けない)
     if (head.isEmpty() || episode.range.last + 1 < visible) return title
     val tail = ELLIPSIS + " " + episode.value
     var kept = minOf(room(tail), head.length - 1)
@@ -39,4 +40,6 @@ private const val ELLIPSIS = "…"
  * 局の名前を短く (全角の英数字・記号を半角に。`ＴＯＫＹＯ　ＭＸ１` → `TOKYO MX1`)。放送波の局名は全角混じりで、
  * 狭いカードでは幅を取る (番組名は denpa が半角に寄せて返す)
  */
-fun shortServiceName(name: String): String = Normalizer.normalize(name, Normalizer.Form.NFKC).replace(Regex("\\s+"), " ").trim()
+fun shortServiceName(name: String): String = Normalizer.normalize(name, Normalizer.Form.NFKC).replace(SPACES, " ").trim()
+
+private val SPACES = Regex("\\s+")
