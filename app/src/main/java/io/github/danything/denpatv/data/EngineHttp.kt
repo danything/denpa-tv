@@ -31,4 +31,5 @@ class EngineHttp(context: Context) {
         HttpEngineDataSource.Factory(engine, executor)
             .setConnectionTimeoutMs(Http.CONNECT_TIMEOUT_MS)
             .setReadTimeoutMs(Http.READ_TIMEOUT_MS)
+            .setContentTypePredicate(::isMediaContentType)
 }

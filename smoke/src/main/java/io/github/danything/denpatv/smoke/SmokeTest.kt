@@ -181,6 +181,25 @@ class SmokeTest {
     }
 
     /**
+     * **denpa が 200 のまま何も送らずに閉じたら** (選局・焼くのに失敗した)、何度か頼み直してから「映像を送らずに閉じました」と言う
+     * (Media3 の `ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED` をそのまま出さない)。denpa が戻ってから局を替えれば、また映る。
+     * 次の局を頼むので、`liveMenu` (まだ次の局を頼んでいないのを確かめてから送る) より後に走る名前にしておく
+     */
+    @Test
+    fun liveRefused() = watching {
+        shell("logcat -c")
+        denpa.emptyLive.set(Int.MAX_VALUE)
+        open("denpa://live/${FakeDenpa.SERVICE_ID}")
+        awaitText { it.startsWith("denpa が映像を送らずに閉じました") }
+        // 縮めた APK では例外の名前が変わるので、文で見る (`EmptyStreamException`)
+        assertTrue("空だったのが logcat にありません: ${appLog()}", "denpa が何も送らずに閉じました" in appLog())
+        denpa.emptyLive.set(0)
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        awaitVideo(LIVE_COLOR)
+        assertTrue("映っても文が消えません: ${texts()}", poll(TEXT_TIMEOUT_MS) { texts().none { it.startsWith("denpa が映像を送らずに") } })
+    }
+
+    /**
      * 追っかけも、録り終える前に流れが閉じたら (denpa の入れ替え) 居た場所から頼み直す。録り終えたのかは denpa に聞いて決めるので、
      * 録画の一覧を読み直してから頼み直す。「最後まで観ました」にはしない
      */
