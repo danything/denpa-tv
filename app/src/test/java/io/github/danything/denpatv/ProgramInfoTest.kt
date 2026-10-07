@@ -49,7 +49,7 @@ class ProgramInfoTest {
         assertTrue(warnings.isEmpty())
     }
 
-    /** 番組表から消えた (404)・口の無い古い denpa は出さないだけ。トークンが効かなければ繋ぐ画面へ */
+    /** 番組表から消えた (404) は出さないだけ。トークンが効かなければ繋ぐ画面へ */
     @Test
     fun 無い番組と断られたとき() = runTest {
         val base = BaseUrl.normalize(denpa.url("/"))!!

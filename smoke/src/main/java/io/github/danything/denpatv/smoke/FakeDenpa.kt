@@ -88,7 +88,7 @@ class FakeDenpa(private val assets: AssetManager) : AutoCloseable {
         val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file)").matchEntire(path)
         val live = Regex("/api/services/(\\d+)/live").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
-            path == "/api/health" -> json(out, """{"ok":true}""")
+            path == "/api/health" -> json(out, """{"ok":true,"version":"v1.44.0"}""")
             path == "/api/services" -> json(out, services())
             // 局送りの行き先も同じ映像を流す
             live == SERVICE_ID || live == NEXT_SERVICE_ID ->

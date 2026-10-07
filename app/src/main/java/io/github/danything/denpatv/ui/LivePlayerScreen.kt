@@ -209,7 +209,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             }
         }
     }
-    // いま放送中の番組は変わっていく。1分ごとに取り直す (古い denpa では now が来ないだけ)
+    // いま放送中の番組は変わっていく。1分ごとに取り直す
     LaunchedEffect(Unit) {
         while (true) {
             delay(60_000)
@@ -311,7 +311,6 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                     if (result.reserved) "録画を始めます: ${result.title}"
                     else "予約はありますが、録れない状態です (チューナーの競合など): ${result.title}"
                 is RecordResult.Failed -> "録画できません: ${result.message}"
-                RecordResult.Unsupported -> "この denpa はアプリからの録画に対応していません (denpa を新しくしてください)"
             }
             if (!fromDetail) flash(message) else if (press == recordPresses) recordNote = message
             if (result is RecordResult.Recorded) refresh()

@@ -40,7 +40,7 @@ class ChaseTest {
         assertFalse(live.cmReliable)
         val done = live.copy(recording = false)
         assertFalse(done.chasing)
-        // 古い denpa は鍵が無い: 録画中ではなく、CM 飛ばしは入れてよい
+        // 鍵が無ければ: 録画中ではなく、CM 飛ばしは入れてよい
         val old = json.decodeFromString<Recording>("""{"id":1,"title":"t","startAt":1}""")
         assertFalse(old.chasing)
         assertTrue(old.cmReliable)

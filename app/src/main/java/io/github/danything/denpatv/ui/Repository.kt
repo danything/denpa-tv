@@ -1,7 +1,10 @@
 package io.github.danything.denpatv.ui
 
 import android.util.Log
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import io.github.danything.denpatv.DenpaApp
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.DenpaApi
@@ -10,6 +13,7 @@ import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingList
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
+import io.github.danything.denpatv.data.denpaTooOld
 import io.github.danything.denpatv.data.followEvents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -74,6 +78,24 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
         return list.remove(id)
     }
 
+    /** 繋いだ denpa の版 (`api/health` の `version`)。確かめる前・届かなければ null */
+    var denpaVersion by mutableStateOf<String?>(null)
+        private set
+
+    /** 繋いだ denpa が古すぎれば、画面 (録画の一覧の頭・設定) に出す1行 (`denpaTooOld`)。古くても止めない */
+    var denpaWarning by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * 繋いだ denpa の版を確かめる。知らせ (`api/events`) に繋がるたび (denpa を上げて立ち上げ直したときも) に1度。
+     * 届かなければ前のまま
+     */
+    private suspend fun checkVersion() {
+        val health = api.health(base) ?: return
+        denpaVersion = health.version
+        denpaWarning = denpaTooOld(health.version)?.also { Log.w(TAG, it) }
+    }
+
     /** 局だけ取り直す (いま放送中の番組が変わるので) */
     suspend fun refreshServices() {
         services = api.services(base)
@@ -115,8 +137,12 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     private fun CoroutineScope.sort(event: DenpaEvent) {
         when (event) {
-            // 切れていた間の知らせは来ないので、どちらも古いかもしれない
-            DenpaEvent.Opened -> { recordingsStale = true; servicesStale = true }
+            // 切れていた間の知らせは来ないので、どちらも古いかもしれない。denpa が上がったかもしれない
+            DenpaEvent.Opened -> {
+                recordingsStale = true
+                servicesStale = true
+                launch { checkVersion() }
+            }
             is DenpaEvent.Changed -> when (event.name) {
                 "recordings" -> recordingsStale = true
                 "services", "programs" -> servicesStale = true

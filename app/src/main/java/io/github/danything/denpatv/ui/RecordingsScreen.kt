@@ -190,11 +190,13 @@ fun RecordingsScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(message, style = MaterialTheme.typography.titleMedium)
+            // 古すぎる denpa なら、取れないのはたぶんそのせい
+            repo.denpaWarning?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.Reserved) }
             DenpaButton(onClick = { retry++ }) { Text("やり直す") }
         }
         return
     }
-    if (recordings.isEmpty()) return Centered("観られる録画はまだありません")
+    if (recordings.isEmpty()) return Centered(listOfNotNull("観られる録画はまだありません", repo.denpaWarning).joinToString("\n"))
 
     /** カード1枚の大きさ (px)。隣の録画のポスターを先に読むときの大きさ。組むたびに書くだけで、画面は読まない */
     val cardSize = remember { IntArray(2) }
@@ -357,7 +359,7 @@ private suspend fun prefetch(repo: Repository, recordings: List<Recording>, id: 
 /**
  * 一覧の上の見出し (Google TV の「没入型の一覧」の上の段)。**合わせている録画を大きく**: 番組名・局と放送日時と長さ・
  * 札 (録画中・エンコード中・観た位置・形)・説明の頭の1行。
- * いちばん上の1行は画面の名前と手引き、新しい版の知らせ (一覧の頭の段から上キーで合う)。
+ * いちばん上の1行は画面の名前と手引き、denpa が古すぎるときの1行、新しい版の知らせ (一覧の頭の段から上キーで合う)。
  * 高さは決めておく (録画ごとに行の数が違っても、下の一覧が上下に動かないように)
  */
 @Composable
@@ -371,6 +373,17 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("録画", style = MaterialTheme.typography.titleMedium, color = Palette.AccentBright)
             Text("長押しで詳しく (説明・削除)", style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted)
+            // 繋いだ denpa が古すぎる (Repository.checkVersion)。新しい版の知らせを押し出さないよう、余りの幅で切る
+            repo.denpaWarning?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Palette.Reserved,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
             // 新しい版があれば (上キーで合う)
             UpdateNotice(repo.app.updater)
         }

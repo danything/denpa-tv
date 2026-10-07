@@ -53,7 +53,7 @@ enum class AudioSide(val wire: String, val fallbackLabel: String) {
 /**
  * denpa が番組表から組み立てた選べる音声の1つ (ブラウザの `arib.ts` の `AudioTrack`)。`id` は `"0:main"` の形、
  * `stream` は何本目の音声か、`side` はどちら側か。局の `now.audios` と録画の `audios` で来る (denpa の docs/api.md)。
- * 古い denpa では空のまま — デュアルモノを見分けられないので、これまでどおり左右をそのまま出す
+ * 番組表に音声が無ければ空 — デュアルモノを見分けられないので、左右をそのまま出す
  */
 @Immutable
 @Serializable
@@ -118,8 +118,6 @@ fun dualMonoCoefficients(side: AudioSide): FloatArray = when (side) {
  * - 選べるものが1つ以下なら null (頼まない。denpa の既定のまま)
  * - この画面で選んだもの (`picked`) が並びにあれば、それ
  * - 無ければ denpa の既定 (放送の言う主音声、無ければ先頭)。それがデュアルモノなら、覚えている側 (`side`)
- *
- * 古い denpa は `audio` を読み捨てるので、頼んでも害は無い (主音声のまま)
  */
 fun bakedAudio(audios: List<DenpaAudio>, picked: String?, side: AudioSide): DenpaAudio? {
     if (audios.size < 2) return null

@@ -24,15 +24,16 @@ class DenpaApi(
     /** 後ろに置く (`DenpaApi { token }` と書けるように) */
     private val token: () -> String? = { null },
 ) {
-    suspend fun health(base: URI): Boolean = withContext(Dispatchers.IO) {
-        val url = BaseUrl.resolve(base, "api/health") ?: return@withContext false
+    /** `api/health` (鍵は要らない)。denpa でない・繋がらなければ null */
+    suspend fun health(base: URI): DenpaHealth? = withContext(Dispatchers.IO) {
+        val url = BaseUrl.resolve(base, "api/health") ?: return@withContext null
         val response = try {
             Http.request(url)
         } catch (_: Exception) {
             // 繋がらない・URL が変 (IOException 以外も): どれも「繋がらない」
-            return@withContext false
+            return@withContext null
         }
-        response.ok && looksLikeDenpaHealth(response.text())
+        if (response.ok) parseDenpaHealth(response.text()) else null
     }
 
     suspend fun services(base: URI): List<Service> = get(base, "api/services")
@@ -69,15 +70,13 @@ class DenpaApi(
         val body = runCatching { lenientJson.decodeFromString(RecordResponse.serializer(), res.text()) }.getOrNull()
         when {
             res.ok && body?.recorded != null -> RecordResult.Recorded(body.recorded, body.reserved)
-            // 口の無い古い denpa は SvelteKit の「Not Found」(断りの文言は日本語で来る)
-            res.code == 404 && (body?.message == null || body.message == "Not Found") -> RecordResult.Unsupported
             // 通ったのに答えが読めない (版のずれ?)。予約できたかは分からない
             res.ok -> RecordResult.Failed("denpa の答えを読めません (${res.code})")
             else -> RecordResult.Failed(body?.message ?: "${res.code}")
         }
     }
 
-    /** 番組の中身。古い denpa (口が無い) や読めないときは null */
+    /** 番組の中身。無い・読めないときは null */
     suspend fun recordingDetail(base: URI, id: Long): RecordingDetail? = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/recordings/$id/detail") ?: return@withContext null
         val res = try {
@@ -92,7 +91,7 @@ class DenpaApi(
 
     /**
      * 番組表の番組の中身 (`GET api/programs/<id>`。ライブの詳しく)。`id` は局の `now.id`。
-     * 番組表から消えた (404)・口の無い古い denpa・届かない・読めないは `Missing` (呼ぶ側は `now` のぶんだけを出す)。
+     * 番組表から消えた (404)・届かない・読めないは `Missing` (呼ぶ側は `now` のぶんだけを出す)。
      * 形がずれていても読めるところは読む (`parseProgramInfo`)
      */
     suspend fun program(base: URI, id: Long): ProgramLookup = withContext(Dispatchers.IO) {
@@ -188,8 +187,6 @@ sealed interface RecordResult {
     data class Recorded(val title: String, val reserved: Boolean) : RecordResult
     /** 断られた。`message` は denpa の文言 (画面にそのまま出せる) */
     data class Failed(val message: String) : RecordResult
-    /** 口の無い古い denpa */
-    data object Unsupported : RecordResult
 }
 
 @Serializable
@@ -215,11 +212,15 @@ sealed interface TokenResult {
     data class Error(val error: String) : TokenResult
 }
 
+/** `api/health` の答え。`version` はリリースのタグ (`v1.44.0`。手元・develop は `dev`)、版を返さない古い denpa では null */
+data class DenpaHealth(val version: String?)
+
 /**
- * `api/health` の返事が denpa らしいか。denpa は初めから `{"ok":true,…}` を返す。**JSON のオブジェクトで `ok` が true のものだけ**
+ * `api/health` の返事を読む。denpa らしくなければ null。denpa は初めから `{"ok":true,…}` を返す。**JSON のオブジェクトで `ok` が true のものだけ**
  * (同じ機械の 80・3000 に居るほかのもの — NAS やルータの画面の HTML、Grafana の `{"database":"ok"}`、素の `OK` — を選ばない)
  */
-fun looksLikeDenpaHealth(body: String): Boolean {
-    val ok = runCatching { lenientJson.parseToJsonElement(body.removePrefix("\uFEFF")).jsonObject["ok"]?.jsonPrimitive?.booleanOrNull }
-    return ok.getOrNull() == true
+fun parseDenpaHealth(body: String): DenpaHealth? {
+    val json = runCatching { lenientJson.parseToJsonElement(body.removePrefix("\uFEFF")).jsonObject }.getOrNull() ?: return null
+    if (runCatching { json["ok"]?.jsonPrimitive?.booleanOrNull }.getOrNull() != true) return null
+    return DenpaHealth(runCatching { json["version"]?.jsonPrimitive?.contentOrNull }.getOrNull())
 }
