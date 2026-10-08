@@ -223,9 +223,9 @@ class SmokeTest {
     private fun appLog(): String = shell("logcat -d -s denpa:I")
 
     /**
-     * 録画を映す。帯は**上で操作の列に合って開き、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる**。
+     * 録画を映す。**決定で止めると帯が操作の列の「再生」に合って開き**、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる。
      * 下で開いたシークバーからも上で閉じる。偽の録画は 10 秒しかないので、映ったらすぐ止めてから見る
-     * (止めている間は帯が勝手に閉じないので、上キーで閉じたのと取り違えない)
+     * (帯は止めている間も 5 秒触らなければ閉じる。キーを押すたびに数え直すので、続けて押している間は閉じない)
      * **決定の長押しで番組の詳しいところ** (一覧のカードの長押しと同じ) が開き、戻るで閉じて映像に戻る (止めたまま。長押しの離しで動き出さない)
      */
     @Test
@@ -234,10 +234,9 @@ class SmokeTest {
         awaitVideo(RECORDING_COLOR)
         assertRequested("GET /api/recordings/${FakeDenpa.RECORDING_ID}/file")
 
+        // 止めると操作の列が開いて「再生」に合う (決定でそのまま動かせる)
         press(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertTrue("決定で止まりません: ${texts()}", poll(TEXT_TIMEOUT_MS) { paused() })
-        press(KeyEvent.KEYCODE_DPAD_UP)
-        assertTrue("上で操作の列に合いません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { barOpen() && "再生" in focusedTexts() })
+        assertTrue("決定で止めても操作の列が「再生」に合って開きません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { barOpen() && "再生" in focusedTexts() })
         // 操作の列から上でシークバーへ (閉じない)。シークバーに居たかは、次の上で閉じることで見る (画面の木の合いは古いことがある)
         press(KeyEvent.KEYCODE_DPAD_UP)
         SystemClock.sleep(FOCUS_SETTLE_MS)

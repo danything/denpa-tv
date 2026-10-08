@@ -196,7 +196,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         }
     }
     LaunchedEffect(bar, touched, playing) {
-        if (bar == null || !playing) return@LaunchedEffect
+        // 止めている間も同じ (止めて開いた帯も、触らなければ消して絵だけにする)
+        if (bar == null) return@LaunchedEffect
         delay(5_000)
         bar = null
     }
@@ -330,20 +331,22 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         attempt++
         flash("最新へ")
     }
+    /** 止める・動かす。止めたら操作の列を開いて「再生」に合わせ、動かしたら閉じて何も出さない (録画の再生と同じ) */
     fun togglePause() {
         if (player.playWhenReady) {
             player.playWhenReady = false
             pausedAt = System.nanoTime()
-            flash("一時停止  ${position(position())}\n$SEEK_HINT")
+            at = position()
+            length = recorded()
+            bar = Bar.Actions
         } else {
             // 長く止めていたら繋がりが切れているかもしれないので、止めた位置から頼み直す
             if (System.nanoTime() - pausedAt > 10_000_000_000L) {
                 from = position()
                 attempt++
             }
-            // 動かしたときは何も出さない (録画の再生と同じ)。止めたときの「一時停止」が残っていれば消す
             player.playWhenReady = true
-            flash("")
+            bar = null
         }
         playing = player.playWhenReady
     }
