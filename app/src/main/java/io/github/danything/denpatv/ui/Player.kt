@@ -450,7 +450,7 @@ fun OnBackground(onStop: () -> Unit, onStart: () -> Unit) {
     }
 }
 
-/** 何秒かだけ出して消える文字。空の文字を渡すと、出ているものをすぐ消す */
+/** 何秒かだけ出して消える文字 */
 @Composable
 fun rememberFlash(): Pair<String?, (String) -> Unit> {
     var text by remember { mutableStateOf<String?>(null) }
@@ -461,7 +461,7 @@ fun rememberFlash(): Pair<String?, (String) -> Unit> {
         text = null
     }
     return text to { value: String ->
-        text = value.ifEmpty { null }
+        text = value
         shownAt = System.nanoTime()
     }
 }

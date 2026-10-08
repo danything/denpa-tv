@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
  * - **下でシークバー** (左右で 10 秒ずつ。CM は色を変えて出す)、下でその下の操作の列へ
  * - **上 (か Menu) で操作の列**。**決定の長押しで番組の詳しいところ** (一覧のカードの長押しと同じ。削除もそこから)。帯の中は上下で操作の列とシークバーを行き来し、**シークバー (いちばん上) から上で閉じる**。操作の列: 再生 / 一時停止、前へ・次へ (チャプター)、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
  *   **CM 飛ばし** (既定で入。ロゴで CM を判定できなかった録画は切で始まる)、**字幕**・**音声** (あれば)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
- *   動いている間は 5 秒触らなければ閉じる。戻るでも閉じる。緑のボタンは速さを1段送る
+ *   5 秒触らなければ閉じる (止めている間も)。戻るでも閉じる。緑のボタンは速さを1段送る
  * - リモコンの次へ・前へでチャプター送り
  * - CM 飛ばしが入っていれば CM に入ったら終わりまで飛ぶ。区切りは動画に入っているチャプター (`CM` / `本編`)
  *
@@ -125,7 +125,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     /** 帯に出す位置と、止まっているか (帯を開いている間だけ取り直す) */
     var at by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(true) }
-    /** 帯で最後にキーを押したとき。動いている間は、5 秒触らなければ帯を閉じる */
+    /** 帯で最後にキーを押したとき。5 秒触らなければ帯を閉じる (止めている間も) */
     var touched by remember { mutableLongStateOf(0L) }
     // 帯を開いている間と止めている間 (止めると位置の帯を出す) は、位置を取り直す
     LaunchedEffect(bar, playing) {
@@ -136,7 +136,8 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         }
     }
     LaunchedEffect(bar, touched, playing) {
-        if (bar == null || !playing) return@LaunchedEffect
+        // 止めている間も同じ (止めて開いた帯も、触らなければ閉じて止めた位置の帯だけにする)
+        if (bar == null) return@LaunchedEffect
         delay(5_000)
         bar = null
     }
@@ -259,13 +260,14 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     /** 消して一覧へ戻る。一覧からも抜き、隣に合わせる */
     fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; leave() }
     /**
-     * 止める・動かす。止めている間は位置の帯 (シークバーと同じ見た目、合わせない) を出したままにする。
-     * 動かしたときは何も出さない (映像を観たいだけなので)
+     * 止める・動かす。**止めたら操作の列を開いて「再生」に合わせる** (決定でそのまま動かせる)。
+     * 動かしたら帯を閉じて何も出さない (映像を観たいだけなので)。帯を閉じて止めたままなら位置の帯を出す
      */
     fun togglePause() {
         player.playWhenReady = !player.playWhenReady
         playing = player.playWhenReady
         at = player.currentPosition
+        bar = if (playing) null else Bar.Actions
     }
     /** 10 秒ずつ戻す・送る (左右とシークバー)。戻して CM を観に行ったなら、そこは飛ばさない */
     fun step(direction: Int): Long {
