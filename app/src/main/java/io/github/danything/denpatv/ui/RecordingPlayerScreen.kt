@@ -1,5 +1,7 @@
 package io.github.danything.denpatv.ui
 
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
@@ -33,11 +35,15 @@ import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.resyncAfterSpeedChange
 import io.github.danything.denpatv.data.nextSpeed
 import io.github.danything.denpatv.data.speedLabel
+import io.github.danything.denpatv.data.CM_LEAD_MS
+import io.github.danything.denpatv.data.cmHopPoints
+import io.github.danything.denpatv.data.cmRunAt
 import io.github.danything.denpatv.data.cmSkipTarget
 import io.github.danything.denpatv.data.nextChapter
 import io.github.danything.denpatv.data.pickFile
 import io.github.danything.denpatv.data.previousChapter
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -52,7 +58,7 @@ import kotlinx.coroutines.launch
  *   **CM 飛ばし** (既定で入。ロゴで CM を判定できなかった録画は切で始まる)、**字幕**・**音声** (あれば)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
  *   5 秒触らなければ閉じる (止めている間も)。戻るでも閉じる。緑のボタンは速さを1段送る
  * - リモコンの次へ・前へでチャプター送り
- * - CM 飛ばしが入っていれば CM に入ったら終わりまで飛ぶ。区切りは動画に入っているチャプター (`CM` / `本編`)
+ * - CM 飛ばしが入っていれば CM の頭の少し手前で終わりまで飛ぶ (CM のコマは映さない)。区切りは動画に入っているチャプター (`CM` / `本編`)
  *
  * 観た位置は denpa に預ける (15 秒ごとと、閉じるとき)。ブラウザで続きから観られる
  */
@@ -203,16 +209,42 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
     }
-    // CM に入ったら終わりまで飛ぶ。続きから始めたときに CM の中だった場合も飛ぶ
-    LaunchedEffect(player, chapters, skipCm) {
+    /*
+     * **CM の頭の少し手前 (`CM_LEAD_MS`) で終わりまで飛ぶ。** 入ってから見つけて飛ぶと、見つけるまでの CM のコマが映る。
+     * 飛ぶところは ExoPlayer に預ける (`PlayerMessage`。流している位置がそこに来たら、再生の糸で呼ばれる)。
+     * 呼ばれたら主の糸の列の先頭に割り込んで飛ぶ (列の後ろに並ぶと、そのぶん遅れて CM のコマが出ることがある)。
+     * 飛んでいる間は前の絵 (本編の末尾) が残る。速いほど先に来るので、手前の幅も速さに合わせる。
+     * 飛んだ・戻した・送ったら (`seeks`) 預け直す。開いた・飛んだ先が CM の中なら、すぐ飛ぶ (映る前に。止めていれば動かしたら)
+     */
+    LaunchedEffect(player, chapters, skipCm, seeks, speed) {
         if (!skipCm || chapters.none { it.isCm }) return@LaunchedEffect
-        while (true) {
-            delay(250)
-            if (!player.isPlaying) continue
-            val cm = cmSkipTarget(chapters, player.currentPosition, skipped) ?: continue
+        val lead = (CM_LEAD_MS * speed).toLong()
+        fun hop(cm: ChapterMark) {
             skipped += cm.startMs
             player.seekTo(cm.endMs)
             flash("CM を飛ばしました")
+        }
+        val main = Handler(Looper.getMainLooper())
+        /** 預け直したあとに、前に預けたぶんが割り込んでこないように */
+        var live = true
+        val messages = cmHopPoints(chapters, player.currentPosition, skipped, lead).map { (at, cm) ->
+            player.createMessage { _, _ -> main.postAtFrontOfQueue { if (live && cm.startMs !in skipped) hop(cm) } }
+                .setPosition(at)
+                .send()
+        }
+        try {
+            while (true) {
+                val cm = cmSkipTarget(chapters, player.currentPosition, skipped, lead) ?: break
+                if (player.playWhenReady) {
+                    hop(cm)
+                    break
+                }
+                delay(100)
+            }
+            awaitCancellation()
+        } finally {
+            live = false
+            messages.forEach { it.cancel() }
         }
     }
 
@@ -273,7 +305,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     fun step(direction: Int): Long {
         val end = player.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
         val to = (player.currentPosition + direction * SEEK_STEP_MS).coerceIn(0, end)
-        if (direction < 0) chapters.firstOrNull { it.isCm && to >= it.startMs && to < it.endMs }?.let { skipped += it.startMs }
+        if (direction < 0) cmRunAt(chapters, to)?.let { skipped += it.startMs }
         player.seekTo(to)
         at = to
         return to
@@ -288,7 +320,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         val previous = previousChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, player.currentPosition)
         if (previous == null) flash("チャプターがありません")
         else {
-            if (previous.isCm) skipped += previous.startMs
+            if (previous.isCm) cmRunAt(chapters, previous.startMs)?.let { skipped += it.startMs }
             player.seekTo(previous.startMs); at = previous.startMs; flash("${previous.title}  ${position(previous.startMs)}")
         }
     }
