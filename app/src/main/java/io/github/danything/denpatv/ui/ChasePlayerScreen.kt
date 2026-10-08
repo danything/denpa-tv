@@ -341,8 +341,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                 from = position()
                 attempt++
             }
+            // 動かしたときは何も出さない (録画の再生と同じ)
             player.playWhenReady = true
-            flash("再生")
         }
         playing = player.playWhenReady
     }

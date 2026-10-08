@@ -258,12 +258,14 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
 
     /** 消して一覧へ戻る。一覧からも抜き、隣に合わせる */
     fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; leave() }
-    /** 止める・動かす。止めている間は位置の帯 (シークバーと同じ見た目、合わせない) を出したままにする */
+    /**
+     * 止める・動かす。止めている間は位置の帯 (シークバーと同じ見た目、合わせない) を出したままにする。
+     * 動かしたときは何も出さない (映像を観たいだけなので)
+     */
     fun togglePause() {
         player.playWhenReady = !player.playWhenReady
         playing = player.playWhenReady
         at = player.currentPosition
-        if (playing) flash("再生  速さ ${speedLabel(speed)}・CM 飛ばし ${if (skipCm) "入" else "切"}")
     }
     /** 10 秒ずつ戻す・送る (左右とシークバー)。戻して CM を観に行ったなら、そこは飛ばさない */
     fun step(direction: Int): Long {
