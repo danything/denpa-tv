@@ -1,6 +1,10 @@
 package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.ChapterMark
+import io.github.danything.denpatv.data.CM_LEAD_MS
+import io.github.danything.denpatv.data.cmHopPoints
+import io.github.danything.denpatv.data.cmRunAt
+import io.github.danything.denpatv.data.cmRuns
 import io.github.danything.denpatv.data.cmSkipTarget
 import io.github.danything.denpatv.data.nextChapter
 import io.github.danything.denpatv.data.previousChapter
@@ -30,6 +34,63 @@ class ChaptersTest {
     fun 一度飛ばした_CM_や自分で戻って観に行った_CM_は飛ばさない() {
         assertNull(cmSkipTarget(chapters, 70_000, setOf(60_000L)))
         assertEquals(990_000L, cmSkipTarget(chapters, 900_000, setOf(60_000L))?.endMs)
+    }
+
+    @Test
+    fun CM_の頭の手前から飛ぶ() {
+        // 手前の幅に入っていれば、まだ本編でも飛ぶ
+        assertEquals(150_000L, cmSkipTarget(chapters, 59_990, emptySet(), CM_LEAD_MS)?.endMs)
+        assertNull(cmSkipTarget(chapters, 60_000 - CM_LEAD_MS - 1, emptySet(), CM_LEAD_MS))
+        assertNull(cmSkipTarget(chapters, 59_990, emptySet()))
+    }
+
+    @Test
+    fun 先回りして飛ぶところは_まだ来ていない_CM_の頭の手前() {
+        assertEquals(
+            listOf(60_000L - CM_LEAD_MS to 60_000L, 900_000L - CM_LEAD_MS to 900_000L),
+            cmHopPoints(chapters, 0, emptySet(), CM_LEAD_MS).map { (at, cm) -> at to cm.startMs },
+        )
+        // 過ぎた CM・飛ばした (戻って観に行った) CM は入れない
+        assertEquals(listOf(900_000L - CM_LEAD_MS), cmHopPoints(chapters, 200_000, emptySet(), CM_LEAD_MS).map { it.first })
+        assertEquals(listOf(900_000L - CM_LEAD_MS), cmHopPoints(chapters, 0, setOf(60_000L), CM_LEAD_MS).map { it.first })
+        // もう手前の幅に入っているもの・中に居るものは今すぐ飛ぶほう (cmSkipTarget)
+        assertEquals(listOf(900_000L - CM_LEAD_MS), cmHopPoints(chapters, 59_990, emptySet(), CM_LEAD_MS).map { it.first })
+        assertEquals(60_000L, cmSkipTarget(chapters, 59_990, emptySet(), CM_LEAD_MS)?.startMs)
+        // 手前の幅の1つ前なら、まだ先回りして預ける
+        assertEquals(60_000L - CM_LEAD_MS, cmHopPoints(chapters, 60_000 - CM_LEAD_MS - 1, emptySet(), CM_LEAD_MS).first().first)
+    }
+
+    @Test
+    fun 頭から_CM_なら_0_より前にはせず今すぐ飛ぶ() {
+        val opening = listOf(ChapterMark(0, 30_000, "CM"), ChapterMark(30_000, 600_000, "本編"))
+        assertEquals(emptyList<Long>(), cmHopPoints(opening, 0, emptySet(), CM_LEAD_MS).map { it.first })
+        assertEquals(30_000L, cmSkipTarget(opening, 0, emptySet(), CM_LEAD_MS)?.endMs)
+        // 頭の CM が手前の幅より短い位置で始まるときも 0 で止める
+        val early = listOf(ChapterMark(0, 50, "本編"), ChapterMark(50, 30_000, "CM"), ChapterMark(30_000, 600_000, "本編"))
+        assertEquals(emptyList<Long>(), cmHopPoints(early, 0, emptySet(), CM_LEAD_MS).map { it.first })
+        assertEquals(30_000L, cmSkipTarget(early, 0, emptySet(), CM_LEAD_MS)?.endMs)
+    }
+
+    @Test
+    fun 続いた_CM_はまとめて跨ぐ() {
+        val back = listOf(
+            ChapterMark(0, 60_000, "本編"),
+            ChapterMark(60_000, 75_000, "CM"),
+            ChapterMark(75_000, 90_000, "CM"),
+            ChapterMark(90_000, 600_000, "本編"),
+        )
+        assertEquals(listOf(ChapterMark(60_000, 90_000, "CM")), cmRuns(back))
+        assertEquals(listOf(60_000L - CM_LEAD_MS), cmHopPoints(back, 0, emptySet(), CM_LEAD_MS).map { it.first })
+        assertEquals(90_000L, cmSkipTarget(back, 80_000, emptySet())?.endMs)
+        // 後ろの CM に戻っても、まとめた頭で覚える
+        assertEquals(60_000L, cmRunAt(back, 80_000)?.startMs)
+        assertNull(cmSkipTarget(back, 80_000, setOf(60_000L)))
+    }
+
+    @Test
+    fun 短すぎる_CM_は先回りしない() {
+        val short = listOf(ChapterMark(0, 60_000, "本編"), ChapterMark(60_000, 60_500, "CM"), ChapterMark(60_500, 600_000, "本編"))
+        assertEquals(emptyList<Long>(), cmHopPoints(short, 0, emptySet(), CM_LEAD_MS).map { it.first })
     }
 
     @Test
