@@ -1,8 +1,10 @@
 name: Screenshots
 
-# 画面の絵を撮る (README・PR に貼る絵)。PR の CI には入れない (手で走らせるか、shots/ の枝に積んだときだけ)。
-# 縮めた APK を API 36・1080p の Android TV エミュレータで開き、作り物の録画を返す偽の denpa に繋いで撮る
-# (smoke/ の Screenshots、scripts/shots-run.sh)。絵は artifact (shots) に PNG と webp (1280 幅、README と同じ) で上げる
+# 画面の絵を撮る (README・docs/ の絵と、PR に貼る絵)。PR の CI には入れない (手で走らせるか、shots/ の枝に積んだときだけ)。
+# 縮めた APK を API 36・1080p の Android TV エミュレータで開き、作り物の録画・局・番組を返す偽の denpa に繋いで撮る
+# (smoke/ の Screenshots、scripts/shots-run.sh)。絵は artifact (shots) に PNG と webp (1280 幅、docs/images/ と同じ) で上げる。
+# README の頭の動く絵 (navigation.webp。854 幅) は navigation/ のこまを繋いで作る。docs/images/ を撮り直すときは、
+# artifact の webp のうち docs/images/ にある名前のものを上書きする (docs/development.md の「画面の絵」)
 on:
   workflow_dispatch:
   push:
@@ -29,8 +31,18 @@ jobs:
         with:
           # CI の流れのキャッシュを読むだけ (ここからは書かない)
           cache-read-only: true
+      # 設定の絵で「最新です」と出るように、いちばん新しいリリースの版で焼く (開発版だと「開発版はアップデートしません」)
       - name: Build APKs
-        run: ./gradlew :app:assembleMinified :smoke:assembleMinified -x lintVitalMinified --console=plain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName || true)
+          if [ -n "$tag" ]; then
+            export DENPA_TV_VERSION="${tag#v}"
+            IFS=. read -r major minor patch <<< "${DENPA_TV_VERSION%%-*}"
+            export DENPA_TV_VERSION_CODE=$((major * 10000 + minor * 100 + patch))
+          fi
+          ./gradlew :app:assembleMinified :smoke:assembleMinified -x lintVitalMinified --console=plain
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -67,6 +79,20 @@ jobs:
             [ -e "$png" ] || continue
             cwebp -quiet -q 85 -resize 1280 0 "$png" -o "${png%.png}.webp"
           done
+          # 動く絵: こまの名前 (<番号>-<見せるミリ秒>.png) の順に繋ぐ
+          frames=()
+          for png in shots/navigation/*.png; do
+            [ -e "$png" ] || continue
+            ms=$(basename "$png" .png); ms=${ms#*-}
+            small="${png%.png}.small.png"
+            cwebp -quiet -lossless -resize 854 0 "$png" -o "${png%.png}.webp" && dwebp -quiet "${png%.png}.webp" -o "$small"
+            frames+=(-d "$ms" "$small")
+          done
+          if [ ${#frames[@]} -gt 0 ]; then
+            img2webp -loop 0 -lossy -q 70 -m 6 "${frames[@]}" -o shots/navigation.webp
+            rm -f shots/navigation/*.small.png shots/navigation/*.webp
+          fi
+          ls -l shots
       - if: always()
         uses: actions/upload-artifact@v7
         with:
