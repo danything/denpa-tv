@@ -188,7 +188,9 @@ class Screenshots {
         SystemClock.sleep(SETTLE_MS)
         shot("live-detail")
         press(KeyEvent.KEYCODE_BACK)
-        await("戻るで番組の詳しくが閉じません") { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } }
+        // 映像だけのライブの窓には字が無いので、空でも閉じたとみなす
+        await("戻るで番組の詳しくが閉じません") { "閉じる" !in windowTexts() }
+        SystemClock.sleep(FOCUS_MS)
         // もう一度の戻るで、いちばん上のメニューへ (「ライブ」に合う)
         press(KeyEvent.KEYCODE_BACK)
         await("ライブから戻りません") { "設定" in texts() }
