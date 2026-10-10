@@ -32,7 +32,7 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 - **ARIB の字幕は Media3 では解かない。** Media3 に ARIB の字幕の読み手は無く、libaribcaption を NDK で抱えるのは重い。
   denpa が解いて置き場所まで決めた**文字の配置** (放送の PTS 付き) を受け取り、android の Canvas で描いて重ねる
   (`ui/RawCaptions.kt`・`ui/TextCaptions.kt`。描き方は denpa のブラウザの `caption-draw.ts` に揃える。字は丸ゴシックを APK に入れて
-  `Typeface.createFromAsset` で読む。下の「字幕の字」)。
+  `Typeface.createFromAsset` で読む。下の「字幕と放送の字」)。
   時計は **TsExtractor に自分の `TimestampAdjuster` を渡して**控え、寄せ幅 (`getTimestampOffsetUs`) で再生位置を放送の
   PTS に戻す。読み手は `DefaultExtractorsFactory` と同じ作りで、ほかの形はそのまま (`TsClock`)。
   PES を自分で覗いて最初の PTS を拾う手もあるが、Media3 がどの PES の PTS を 0 にしたかと食い違いうる (映像と音声で数百 ms 違う)。
@@ -181,16 +181,21 @@ EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta0
 
 DataStore と通信の待ちに使う。AndroidX が既に依存しているので、版を明示しているだけ。
 
-### 字幕の字: 丸ゴシックを APK に入れる ([danything/denpa-font](https://github.com/danything/denpa-font)、SIL OFL 1.1)
+### 字幕と放送の字: 丸ゴシックを APK に入れる ([danything/denpa-font](https://github.com/danything/denpa-font)、SIL OFL 1.1)
 
 字幕の文字の配置は、ブラウザの denpa と同じ字 (Denpa Font。等幅・丸ゴシック・ARIB の外字を持つ)
-で描かないと、ブラウザと字の幅や形が揃わない。
+で描かないと、ブラウザと字の幅や形が揃わない。**放送から来た字 (番組名・説明・局名・いまの番組) も同じ字で出す**
+(番組表の記号 = 外字がテレビと同じく白黒で出る)。アプリの札・見出し・設定は端末の字のまま。
+
+- 字は `ui/DenpaFont.kt` の1つだけ (`DenpaApp.denpaFont`)。字幕は `typeface` を、画面は `DenpaTheme` が渡す
+  `BroadcastFont` (Compose の FontFamily) を使う。こちらの字と混ざる1行 (帯の「局名 画質」「番組名 あと12分」) は、
+  放送の字に `appendBroadcast` で印を付けて、描くときに字体を当てる (`TitleLines`)
 
 - **焼くときに取ってきて assets に入れる** (`app/build.gradle.kts` の `fetchCaptionFont`)。ttf は 4.2MB あるのでリポジトリには置かない。
   リリースの ttf を版 (タグ) で留めて取り、同じリリースの SHA256SUMS で照らす。版は denpa の Dockerfile の `DENPA_FONT_VERSION` と揃え、
   Renovate が新しいリリースのタグを上げる (`renovate.json` の customManagers)
-- assets は縮めて入る (4.2MB → 2.1MB)。読むのは初めて字幕を描くときに1度だけ (`Typeface.createFromAsset`。
-  縮めた asset は開くときに解くので、4.2MB を1度メモリに持つ)。読めなければ端末の字で描く
+- assets は縮めて入る (4.2MB → 2.1MB)。読むのはアプリを開いたときに1度だけ、画面の糸の外で (`Typeface.createFromAsset`。
+  縮めた asset は開くときに解くので、4.2MB をメモリに持つ)。読み終えるまで・読めなければ (取ってこずに焼いた版) 端末の字で描く
 - denpa の `api/font/denpa-font.woff2` からは取らない (配っているのはブラウザ向けの woff2 で、Android の Typeface は読めない)
 - 許諾は SIL OFL 1.1 (元の源柔ゴシック等幅 = 源ノ角ゴシック + M+ OUTLINE FONTS と同じ。原文は denpa-font の README)。
   字幕・データ放送・番組表で使う字 (denpa の字の表から作る) に絞ってある
@@ -198,7 +203,7 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 ## まとめ: AndroidX / Kotlin の外から入れているもの
 
 なし。kotlinx.serialization と kotlinx.coroutines は Kotlin 公式 (JetBrains) のライブラリで、
-Navigation 3 と DataStore が既に使っている。QR の符号化だけはソースを、字幕の字はフォントを同梱している (上の「QR コード」「字幕の字」)。
+Navigation 3 と DataStore が既に使っている。QR の符号化だけはソースを、字幕と放送の字はフォントを同梱している (上の「QR コード」「字幕と放送の字」)。
 
 ## テストだけで使うもの
 

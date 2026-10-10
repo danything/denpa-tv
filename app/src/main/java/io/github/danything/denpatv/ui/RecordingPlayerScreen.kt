@@ -18,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -174,7 +175,13 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         player.prepare()
         player.playWhenReady = true
         val pace = repo.app.settings.playbackSpeed.first().takeIf { it != 1f }?.let { "  速さ ${speedLabel(it)}" } ?: ""
-        flash((if (resume > 0) "${recording.title}\n続きから (${position(resume)})$pace" else "${recording.title}$pace") + "\n$SEEK_HINT")
+        flash(
+            buildAnnotatedString {
+                appendBroadcast(recording.title)
+                append(if (resume > 0) "\n続きから (${position(resume)})$pace" else pace)
+                append("\n$SEEK_HINT")
+            },
+        )
     }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -335,7 +342,11 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
             // 止めている間の位置の帯。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳しく)
             val total = player.duration.takeIf { it != C.TIME_UNSET }
             ControlBar(
-                "一時停止  ${recording.title}\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}  ・決定で再生  $SEEK_HINT",
+                buildAnnotatedString {
+                    append("一時停止  ")
+                    appendBroadcast(recording.title)
+                    append("\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}  ・決定で再生  $SEEK_HINT")
+                },
                 emptyList(),
                 header = { ProgressLine(at, total ?: 0, chapters) },
                 focusActions = false,
@@ -344,7 +355,10 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
             val total = player.duration.takeIf { it != C.TIME_UNSET }
             LaunchedEffect(which) { if (which == Bar.SeekBar) runCatching { seekFocus.requestFocus() } }
             ControlBar(
-                "${recording.title}\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}",
+                buildAnnotatedString {
+                    appendBroadcast(recording.title)
+                    append("\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}")
+                },
                 listOf(
                     "" to listOf(
                         playControl(playing) { togglePause() },

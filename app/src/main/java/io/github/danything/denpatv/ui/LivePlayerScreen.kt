@@ -16,6 +16,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import io.github.danything.denpatv.R
@@ -175,7 +177,12 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         codec.requested(quality)
         if (shown == service.id) return@LaunchedEffect
         shown = service.id
-        flash(describe(service, codec.label) + if (hinted) "" else "\n$LIVE_HINT")
+        flash(
+            buildAnnotatedString {
+                append(describe(service, codec.label))
+                if (!hinted) append("\n$LIVE_HINT")
+            },
+        )
         hinted = true
         repo.app.settings.setLastService(service.id)
     }
@@ -408,13 +415,19 @@ private enum class MenuStart { Controls, Channels }
 private fun recordControl(now: NowProgram?, onClick: () -> Unit): Control =
     Control(recordLabel(now), on = now?.recording == true || now?.reserved == true, icon = R.drawable.ic_record, onClick = onClick)
 
-/** 1行目に局と画質 (`CodecSwitch.label`)、2行目にいま放送中の番組と残り */
-private fun describe(service: Service, quality: String): String {
-    val head = listOfNotNull(service.number?.toString(), service.name, quality).joinToString("  ")
-    val now = service.now ?: return head
-    val left = "あと${now.remainingMinutes(System.currentTimeMillis())}分"
+/** 1行目に局と画質 (`CodecSwitch.label`)、2行目にいま放送中の番組と残り。局名と番組名は放送の字 (`appendBroadcast`) */
+private fun describe(service: Service, quality: String): AnnotatedString = buildAnnotatedString {
+    service.number?.let { append("$it  ") }
+    appendBroadcast(service.name)
+    append("  $quality")
+    val now = service.now ?: return@buildAnnotatedString
+    append("\n")
     // サブチャンネルは番組名が空で来る
-    return if (now.title.isBlank()) "$head\n$left" else "$head\n${now.title}  $left"
+    if (now.title.isNotBlank()) {
+        appendBroadcast(now.title)
+        append("  ")
+    }
+    append("あと${now.remainingMinutes(System.currentTimeMillis())}分")
 }
 
 private const val LIVE_HINT = "左右で局送り・決定か下でメニュー・上で局の列・決定の長押しで番組"

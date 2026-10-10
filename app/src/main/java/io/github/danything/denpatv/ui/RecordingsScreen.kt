@@ -261,7 +261,7 @@ fun RecordingsScreen(
         }
         notice?.let { text ->
             Text(
-                text,
+                text.toString(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Palette.Text,
                 modifier = Modifier
@@ -427,6 +427,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
                 description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = Palette.TextMuted,
+                fontFamily = BroadcastFont,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = HERO_TEXT_WIDTH),

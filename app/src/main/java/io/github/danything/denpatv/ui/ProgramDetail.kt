@@ -159,6 +159,7 @@ private fun Header(facts: DetailFacts, token: String?) {
     Text(
         facts.title,
         style = MaterialTheme.typography.headlineMedium,
+        fontFamily = BroadcastFont,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.widthIn(max = 760.dp),
@@ -289,16 +290,20 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
     }
 }
 
-/** 読みもの (大きく) → 出演者 → 制作・音楽・おしらせ (小さく、薄く、「見出し 本文」を詰めて) */
+/**
+ * 読みもの (大きく) → 出演者 → 制作・音楽・おしらせ (小さく、薄く、「見出し 本文」を詰めて)。
+ * 見出しも本文も放送から来た字 (番組の詳細の項目名) なので、どれも放送の字 (`BroadcastFont`)
+ */
 @Composable
 private fun DetailColumn(text: DetailText, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
+    val font = BroadcastFont
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        text.story.forEach { Text(it, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface) }
+        text.story.forEach { Text(it, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface, fontFamily = font) }
         text.cast.forEach { (heading, body) ->
             Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(heading, style = MaterialTheme.typography.titleSmall, color = colors.primary)
-                Text(body, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface)
+                Text(heading, style = MaterialTheme.typography.titleSmall, color = colors.primary, fontFamily = font)
+                Text(body, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface, fontFamily = font)
             }
         }
         if (text.notes.isNotEmpty()) {
@@ -314,6 +319,7 @@ private fun DetailColumn(text: DetailText, modifier: Modifier) {
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurfaceVariant,
+                        fontFamily = font,
                     )
                 }
             }

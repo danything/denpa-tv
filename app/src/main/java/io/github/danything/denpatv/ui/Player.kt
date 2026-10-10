@@ -201,7 +201,7 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
 @Composable
 fun PlayerFrame(
     player: ExoPlayer,
-    overlay: String?,
+    overlay: CharSequence?,
     error: String?,
     /** 映像がキーを受けるか。上に重ねたもの (メニュー・帯) が開いている間は false。閉じたら映像に戻す */
     active: Boolean = true,
@@ -277,7 +277,7 @@ fun PlayerFrame(
 
 /** 下の端に出す知らせ。操作の帯と同じく、下の端に小さく (下から薄く暗くするだけ) */
 @Composable
-private fun BoxScope.Notice(text: String?, progress: Pair<Long, Long>?) {
+private fun BoxScope.Notice(text: CharSequence?, progress: Pair<Long, Long>?) {
     if (text == null) return
     BottomPanel(spacing = 4.dp) {
         TitleLines(text)
@@ -429,17 +429,17 @@ fun OnBackground(onStop: () -> Unit, onStart: () -> Unit) {
     }
 }
 
-/** 何秒かだけ出して消える文字 */
+/** 何秒かだけ出して消える文字。放送から来た字 (番組名・局名) は `appendBroadcast` で印を付けた AnnotatedString で渡す (`TitleLines`) */
 @Composable
-fun rememberFlash(): Pair<String?, (String) -> Unit> {
-    var text by remember { mutableStateOf<String?>(null) }
+fun rememberFlash(): Pair<CharSequence?, (CharSequence) -> Unit> {
+    var text by remember { mutableStateOf<CharSequence?>(null) }
     var shownAt by remember { mutableLongStateOf(0L) }
     LaunchedEffect(shownAt) {
         if (shownAt == 0L) return@LaunchedEffect
         delay(4_000)
         text = null
     }
-    return text to { value: String ->
+    return text to { value: CharSequence ->
         text = value
         shownAt = System.nanoTime()
     }
