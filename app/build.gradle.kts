@@ -91,7 +91,7 @@ android {
  * ARIB_FONT_SHA と同じコミットに留め、Renovate が枝の先頭を追う (renovate.json)。差し替えるならここの URL だけ直す
  */
 // renovate: datasource=git-refs depName=https://github.com/danything/arib-font branch=main
-val aribFontSha = "4cee32427012c0383e81f1ed3fb943d99e8614d6"
+val aribFontSha = "67fa483de74f1554f287c356f0f54bee89688b1a"
 
 abstract class FetchCaptionFont : DefaultTask() {
     @get:Input
