@@ -26,6 +26,6 @@ fun resyncAfterSpeedChange(from: Float, to: Float, playing: Boolean): Boolean = 
 /** 覚えていた値を段にそろえる。段に無ければ等速 */
 fun knownSpeed(saved: Float?): Float = saved?.takeIf { it in SPEEDS } ?: 1f
 
-/** 画面に出す形 (1.25×) */
+/** 画面に出す形 (×1.25) */
 fun speedLabel(speed: Float): String =
-    (if (speed == speed.toInt().toFloat()) speed.toInt().toString() else speed.toString()) + "×"
+    "×" + (if (speed == speed.toInt().toFloat()) speed.toInt().toString() else speed.toString())

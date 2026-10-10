@@ -116,8 +116,8 @@ class SpeedTest {
         assertEquals(1f, io.github.danything.denpatv.data.knownSpeed(null))
         assertEquals(1f, io.github.danything.denpatv.data.knownSpeed(0.75f))
         assertEquals(1.5f, io.github.danything.denpatv.data.knownSpeed(1.5f))
-        assertEquals("1.25×", io.github.danything.denpatv.data.speedLabel(1.25f))
-        assertEquals("2×", io.github.danything.denpatv.data.speedLabel(2f))
+        assertEquals("×1.25", io.github.danything.denpatv.data.speedLabel(1.25f))
+        assertEquals("×2", io.github.danything.denpatv.data.speedLabel(2f))
     }
 
     @org.junit.Test
