@@ -188,7 +188,8 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 (番組表の記号 = 外字がテレビと同じく白黒で出る)。アプリの札・見出し・設定は端末の字のまま。
 
 - 字は `ui/DenpaFont.kt` の1つだけ (`DenpaApp.denpaFont`)。字幕は `typeface` を、画面は `DenpaTheme` が渡す
-  `BroadcastFont` (Compose の FontFamily) を使う。こちらの字と混ざる1行 (帯の「局名 画質」「番組名 あと12分」) は、
+  `BroadcastFont` (Compose の FontFamily) を使う。太さは1つだけで、Typeface から作った字体は `fontWeight` を見ないので、
+  太い番組名 (カード) は端末が太らせた字 (`Typeface.create(…, BOLD)`。`broadcastFont(weight)`) にする。こちらの字と混ざる1行 (帯の「局名 画質」「番組名 あと12分」) は、
   放送の字に `appendBroadcast` で印を付けて、描くときに字体を当てる (`TitleLines`)
 
 - **焼くときに取ってきて assets に入れる** (`app/build.gradle.kts` の `fetchCaptionFont`)。ttf は 4.2MB あるのでリポジトリには置かない。

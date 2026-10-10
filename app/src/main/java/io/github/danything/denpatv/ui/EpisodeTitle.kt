@@ -55,8 +55,9 @@ internal fun EpisodeTitle(
 ) {
     // 字の大きさ・向き・字体が替わると、別の measurer になる (測り直す)
     val measurer = rememberTextMeasurer(cacheSize = 0)
-    // 番組名は放送の字 (`BroadcastFont`)。切りかたもその字で測る
-    val merged = LocalTextStyle.current.merge(style.copy(fontFamily = BroadcastFont ?: style.fontFamily))
+    // 番組名は放送の字 (太いものは太らせた字。`broadcastFont`)。切りかたもその字で測る
+    val base = LocalTextStyle.current.merge(style)
+    val merged = base.copy(fontFamily = broadcastFont(base.fontWeight) ?: base.fontFamily)
         .let { if (unwatched) it.copy(textIndent = TextIndent(firstLine = DOT_INDENT)) else it }
     /** 1行目の上下の真ん中 (px。点を置く高さ) */
     var firstLine by remember { mutableFloatStateOf(0f) }

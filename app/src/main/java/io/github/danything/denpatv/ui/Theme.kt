@@ -13,7 +13,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -70,12 +69,12 @@ private val Colors = darkColorScheme(
 )
 
 /**
- * アプリの字は端末の字のまま。**放送から来た字だけ** `broadcastFont` (Denpa Font。`BroadcastFont` で引く) で描く。
+ * アプリの字は端末の字のまま。**放送から来た字だけ** `broadcastFonts` (Denpa Font。`BroadcastFont` で引く) で描く。
  * null (まだ読めていない・読めない) なら端末の字
  */
 @Composable
-fun DenpaTheme(broadcastFont: FontFamily?, content: @Composable () -> Unit) =
-    CompositionLocalProvider(LocalBroadcastFont provides broadcastFont) { MaterialTheme(colorScheme = Colors, content = content) }
+fun DenpaTheme(broadcastFonts: BroadcastFonts?, content: @Composable () -> Unit) =
+    CompositionLocalProvider(LocalBroadcastFont provides broadcastFonts) { MaterialTheme(colorScheme = Colors, content = content) }
 
 /**
  * **合わせたものの見せ方 (アプリ全体で同じ)。** Google TV と同じく、合わせたものは少し膨らみ (カードは 1.05、札は 1.1。

@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -20,7 +21,7 @@ import kotlinx.coroutines.withContext
 /**
  * **放送の字** (denpa が字幕を焼いていたのと同じ丸ゴシック。Denpa Font。ARIB の外字を全部持つ)。APK の assets に入れてある
  * (焼くときに取ってくる。app/build.gradle.kts の `fetchCaptionFont`)。字幕の文字の配置 (`typeface`) と、
- * 放送から来た字 (番組名・説明・局名。`family` → `BroadcastFont`) の両方に使う。
+ * 放送から来た字 (番組名・説明・局名。`fonts` → `BroadcastFont`) の両方に使う。
  * 読むのはアプリを開いたときに1度だけ (`DenpaApp`。4.2MB あるので画面の糸では読まない)。読めなければ・読み終えるまでは端末の字
  */
 class DenpaFont(private val assets: AssetManager) {
@@ -29,7 +30,7 @@ class DenpaFont(private val assets: AssetManager) {
         private set
 
     /** 同じ字を Compose の字体にしたもの。まだ・読めなければ null */
-    var family by mutableStateOf<FontFamily?>(null)
+    var fonts by mutableStateOf<BroadcastFonts?>(null)
         private set
 
     private val lock = Mutex()
@@ -45,7 +46,7 @@ class DenpaFont(private val assets: AssetManager) {
         }
         // 読み終えてから印を付ける (途中で取り消されたら、次に呼ばれたときに読み直す)
         typeface = loaded
-        family = loaded?.let { FontFamily(it) }
+        fonts = loaded?.let { BroadcastFonts(FontFamily(it), FontFamily(Typeface.create(it, Typeface.BOLD))) }
         done = true
     }
 
@@ -55,16 +56,29 @@ class DenpaFont(private val assets: AssetManager) {
     }
 }
 
-/** `DenpaTheme` が渡す放送の字 (`DenpaFont.family`) */
-internal val LocalBroadcastFont = compositionLocalOf<FontFamily?> { null }
+/**
+ * 放送の字の Compose の字体。Denpa Font は太さが1つだけで、Typeface から作った字体は `fontWeight` を見ない
+ * (太くならない) ので、太い字 (`bold`。端末が太らせたもの) を別に持つ
+ */
+class BroadcastFonts(val regular: FontFamily, val bold: FontFamily)
+
+/** `DenpaTheme` が渡す放送の字 (`DenpaFont.fonts`) */
+internal val LocalBroadcastFont = compositionLocalOf<BroadcastFonts?> { null }
 
 /**
  * **放送から来た字 (番組名・説明・局名・番組表の名前) に使う字体。** テレビと同じ Denpa Font で、外字 (EPG の記号) も白黒で出る。
- * アプリの札・見出し・設定 (こちらで書いた字) には使わない。読めていなければ null で、`Text` は端末の字で描く
+ * アプリの札・見出し・設定 (こちらで書いた字) には使わない。読めていなければ null で、`Text` は端末の字で描く。
+ * 太くする字 (SemiBold 以上) は `broadcastFont(weight)`
  */
 val BroadcastFont: FontFamily?
     @Composable @ReadOnlyComposable
-    get() = LocalBroadcastFont.current
+    get() = LocalBroadcastFont.current?.regular
+
+/** その太さで描く放送の字。SemiBold 以上は太らせた字 (Compose が字を太らせるのと同じ境目) */
+@Composable
+@ReadOnlyComposable
+fun broadcastFont(weight: FontWeight?): FontFamily? =
+    LocalBroadcastFont.current?.let { if (weight != null && weight >= FontWeight.SemiBold) it.bold else it.regular }
 
 /** 放送から来た字の印 (`appendBroadcast`) */
 private const val BROADCAST_TAG = "broadcast"
