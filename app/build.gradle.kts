@@ -87,21 +87,18 @@ android {
 }
 
 /*
- * 字幕の字 (denpa が字幕を焼いていたのと同じ丸ゴシック。Denpa Font = danything/denpa-font のリリース、SIL OFL 1.1)。
+ * 字幕の字 (denpa が字幕を描くのと同じ丸ゴシック。Denpa Font = danything/denpa-font のリリース、SIL OFL 1.1)。
  * 4.2MB あるのでリポジトリには置かず、**焼くときに取ってきて assets に入れる** (ui/CaptionFont.kt が読む)。
- * 版はタグ、中身は sha256 で留める (denpa の Dockerfile の DENPA_FONT_VERSION と揃える)。**Renovate が版を上げたら、
- * そのリリースの SHA256SUMS の denpa-font.ttf の値を下へ写す** (写さないと焼けない)
+ * **留めるのはタグだけ** (denpa の Dockerfile の DENPA_FONT_VERSION と揃える。Renovate はタグを上げるだけ)。
+ * 中身は同じリリースの SHA256SUMS で照らす (違えば焼くのを止める)
  */
 // renovate: datasource=github-releases depName=danything/denpa-font
-val denpaFontVersion = "v2.0"
-val denpaFontSha256 = "dd0dea4fe80fd37239a92fd2b89e95be092d02bf84abaf2694235c7e2386c1dd"
+val denpaFontVersion = "v2.1"
 
 abstract class FetchCaptionFont : DefaultTask() {
+    /** リリースの置き場 (…/releases/download/<タグ>) */
     @get:Input
-    abstract val url: Property<String>
-
-    @get:Input
-    abstract val sha256: Property<String>
+    abstract val release: Property<String>
 
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -109,16 +106,19 @@ abstract class FetchCaptionFont : DefaultTask() {
     @TaskAction
     fun fetch() {
         val dir = outputDir.get().asFile.apply { deleteRecursively(); mkdirs() }
-        val bytes = URI(url.get()).toURL().openStream().use { it.readBytes() }
+        val get = { name: String -> URI("${release.get()}/$name").toURL().openStream().use { it.readBytes() } }
+        val sums = get("SHA256SUMS").decodeToString()
+        val want = sums.lines().firstNotNullOfOrNull { Regex("""^([0-9a-f]{64}) +denpa-font\.ttf$""").find(it)?.groupValues?.get(1) }
+            ?: error("SHA256SUMS に denpa-font.ttf がありません: ${release.get()}")
+        val bytes = get("denpa-font.ttf")
         val got = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        check(got == sha256.get()) { "字幕の字の sha256 が違います: ${url.get()} ($got)" }
+        check(got == want) { "字幕の字の sha256 が SHA256SUMS と違います: ${release.get()} ($got)" }
         dir.resolve("denpa-font.ttf").writeBytes(bytes)
     }
 }
 
 val fetchCaptionFont = tasks.register<FetchCaptionFont>("fetchCaptionFont") {
-    url.set("https://github.com/danything/denpa-font/releases/download/$denpaFontVersion/denpa-font.ttf")
-    sha256.set(denpaFontSha256)
+    release.set("https://github.com/danything/denpa-font/releases/download/$denpaFontVersion")
     outputDir.set(layout.buildDirectory.dir("generated/captionFont"))
 }
 
