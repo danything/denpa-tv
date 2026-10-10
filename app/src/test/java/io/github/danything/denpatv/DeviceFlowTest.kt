@@ -11,7 +11,7 @@ import java.io.IOException
 
 /** 登録を待つ手順 (RFC 8628 §3.5)。時計は止めて、待った時間だけ進める */
 class DeviceFlowTest {
-    private val code = DeviceCode("dc", "ABCD-EFGH", "device", "device?code=ABCD-EFGH", expiresIn = 600, interval = 5)
+    private val code = DeviceCode("dc", "device?code=ABCD-EFGH", expiresIn = 600, interval = 5)
 
     private suspend fun run(vararg answers: Any): Pair<PairingOutcome, List<Long>> {
         var clock = 0L
