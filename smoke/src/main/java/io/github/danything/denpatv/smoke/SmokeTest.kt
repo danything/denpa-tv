@@ -223,7 +223,7 @@ class SmokeTest {
     private fun appLog(): String = shell("logcat -d -s denpa:I")
 
     /**
-     * 録画を映す。**決定で止めると帯が操作の列の「再生」に合って開き**、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる。
+     * 録画を映す。字幕 (文字の配置の `captions.json`。`FakeCaptions`) を描く。**決定で止めると帯が操作の列の「再生」に合って開き**、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる。
      * 下で開いたシークバーからも上で閉じる。偽の録画は 10 秒しかないので、映ったらすぐ止めてから見る
      * (帯は止めている間も 5 秒触らなければ閉じる。キーを押すたびに数え直すので、続けて押している間は閉じない)
      * **決定の長押しで番組の詳しいところ** (一覧のカードの長押しと同じ) が開き、戻るで閉じて映像に戻る (止めたまま。長押しの離しで動き出さない)
@@ -233,6 +233,17 @@ class SmokeTest {
         open("denpa://recording/${FakeDenpa.RECORDING_ID}")
         awaitVideo(RECORDING_COLOR)
         assertRequested("GET /api/recordings/${FakeDenpa.RECORDING_ID}/file")
+
+        // 字幕 (文字の配置の captions.json) を描く。出たかは読み上げの文で、塗ったかは背景の青の点で見る
+        assertRequested("GET /api/recordings/${FakeDenpa.RECORDING_ID}/captions.json")
+        assertTrue("字幕が出ません: ${descriptions()}", poll(TEXT_TIMEOUT_MS) { FakeCaptions.TEXT in descriptions() })
+        var painted = 0
+        assertTrue(
+            "字幕の背景が塗られていません (青の点 $painted)",
+            poll(TEXT_TIMEOUT_MS) { painted = screenshot()?.let { count(it, FakeCaptions.BACKGROUND) } ?: 0; painted >= CAPTION_DOTS },
+        )
+        // 字は APK に入れてある丸ゴシック (縮めた APK でも assets から読めた)
+        assertTrue("字幕の字を読めていません: ${appLog()}", "字幕の字を読めません" !in appLog())
 
         // 止めると操作の列が開いて「再生」に合う (決定でそのまま動かせる)
         press(KeyEvent.KEYCODE_DPAD_CENTER)
@@ -455,6 +466,21 @@ class SmokeTest {
         return near.toFloat() / (GRID_X * GRID_Y)
     }
 
+    /** 画面を `CAPTION_STEP` 画素おきに見て、`color` に近い点の数 (字幕は小さいので、格子の `share` では粗すぎる) */
+    private fun count(bitmap: Bitmap, color: Int): Int {
+        var near = 0
+        for (y in 0 until bitmap.height step CAPTION_STEP) for (x in 0 until bitmap.width step CAPTION_STEP) {
+            val p = bitmap.getPixel(x, y)
+            if (abs(Color.red(p) - Color.red(color)) < COLOR_TOLERANCE &&
+                abs(Color.green(p) - Color.green(color)) < COLOR_TOLERANCE &&
+                abs(Color.blue(p) - Color.blue(color)) < COLOR_TOLERANCE
+            ) {
+                near++
+            }
+        }
+        return near
+    }
+
     companion object {
         private const val APP = "io.github.danything.denpatv"
         private val instrumentation: Instrumentation get() = InstrumentationRegistry.getInstrumentation()
@@ -606,6 +632,9 @@ class SmokeTest {
         /** いちばん前のアプリの窓の文字 */
         private fun texts(): List<String> = nodes().mapNotNull { it.text?.toString() }
 
+        /** いちばん前のアプリの窓の読み上げの文 (字幕の層が持つ) */
+        private fun descriptions(): List<String> = nodes().mapNotNull { it.contentDescription?.toString() }
+
         /** 押せるのは文字を包む部品 (Button) のほう */
         private fun clickable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? =
             generateSequence(node) { it.parent }.firstOrNull { it.isClickable }
@@ -625,6 +654,12 @@ class SmokeTest {
         private const val VIDEO_SHARE = 0.3f
         private const val GRID_X = 32
         private const val GRID_Y = 18
+        /**
+         * 字幕の背景を探す刻みと、塗られたとみなす点の数。字幕の背景は 1080p で 320x120 ほど (4 字 × 区画 40x60 を 2 倍)。
+         * 8 画素おきなら 600 点ほどのうち、字の掛かっていないところ
+         */
+        private const val CAPTION_STEP = 8
+        private const val CAPTION_DOTS = 100
 
         // CI のエミュレータ (KVM はあるが GPU は無い) は遅いので長めに待つ
         private const val VIDEO_TIMEOUT_MS = 60_000L

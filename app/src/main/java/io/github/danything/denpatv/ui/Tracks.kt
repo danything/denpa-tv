@@ -54,7 +54,7 @@ class TrackControls(
 }
 
 /**
- * @param rawCaptions 生の TS の字幕 (Media3 のトラックには出てこない。`rememberRawCaptions`)。選べる字幕があると
+ * @param rawCaptions denpa から別に受け取る字幕 (Media3 のトラックには出てこない。`rememberRawCaptions`・`rememberCaptionPages`)。選べる字幕があると
  *   言われたら、焼いた映像の字幕と同じ札を出す (入れ切りの設定も同じもの)
  * @param dualMono デュアルモノの配り直し (`rememberPlayer` の `dualMono`)
  * @param denpaAudios denpa が言う選べる音声 (`DenpaAudio`)。**生の TS のときだけ渡す** — 焼いたものは denpa が先に分けている
@@ -65,7 +65,7 @@ fun rememberTracks(
     repo: Repository,
     player: ExoPlayer,
     onChange: (String) -> Unit,
-    rawCaptions: RawCaptionState,
+    rawCaptions: CaptionState,
     dualMono: DualMonoProcessor,
     denpaAudios: List<DenpaAudio>,
 ): TrackControls {

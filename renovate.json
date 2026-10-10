@@ -3,6 +3,19 @@
   "extends": [
     "github>5ym/repo-config"
   ],
+  "customManagers": [
+    {
+      "description": "字幕の字 (danything/arib-font) は焼くときに取ってくる (app/build.gradle.kts)。タグが無いので枝の先頭のコミットで固定し、枝が動いたら新しいコミットで PR を出す (denpa の Dockerfile と同じ追い方)",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)build\\.gradle\\.kts$/"
+      ],
+      "matchStrings": [
+        "// renovate: datasource=git-refs depName=(?<depName>\\S+) branch=(?<currentValue>\\S+)\\s+val \\w+ = \"(?<currentDigest>[0-9a-f]{40})\""
+      ],
+      "datasourceTemplate": "git-refs"
+    }
+  ],
   "packageRules": [
     {
       "description": "Kotlin のコンパイラプラグイン (Compose / serialization) は Kotlin 本体と同じ版でないと動かない。1本の PR で揃って上げる",

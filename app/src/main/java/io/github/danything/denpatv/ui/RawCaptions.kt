@@ -33,7 +33,11 @@ import androidx.media3.extractor.ts.TsExtractor
 import io.github.danything.denpatv.data.CaptionCue
 import io.github.danything.denpatv.data.CaptionFeed
 import io.github.danything.denpatv.data.CaptionFrame
+import io.github.danything.denpatv.data.CaptionPage
+import io.github.danything.denpatv.data.CaptionPages
+import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.CueTimeline
+import io.github.danything.denpatv.data.Http
 import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.inkRows
@@ -45,6 +49,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.DataInputStream
+import java.io.IOException
 import java.net.URI
 import kotlin.math.roundToInt
 
@@ -120,21 +125,39 @@ private const val CANVAS_HEIGHT = 1080f
  * 解いた字幕の絵と置き場所。`ink` は何か描いてある行の上の端と下の端 (絵の中の行。画面まるごとの絵で届くので、
  * 帯の上へ逃がすときに字の在りかを見る。`inkRows`)。何も描いていなければ null
  */
-class CaptionPicture(val bitmap: ImageBitmap, val cue: CaptionCue, val ink: Pair<Int, Int>?)
+class CaptionPicture(val bitmap: ImageBitmap, val cue: CaptionCue.Picture, val ink: Pair<Int, Int>?)
 
-/** 生の TS の字幕の、画面に出すぶん */
-class RawCaptionState {
-    /** 字幕の口が「選べる字幕がある」と言ったか。操作の列の「字幕」の札を出すかに使う */
+/**
+ * denpa から別に受け取る字幕 (Media3 のトラックには出てこないもの) の、画面に出すぶん。生の TS の字幕の口
+ * (`rememberRawCaptions`) と、焼いた録画の `captions.json` (`rememberCaptionPages`)。描くのは `CaptionLayer`
+ */
+class CaptionState(
+    /** 文字の配置を描く字 (`DenpaApp.captionFont`) */
+    val font: CaptionFont,
+) {
+    /** 選べる字幕があるか。操作の列の「字幕」の札を出すかに使う */
     var available by mutableStateOf(false)
-    /** いま重ねている絵 */
+    /** いま重ねている絵 (古い denpa の字幕の口) */
     var picture by mutableStateOf<CaptionPicture?>(null)
+    /** いま重ねている文字の配置 */
+    var page by mutableStateOf<CaptionPage?>(null)
     internal val timeline = CueTimeline()
     internal var key: Any? = null
 }
 
+/** 文字の配置が出たら、字を読む (APK の assets から1度だけ。`CaptionFont`) */
+@Composable
+private fun LoadCaptionFont(state: CaptionState) {
+    val showing = state.page != null
+    LaunchedEffect(showing) {
+        if (showing) state.font.load()
+    }
+}
+
 /**
- * **生の TS の字幕を受け取って、出す番の絵を選ぶ。** 描くのは `RawCaptionLayer`。
+ * **生の TS の字幕を受け取って、出す番のものを選ぶ。** 描くのは `CaptionLayer`。
  *
+ * - **文字の配置で頼む** (`?format=text`、0x22)。古い denpa (v1.49.0 まで) は知らずに絵 (0x20) を返すので、届いたほうを出す
  * - 字幕の入れ切りは焼いた映像の字幕と同じ設定 (端末ごと)。切ってある間も、選べる字幕があるかだけは訊く
  *   (札を出すため。分かったら切る)
  * - **映像が流れはじめてから頼む** — TS の読み手が最初の PTS を読むまで時計が無く、ライブは映像の口が
@@ -155,9 +178,10 @@ fun rememberRawCaptions(
     generation: Any?,
     fromMs: (() -> Long)? = null,
     onUnauthorized: () -> Unit = {},
-): RawCaptionState {
-    val state = remember { RawCaptionState() }
+): CaptionState {
+    val state = remember { CaptionState(repo.app.captionFont) }
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
+    LoadCaptionFont(state)
 
     LaunchedEffect(path, generation, enabled) {
         // 選べる字幕は局 (録画) ごと。頼み直し・シークでは消さない (札がちらつく)
@@ -167,6 +191,7 @@ fun rememberRawCaptions(
         }
         state.timeline.clear()
         state.picture = null
+        state.page = null
         if (path == null) return@LaunchedEffect
         // 切ってあって、選べる字幕があるかはもう分かっている
         if (!enabled && state.available) return@LaunchedEffect
@@ -177,8 +202,8 @@ fun rememberRawCaptions(
             // 局を替えた直後は前の読み手の時計が残っているので、流れているかも見る
             delay(WAIT_MS)
             while (clock.offsetUs() == null || !player.isPlaying) delay(WAIT_MS)
-            val from = fromMs?.invoke()?.let { "?from=${it.coerceAtLeast(0) / 1000}" } ?: ""
-            val url = repo.url(path + from)?.let { URI(it) } ?: return@LaunchedEffect
+            val query = CaptionPaths.query(fromMs?.invoke()?.let { it.coerceAtLeast(0) / 1000 })
+            val url = repo.url(path + query)?.let { URI(it) } ?: return@LaunchedEffect
             state.timeline.clear()
             val finished = try {
                 follow(url, repo.token, state, keepGoing = { enabled }).also { refused = 0 }
@@ -206,10 +231,11 @@ fun rememberRawCaptions(
         }
     }
 
-    // 出す番の絵を選ぶ。**時計は再生位置を放送の PTS に戻したもの**
+    // 出す番のものを選ぶ。**時計は再生位置を放送の PTS に戻したもの**
     LaunchedEffect(state, enabled) {
         if (!enabled) {
             state.picture = null
+            state.page = null
             return@LaunchedEffect
         }
         var shown: CaptionCue? = null
@@ -228,7 +254,72 @@ fun rememberRawCaptions(
                 continue
             }
             shown = cue
-            state.picture = cue?.let { decode(it) }
+            when (cue) {
+                is CaptionCue.Text -> {
+                    state.picture = null
+                    state.page = cue.page?.takeIf { it.runs.isNotEmpty() }
+                }
+                is CaptionCue.Picture -> {
+                    state.page = null
+                    state.picture = decode(cue)
+                }
+                null -> {
+                    state.picture = null
+                    state.page = null
+                }
+            }
+        }
+    }
+    return state
+}
+
+/**
+ * **焼いた録画の字幕を、文字の配置で丸ごと受け取る** (`GET api/recordings/<id>/captions.json`)。再生位置を追い越していない
+ * 中の最後の1枚を出す (シークしても頼み直さない)。
+ *
+ * 字幕が絵 (PGS) で入っている前の録画と、この口の無い古い denpa は 404 — そのときは何もしない (PGS は Media3 が動画から
+ * 読んで `SubtitleView` に出す)。新しく焼いた録画の字幕 (S_ARIBSUB) は Media3 が読まないので、こちらだけが出す
+ */
+@Composable
+fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUnauthorized: () -> Unit = {}): CaptionState {
+    val state = remember { CaptionState(repo.app.captionFont) }
+    val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
+    var pages by remember { mutableStateOf<CaptionPages?>(null) }
+    LoadCaptionFont(state)
+
+    LaunchedEffect(path) {
+        val url = repo.url(path)?.let { URI(it) } ?: return@LaunchedEffect
+        repeat(PAGES_TRIES) {
+            val response = try {
+                withContext(Dispatchers.IO) { Http.request(url, token = repo.token) }
+            } catch (_: IOException) {
+                null
+            }
+            when {
+                response == null -> delay(RETRY_MS)
+                response.code == 401 -> return@LaunchedEffect onUnauthorized()
+                // 前の録画・古い denpa。読み直しても同じ
+                !response.ok -> return@LaunchedEffect
+                else -> {
+                    val read = withContext(Dispatchers.Default) { CaptionPages.parse(response.text()) }
+                    pages = read
+                    state.available = (read?.size ?: 0) > 0
+                    return@LaunchedEffect
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(pages, enabled) {
+        val all = pages
+        if (all == null || !enabled) {
+            state.page = null
+            return@LaunchedEffect
+        }
+        // 同じ1枚なら置き直しても描き直さない (State は同じものの代入では知らせない)
+        while (true) {
+            state.page = all.at(player.currentPosition)
+            delay(TICK_MS)
         }
     }
     return state
@@ -238,7 +329,7 @@ fun rememberRawCaptions(
  * 字幕の口を読み続ける。きれいに閉じたら true。`keepGoing` が false を返す間 (字幕を切ってある) は、
  * 選べる字幕が分かったところでやめる
  */
-private suspend fun follow(url: URI, token: String?, state: RawCaptionState, keepGoing: () -> Boolean): Boolean = coroutineScope {
+private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGoing: () -> Boolean): Boolean = coroutineScope {
     val connection = withContext(Dispatchers.IO) { CaptionFeed.connect(url, token) }
     // 読むのは止まったままになる (ブロックする) ので、取り消されたら繋がりごと切って抜けさせる
     val watcher = launch {
@@ -281,16 +372,20 @@ private suspend fun follow(url: URI, token: String?, state: RawCaptionState, kee
 }
 
 /** 絵を解く。PNG は RGBA で、1920x1080 まるごと。字のある行もここで探す (上と下から見て、字に当たったら止める) */
-private suspend fun decode(cue: CaptionCue): CaptionPicture? = withContext(Dispatchers.Default) {
+private suspend fun decode(cue: CaptionCue.Picture): CaptionPicture? = withContext(Dispatchers.Default) {
     BitmapFactory.decodeByteArray(cue.png, 0, cue.png.size)?.let { bitmap ->
         val ink = inkRows(bitmap.width, bitmap.height) { y, rows, into -> bitmap.getPixels(into, 0, bitmap.width, 0, y, bitmap.width, rows) }
         CaptionPicture(bitmap.asImageBitmap(), cue, ink)
     }
 }
 
-/** 字幕の絵を映像の枠に重ねる。映像は枠いっぱいに伸ばして出している (`PlayerFrame`) ので、絵も枠いっぱいに伸ばす */
+/**
+ * 字幕を映像の枠に重ねる。文字の配置なら描き (`TextCaptionLayer`)、絵なら伸ばして貼る。
+ * 映像は枠いっぱいに伸ばして出している (`PlayerFrame`) ので、どちらも枠いっぱいに伸ばす
+ */
 @Composable
-fun RawCaptionLayer(state: RawCaptionState, inset: () -> Float) {
+fun CaptionLayer(state: CaptionState, inset: () -> Float) {
+    state.page?.let { return TextCaptionLayer(it, state.font, inset) }
     val picture = state.picture ?: return
     // 下に重ねたもの (帯・メニュー) があれば、字のある行がその上に来るまで持ち上げる
     val lifted = Modifier.fillMaxSize().liftCaptions(inset) { _, height ->
@@ -332,3 +427,6 @@ private const val MAX_AHEAD = 200
 
 /** 頼み直すまでの間 (ミリ秒) */
 private const val RETRY_MS = 3_000L
+
+/** `captions.json` を頼む回数 (繋がらなかったときだけ頼み直す) */
+private const val PAGES_TRIES = 3

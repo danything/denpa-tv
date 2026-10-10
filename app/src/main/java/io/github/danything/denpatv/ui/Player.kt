@@ -214,8 +214,8 @@ fun PlayerFrame(
     onCenter: (CenterPress.Action) -> Unit = {},
     /** 知らせの下に出す進み (ライブの番組の進み)。null なら出さない */
     progress: Pair<Long, Long>? = null,
-    /** 生の TS の字幕 (`rememberRawCaptions`)。焼いた映像の字幕の上、知らせの下に重ねる */
-    captions: RawCaptionState,
+    /** denpa から別に受け取る字幕 (`rememberRawCaptions`・`rememberCaptionPages`)。焼いた映像の字幕の上、知らせの下に重ねる */
+    captions: CaptionState,
     /** 映るまでの間に出す、何をしているか (ライブは「選局しています」)。流れが届いたら「映像を待っています」に替わる */
     busyLabel: String = "読み込んでいます",
     /** 繋ぎ直しの様子 (`rememberPlayer` の `recovery`)。繋ぎ直している間は前の絵を残して「繋ぎ直しています」 */
@@ -287,7 +287,7 @@ fun PlayerFrame(
             onRelease = { view -> view.keepScreenOn = false },
             modifier = Modifier.fillMaxSize().liftCaptions(inset, captionSpan),
         )
-        RawCaptionLayer(captions, inset)
+        CaptionLayer(captions, inset)
         if (error == null) LoadingVeil(loading, busyLabel, recovery)
         CompositionLocalProvider(LocalOverlayInsets provides insets) {
             Notice(error ?: overlay, if (error == null) progress else null)

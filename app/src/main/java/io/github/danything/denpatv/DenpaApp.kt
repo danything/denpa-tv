@@ -9,6 +9,7 @@ import io.github.danything.denpatv.data.EngineHttp
 import io.github.danything.denpatv.data.Images
 import io.github.danything.denpatv.data.Settings
 import io.github.danything.denpatv.data.WatchNextRows
+import io.github.danything.denpatv.ui.CaptionFont
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,6 +48,9 @@ class DenpaApp : Application() {
             null
         }
     }
+
+    /** 字幕の字 (APK に入れてある丸ゴシック)。字幕の文字の配置を描くのに使う */
+    val captionFont: CaptionFont by lazy { CaptionFont(assets) }
 
     /** Google TV のホームの「続きを視聴」。TvProvider の WatchNextPrograms は Android 8.0 からで、それより前は何もしない */
     val watchNext: WatchNextRows by lazy { WatchNextRows(this) }

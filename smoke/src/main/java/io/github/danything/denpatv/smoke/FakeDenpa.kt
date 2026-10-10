@@ -117,6 +117,11 @@ class FakeDenpa(
             showcase && recording?.groupValues?.get(2) == "detail" -> json(out, Showcase.detail(recording.groupValues[1].toLong()))
             recording?.groupValues?.get(2) == "detail" -> json(out, """{"description":"$RECORDING_DESCRIPTION","extended":{}}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
+            // 焼いた録画の字幕 (文字の配置)
+            path == "/api/recordings/$RECORDING_ID/captions.json" -> json(out, FakeCaptions.smoke)
+            // 作り物の録画は、どれも同じ映像と字幕
+            showcase && recording?.groupValues?.get(2) == "file" -> media(out, "recording.mkv", "video/x-matroska", range)
+            showcase && Regex("/api/recordings/\\d+/captions\\.json").matches(path) -> json(out, FakeCaptions.showcase)
             // 追っかけはライブと同じ焼き方の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリは居た場所から頼み直す)
             path == "/api/recordings/$CHASE_ID/chase" -> media(out, "live.mp4", "video/mp4", range)
             else -> respond(out, 404, "text/plain", "not found".toByteArray())

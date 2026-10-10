@@ -99,16 +99,23 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
     }
-    // 生の TS の字幕は denpa が描いた絵を別の口で受け取る (焼いた録画の字幕は動画に入っている)
-    val captions = rememberRawCaptions(
-        repo,
-        player,
-        clock,
-        path = CaptionPaths.recording(recording.id).takeIf { file.source == "ts" },
-        generation = seeks,
-        fromMs = { player.currentPosition },
-        onUnauthorized = onUnauthorized,
-    )
+    /*
+     * 字幕は denpa から別の口で受け取る。生の TS は字幕の口、焼いた録画は文字の配置まるごと (`captions.json`)。
+     * 焼いた録画で 404 なら字幕が絵 (PGS) で動画に入っている前の録画で、そちらは Media3 が出す。ファイルは開いている間替わらない
+     */
+    val captions = if (file.source == "ts") {
+        rememberRawCaptions(
+            repo,
+            player,
+            clock,
+            path = CaptionPaths.recording(recording.id),
+            generation = seeks,
+            fromMs = { player.currentPosition },
+            onUnauthorized = onUnauthorized,
+        )
+    } else {
+        rememberCaptionPages(repo, player, CaptionPaths.recordingText(recording.id), onUnauthorized)
+    }
     // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いた録画は denpa が主・副の2本に割ってある)
     val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { file.source == "ts" }.orEmpty())
     /**
