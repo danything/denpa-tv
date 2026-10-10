@@ -78,7 +78,7 @@ internal fun liveFacts(service: Service, info: ProgramInfo?, at: Long): DetailFa
         meta = programMeta(service.name, now.startAt, now.endAt),
         chips = info?.chips.orEmpty(),
         badge = when {
-            now.recording -> "● 録画中"
+            now.recording -> RECORDING_BADGE
             now.reserved -> "録画予約済み"
             else -> null
         },

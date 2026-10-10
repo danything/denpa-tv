@@ -44,7 +44,7 @@ class DenpaApi(
     /**
      * どこまで観たかを預ける (`POST /api/recordings/<id>/resume`)。秒で渡す。
      * 末尾 (尺の 30 秒手前より後) を渡すと、denpa は続きを消し (次に開いたときエンドロールから始まらないように)、
-     * 観終えた印 (`watchedAt`。v1.45.0 から) を付ける
+     * 観終えた印 (`watchedAt`) を付ける
      */
     suspend fun saveResume(base: URI, id: Long, atSeconds: Double, lengthSeconds: Double) =
         withContext(Dispatchers.IO) {
@@ -61,13 +61,7 @@ class DenpaApi(
      * 予約は番組ごとに1本なので、何度押しても二重には録らない
      */
     suspend fun recordNow(base: URI, serviceId: Long): RecordResult = withContext(Dispatchers.IO) {
-        val url = BaseUrl.resolve(base, "api/services/$serviceId/record") ?: return@withContext RecordResult.Failed("URL を組み立てられません")
-        val res = try {
-            Http.request(url, "POST", token = token())
-        } catch (_: IOException) {
-            return@withContext RecordResult.Failed("denpa に届きません")
-        }
-        if (res.code == 401) throw Unauthorized(url)
+        val res = call(base, "api/services/$serviceId/record", "POST") ?: return@withContext RecordResult.Failed("denpa に届きません")
         val body = runCatching { lenientJson.decodeFromString(RecordResponse.serializer(), res.text()) }.getOrNull()
         when {
             res.ok && body?.recorded != null -> RecordResult.Recorded(body.recorded, body.reserved)
@@ -79,14 +73,7 @@ class DenpaApi(
 
     /** 番組の中身。無い・読めないときは null */
     suspend fun recordingDetail(base: URI, id: Long): RecordingDetail? = withContext(Dispatchers.IO) {
-        val url = BaseUrl.resolve(base, "api/recordings/$id/detail") ?: return@withContext null
-        val res = try {
-            Http.request(url, token = token())
-        } catch (_: IOException) {
-            return@withContext null
-        }
-        if (res.code == 401) throw Unauthorized(url)
-        if (!res.ok) return@withContext null
+        val res = call(base, "api/recordings/$id/detail")?.takeIf { it.ok } ?: return@withContext null
         runCatching { lenientJson.decodeFromString(RecordingDetail.serializer(), res.text()) }.getOrNull()
     }
 
@@ -96,27 +83,26 @@ class DenpaApi(
      * 形がずれていても読めるところは読む (`parseProgramInfo`)
      */
     suspend fun program(base: URI, id: Long): ProgramLookup = withContext(Dispatchers.IO) {
-        val url = BaseUrl.resolve(base, "api/programs/$id") ?: return@withContext ProgramLookup.Missing
-        val res = try {
-            Http.request(url, token = token())
-        } catch (_: IOException) {
-            return@withContext ProgramLookup.Missing
-        }
-        if (res.code == 401) throw Unauthorized(url)
-        if (!res.ok) return@withContext ProgramLookup.Missing
+        val res = call(base, "api/programs/$id")?.takeIf { it.ok } ?: return@withContext ProgramLookup.Missing
         parseProgramInfo(res.text(), warn)?.let { ProgramLookup.Found(it) } ?: ProgramLookup.Missing
     }
 
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。もう無い (404) のも消せたとみなして true。録画中 (409) などは false */
     suspend fun deleteRecording(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
-        val url = BaseUrl.resolve(base, "api/recordings/$id") ?: return@withContext false
+        val res = call(base, "api/recordings/$id", "DELETE") ?: return@withContext false
+        res.ok || res.code == 404
+    }
+
+    /** 鍵を付けて頼む。URL を組めない・届かなければ null。401 は `Unauthorized` */
+    private fun call(base: URI, path: String, method: String = "GET"): Http.Response? {
+        val url = BaseUrl.resolve(base, path) ?: return null
         val res = try {
-            Http.request(url, "DELETE", token = token())
+            Http.request(url, method, token = token())
         } catch (_: IOException) {
-            return@withContext false
+            return null
         }
         if (res.code == 401) throw Unauthorized(url)
-        res.ok || res.code == 404
+        return res
     }
 
     /**
@@ -200,8 +186,6 @@ private data class DeviceToken(val token: String)
 @Serializable
 data class DeviceCode(
     val deviceCode: String,
-    val userCode: String,
-    val verificationUri: String,
     val verificationUriComplete: String,
     val expiresIn: Int,
     val interval: Int = 5,
@@ -209,11 +193,11 @@ data class DeviceCode(
 
 sealed interface TokenResult {
     data class Granted(val token: String) : TokenResult
-    /** `authorization_pending` / `slow_down` / `access_denied` / `expired_token` / `invalid_grant` など */
+    /** `authorization_pending` / `slow_down` / `expired_token` / `invalid_grant` など */
     data class Error(val error: String) : TokenResult
 }
 
-/** `api/health` の答え。`version` はリリースのタグ (`v1.44.0`。手元・develop は `dev`)、版を返さない古い denpa では null */
+/** `api/health` の答え。`version` はリリースのタグ (`v1.44.0`。手元・develop は `dev`)、版を返さないとても古い denpa では null */
 data class DenpaHealth(val version: String?)
 
 /**

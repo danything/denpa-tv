@@ -9,7 +9,7 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 
     companion object {
         /**
-         * `api/health` の `version` (リリースのタグ。`v1.44.0`、昔は `1.23.1` のように v の無いものも) を読む。
+         * `api/health` の `version` (リリースのタグ。`v1.44.0`。v の無いものも読む) を読む。
          * 手元・develop の `dev` やタグでないもの (手で焼いたイメージ) は null
          */
         fun parse(tag: String): DenpaVersion? {
@@ -23,17 +23,17 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 
 /**
  * このアプリが要る denpa の版 (README の「対応する denpa の版」)。いちばん新しく足された口に合わせる:
- * ライブの「録画」(`POST api/services/<id>/record`) と局の `now.reserved`・`now.recording`・`now.id` が 1.40.0 から
+ * 字幕の文字の配置 (生TSの字幕の口の 0x22・焼いた録画の `captions.json`) が 1.50.0 から
  */
-val MIN_DENPA = DenpaVersion(1, 40, 0)
+val MIN_DENPA = DenpaVersion(1, 50, 0)
 
 /**
  * 繋いだ denpa が古すぎれば、画面に出す1行。足りていれば・分からなければ (`dev` など) null。
- * `version` が無い (null) のは `api/health` が版を返す前 (1.8.0 より前) の denpa。
+ * `version` が無い (null) のは版を返さないとても古い denpa。
  * **古くても止めない** (読める口は読み、無い口は出ないだけ)。言うだけ
  */
 fun denpaTooOld(version: String?): String? {
-    if (version == null) return "denpa $MIN_DENPA 以上が要ります (いまは v1.8.0 より前)"
+    if (version == null) return "denpa $MIN_DENPA 以上が要ります"
     val running = DenpaVersion.parse(version) ?: return null
     return if (running < MIN_DENPA) "denpa $MIN_DENPA 以上が要ります (いまは $running)" else null
 }

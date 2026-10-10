@@ -74,14 +74,14 @@ class UpdateTest {
         assertEquals(emptyMap<String, String>(), parseSha256Sums("abc  x.apk"))
     }
 
-    private fun release(tag: String, vararg assets: String, prerelease: Boolean = false, draft: Boolean = false) =
-        GitHubRelease(tag, draft, prerelease, assets.map { GitHubAsset(it, "https://example.invalid/$tag/$it") })
+    private fun release(tag: String, vararg assets: String, draft: Boolean = false) =
+        GitHubRelease(tag, draft, assets.map { GitHubAsset(it, "https://example.invalid/$tag/$it") })
 
     @Test
     fun いちばん新しい版を選ぶ_試し版も含む() {
         val releases = listOf(
             release("v0.5.0", "denpa-tv-0.5.0.apk", "SHA256SUMS", draft = true),
-            release("v0.4.1-rc.1", "denpa-tv-0.4.1-rc.1.apk", "SHA256SUMS", prerelease = true),
+            release("v0.4.1-rc.1", "denpa-tv-0.4.1-rc.1.apk", "SHA256SUMS"),
             release("v0.4.0", "denpa-tv-0.4.0.apk", "SHA256SUMS"),
             release("v0.3.0", "denpa-tv-0.3.0.apk", "SHA256SUMS"),
         )

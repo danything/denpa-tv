@@ -19,9 +19,6 @@ class TwoPress(private val windowMs: Long = 4_000) {
         }
     }
 
-    /** いま「もう一度押すと…」の状態か */
-    fun armed(now: Long): Boolean = armedAt?.let { now - it <= windowMs } ?: false
-
     fun reset() {
         armedAt = null
     }

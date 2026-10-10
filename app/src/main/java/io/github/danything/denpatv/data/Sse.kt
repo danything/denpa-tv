@@ -84,7 +84,7 @@ object Sse {
      * 何も届かずにこれだけ経ったら死んだ繋ぎと見なす。denpa は 25 秒おきに `ping` を送る (denpa の docs/api.md)。
      * 読みの時間切れで見るので、番犬は要らない
      */
-    const val SILENCE_MS = 60_000
+    private const val SILENCE_MS = 60_000
 
     /**
      * `url` に繋いで、届いた1件ずつを `onEvent` に渡す。切れたら (時間切れも) IOException、401 なら Unauthorized で戻る。

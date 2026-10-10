@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
             link.value = DeepLink.parse(intent?.dataString)
         }
         // 新しい版があるか (12 時間に1回まで。届かなくても黙っている)。プロセスごとに1回なので、プロセスが落ちて
-        // 作り直したときも確かめる (許可の画面にいる間に閉じられて戻ったときに、続けて入れるため。denpa-tv#32)
+        // 作り直したときも確かめる (許可の画面にいる間に閉じられて戻ったときに、続けて入れるため)
         app.updater.checkOnStart()
         setContent { DenpaTv(app, link) }
     }

@@ -63,7 +63,7 @@ internal fun TextCaptionLayer(page: CaptionPage, font: CaptionFont, inset: () ->
     val modifier = Modifier
         .fillMaxSize()
         // 下に重ねたもの (帯・メニュー) があれば、字のある行がその上に来るまで持ち上げる
-        .liftCaptions(inset) { _, height -> page.top * height / page.planeHeight to page.bottom * height / page.planeHeight }
+        .liftCaptions(inset) { height -> page.top * height / page.planeHeight to page.bottom * height / page.planeHeight }
         // 読み上げ (と smoke が出たかを見るの) に、字幕の文
         .semantics { contentDescription = page.text }
     androidx.compose.foundation.Canvas(modifier) {

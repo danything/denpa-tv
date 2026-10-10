@@ -128,7 +128,7 @@ enum class ChaseEnd { Finished, Lost }
  * いまの位置から繋ぎ直す (denpa の入れ替え・焼き直し)。
  *
  * - `stillRecording` … 終わったあとに denpa に聞いた、まだ録っているか。聞けなければ null (denpa が入れ替わっている最中なので、切れた)
- * - `durationMs` … 録り終えた長さ。分からなければ最後まで観たことにする (前と同じ)
+ * - `durationMs` … 録り終えた長さ。分からなければ最後まで観たことにする
  * - `pictured` … この頼みで絵を出したか。録り終えた録画を頼み直して何も映らずに終わったなら、もう続きは無い (繰り返さない)
  */
 fun chaseEnd(stillRecording: Boolean?, positionMs: Long, durationMs: Long?, pictured: Boolean): ChaseEnd = when {
@@ -139,4 +139,4 @@ fun chaseEnd(stillRecording: Boolean?, positionMs: Long, durationMs: Long?, pict
 }
 
 /** 録り終えた録画で、尻からこれより手前で終わったら切れたとみなす (ミリ秒)。頼む位置は秒に丸めるので、そのずれより十分大きく */
-const val CHASE_END_MARGIN_MS = 30_000L
+private const val CHASE_END_MARGIN_MS = 30_000L

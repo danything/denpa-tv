@@ -11,7 +11,7 @@ package io.github.danything.denpatv.data
  */
 object Chase {
     /** 最新から手前に置く余白 (ミリ秒) */
-    const val EDGE_MS = 10_000L
+    private const val EDGE_MS = 10_000L
 
     fun recordedMs(startAt: Long, now: Long): Long = (now - startAt).coerceAtLeast(0)
 

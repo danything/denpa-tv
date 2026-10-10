@@ -101,7 +101,6 @@ fun SetupScreen(app: DenpaApp) {
                     val outcome = pollForToken(step.code, { api.deviceToken(step.base, step.code.deviceCode) })
                     when (outcome) {
                         is PairingOutcome.Paired -> app.settings.connect(step.base.toString(), outcome.token)
-                        PairingOutcome.Denied -> message = "denpa で断られました"
                         PairingOutcome.Expired -> message = "時間切れです (10 分)。もう一度やり直してください"
                         is PairingOutcome.Failed -> message = "登録できませんでした (${outcome.reason})"
                     }

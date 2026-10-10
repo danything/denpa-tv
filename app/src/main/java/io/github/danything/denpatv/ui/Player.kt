@@ -2,6 +2,7 @@ package io.github.danything.denpatv.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.view.View
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -56,8 +57,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
-import androidx.media3.common.text.Cue
-import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DataSource
@@ -67,7 +66,6 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.metadata.Chapter
-import androidx.media3.ui.SubtitleView
 import io.github.danything.denpatv.data.EMPTY_STREAM_MESSAGE
 import io.github.danything.denpatv.data.EmptyGuardDataSource
 import io.github.danything.denpatv.data.EmptyStreamException
@@ -197,8 +195,7 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
  * 取り戻す** (閉じたものが消える間・帯が勝手に消えたとき・端末によって遅れて合いが外れる場合も)。
  * 開いている間と、画面を離れるとき (一覧に戻る間に一覧が合いを取るので、取り返さない) は `active = false`
  *
- * 字幕は `SubtitleView` (View) で出す。焼いたものの字幕は PGS (絵) で、Compose の部品はまだ絵の字幕を描けない。
- * **字幕は、下に重ねたもの (知らせ・`above` の帯やメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
+ * **字幕 (`captions`) は、下に重ねたもの (知らせ・`above` の帯やメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -214,7 +211,7 @@ fun PlayerFrame(
     onCenter: (CenterPress.Action) -> Unit = {},
     /** 知らせの下に出す進み (ライブの番組の進み)。null なら出さない */
     progress: Pair<Long, Long>? = null,
-    /** denpa から別に受け取る字幕 (`rememberRawCaptions`・`rememberCaptionPages`)。焼いた映像の字幕の上、知らせの下に重ねる */
+    /** denpa から受け取る字幕 (`rememberRawCaptions`・`rememberCaptionPages`)。知らせの下に重ねる */
     captions: CaptionState,
     /** 映るまでの間に出す、何をしているか (ライブは「選局しています」)。流れが届いたら「映像を待っています」に替わる */
     busyLabel: String = "読み込んでいます",
@@ -229,22 +226,6 @@ fun PlayerFrame(
     /** 下に重ねたものの高さ。字幕をその上へ逃がす */
     val insets = remember { OverlayInsets() }
     val inset = rememberCaptionInset(insets)
-    /** いま出している字幕 (`SubtitleView` に渡し、どこまで逃がすかも見る) */
-    var cues by remember { mutableStateOf(emptyList<Cue>()) }
-    val captionSpan = remember { { width: Int, height: Int -> cueSpan(cues, width, height) } }
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            override fun onCues(cueGroup: CueGroup) {
-                cues = cueGroup.cues
-            }
-        }
-        player.addListener(listener)
-        onDispose {
-            player.removeListener(listener)
-            // プレーヤーを作り直したら、前のプレーヤーの字幕を残さない
-            cues = emptyList()
-        }
-    }
     LaunchedEffect(active) {
         if (!active) return@LaunchedEffect
         // 閉じたものが消えるのを1こま待ってから合わせ、その後も外れたら取り戻す
@@ -272,7 +253,7 @@ fun PlayerFrame(
     ) {
         PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
         AndroidView(
-            factory = ::SubtitleView,
+            factory = ::View,
             /*
              * **流している間は画面を点けたままにする** (スクリーンセーバーを出さない)。この画面の View に付けるので、
              * 画面を離れれば一緒に外れる (ComposeView に付けると、次の画面と取り合って消し合う)
@@ -280,12 +261,10 @@ fun PlayerFrame(
             update = { view ->
                 // 繋ぎ直している間も (点けっぱなしで戻ってきたときに映っていてほしい)
                 view.keepScreenOn = loading.awake || recovery.active
-                view.setCues(cues)
             },
             // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
             onReset = { view -> view.keepScreenOn = false },
             onRelease = { view -> view.keepScreenOn = false },
-            modifier = Modifier.fillMaxSize().liftCaptions(inset, captionSpan),
         )
         CaptionLayer(captions, inset)
         if (error == null) LoadingVeil(loading, busyLabel, recovery)

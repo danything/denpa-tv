@@ -9,8 +9,8 @@ import java.net.URI
 val lenientJson = Json { ignoreUnknownKeys = true }
 
 /**
- * denpa の API を叩く素の HTTP。**OS の HttpURLConnection で足りる** — 叩くのは家の LAN の
- * denpa の JSON だけで、HTTP/2 も QUIC も効かない (docs/libraries.md)。呼ぶ側が IO の上で呼ぶ
+ * 素の HTTP (denpa の API・GitHub のリリース・小さな画像)。**OS の HttpURLConnection で足りる** — 大きな流れは無く、
+ * HTTP/2 も QUIC も効かない (docs/libraries.md)。呼ぶ側が IO の上で呼ぶ
  */
 object Http {
     const val CONNECT_TIMEOUT_MS = 10_000
@@ -37,7 +37,7 @@ object Http {
             connection.requestMethod = method
             connection.instanceFollowRedirects = true
             // GET 以外には本文が無くても Content-Type を付ける。denpa (SvelteKit) は Content-Type も Origin も無い
-            // GET 以外を「よそのサイトからのフォーム送信」と見なして 403 で断る (本文の無い DELETE が消せなかった)
+            // GET 以外を「よそのサイトからのフォーム送信」と見なして 403 で断る
             if (method != "GET") connection.setRequestProperty("Content-Type", "application/json")
             if (json != null) {
                 connection.doOutput = true

@@ -95,13 +95,6 @@ fun BoxScope.ControlBar(
     onActivity: () -> Unit = {},
     /** 操作の列から下キーで合わせる先 (ライブの局の列の、いま映している局)。null なら近いものへ */
     down: FocusRequester? = null,
-    /**
-     * 帯の中に合いを持ち続けるか。**合わせるものがある帯では必ず** (既定)。合っていた札が消えた (「最新」に追いついた)・
-     * 戻るの取り合いで合いが外れた、のどれでも、帯の中に合いが無ければ操作の列に戻す — 開いたまま合いがどこにも無いと
-     * リモコンが効かなくなる (戻るでしか閉じられない、止めている間は勝手にも閉じない)。
-     * **帯の上に別の合わせ先 (ダイアログなど) を重ねるときは false にする** — 重ねたものから合いを取り返し続けてしまう
-     */
-    holdFocus: Boolean = groups.any { it.second.isNotEmpty() },
     /** 操作の列の下に足すもの (ライブの局の列) */
     below: (@Composable ColumnScope.() -> Unit)? = null,
     /**
@@ -114,6 +107,11 @@ fun BoxScope.ControlBar(
 ) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (focusActions) runCatching { first.requestFocus() } }
+    /*
+     * 合わせるものがある帯では、帯の中に合いを持ち続ける。合っていた札が消えた (「最新」に追いついた)・戻るの取り合いで
+     * 合いが外れた、のどれでも、帯の中に合いが無ければ操作の列に戻す — 開いたまま合いがどこにも無いとリモコンが効かなくなる
+     */
+    val holdFocus = groups.any { it.second.isNotEmpty() }
     /** 帯の中 (札・シークバー・局の列) に合いがあるか */
     var inside by remember { mutableStateOf(false) }
     LaunchedEffect(holdFocus) {

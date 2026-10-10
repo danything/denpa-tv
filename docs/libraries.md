@@ -8,14 +8,14 @@
 | もの | 版 | メモ |
 | --- | --- | --- |
 | Android Gradle Plugin | 9.4.1 | 2026-09 の安定版。Gradle 9.6 以上・JDK 17 以上・compileSdk は 37 まで ([AGP 9.4 リリースノート](https://developer.android.com/build/releases/agp-9-4-0-release-notes))。AGP 9 は Kotlin を内蔵しているので `org.jetbrains.kotlin.android` は付けない |
-| Gradle | 9.8.0 | 2026-10 時点の最新 ([services.gradle.org](https://services.gradle.org/versions/current)) |
-| Kotlin (Compose / serialization のコンパイラプラグイン) | 2.4.20 | Maven Central の最新の安定版 |
+| Gradle | 9.8.1 | 2026-10 時点の最新 ([services.gradle.org](https://services.gradle.org/versions/current)) |
+| Kotlin (Compose / serialization のコンパイラプラグイン) | 2.4.21 | Maven Central の最新の安定版 |
 | Compose BOM | 2026.09.00 | |
 | Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンの帯) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューの3つのアイコンは Material Symbols、再生の操作の札の印は Material Icons (どちらも Apache License 2.0) を vector drawable として置いた (アイコンのライブラリは入れない) |
 | `androidx.tv:tv-foundation` | **使わない** | TV 用の Lazy レイアウトは alpha11 で非推奨、alpha12 で削除済み。普通の Compose の `LazyRow` / `LazyColumn` で足りる (同ノート) |
 | Navigation 3 (`androidx.navigation3`) | 1.2.0 | 戻る履歴をただのリストとして持つ Compose 向けの新しい Navigation。行き先は `@Serializable` のクラス。**minSdk 24 を求める** ので、アプリの minSdk もこれに合わせた |
 | DataStore Preferences | 1.2.1 | 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・アップデートを確かめた時刻を覚える。SharedPreferences の後継 |
-| Media3 (ExoPlayer) | 1.11.1 | 2026-09-10 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/media3))。minSdk 23 |
+| Media3 (ExoPlayer) | 1.11.1 | 2026-09-10 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/media3))。minSdk 23。入れるのは `media3-exoplayer` と、映像の面 (`PlayerSurface`) の `media3-ui-compose` だけ (View の `media3-ui` は入れない。字幕は自分で描く) |
 
 ### minSdk 24 (Android 7.0)
 
@@ -26,13 +26,11 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 
 - **fragmented MP4 (H.264 / AV1)** — denpa のライブ (`api/services/<id>/live`) と追っかけ (`api/recordings/<id>/chase`)。ExoPlayer の
   `FragmentedMp4Extractor` が読む。流しっぱなし (長さ不明) でもそのまま再生できる
-- **Matroska (.mkv)** — denpa の焼いた録画。`MatroskaExtractor` が読む。**字幕の PGS
-  (`S_HDMV/PGS`) にも対応している** ([MatroskaExtractor のソース](https://github.com/androidx/media/blob/release/libraries/extractor/src/main/java/androidx/media3/extractor/mkv/MatroskaExtractor.java))。
-  絵の字幕なので、出すのは Media3 の `SubtitleView` (View)。Compose の部品はまだ絵の字幕を描けない。
-  新しく焼いた録画の字幕 (`S_ARIBSUB`、放送の字幕のまま) は読まないので、denpa の `captions.json` (下の文字の配置) で出す
+- **Matroska (.mkv)** — denpa の焼いた録画。`MatroskaExtractor` が読む。字幕 (`S_ARIBSUB`、放送の字幕のまま) は読まないので、
+  denpa の `captions.json` (下の文字の配置) で出す
 - **MPEG-TS (MPEG-2)** — 焼く前の録画と、ライブ・追っかけの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
 - **ARIB の字幕は Media3 では解かない。** Media3 に ARIB の字幕の読み手は無く、libaribcaption を NDK で抱えるのは重い。
-  denpa が解いて置き場所まで決めた**文字の配置** (放送の PTS 付き。古い denpa は描いた絵) を受け取り、android の Canvas で描いて重ねる
+  denpa が解いて置き場所まで決めた**文字の配置** (放送の PTS 付き) を受け取り、android の Canvas で描いて重ねる
   (`ui/RawCaptions.kt`・`ui/TextCaptions.kt`。描き方は denpa のブラウザの `caption-draw.ts` に揃える。字は丸ゴシックを APK に入れて
   `Typeface.createFromAsset` で読む。下の「字幕の字」)。
   時計は **TsExtractor に自分の `TimestampAdjuster` を渡して**控え、寄せ幅 (`getTimestampOffsetUs`) で再生位置を放送の
@@ -89,8 +87,7 @@ OkHttp (と Retrofit / Ktor) を採らない理由:
 
 - **denpa は家の LAN の素の HTTP/1.1。** HTTP/2・HTTP/3 が効くのは CDN 越しの適応配信で
   (同じ頁もそう書いている)、LAN の1本の流れでは OkHttp でも OS の HTTP でも同じ
-- 前は「API・画像・映像で同じ OkHttp を分け合える」のが理由だったが、画像のライブラリも外したので
-  (下記) その理由が無くなった。Media3 の勧め (HttpEngine) に乗るほうが依存が少ない
+- 画像のライブラリも入れない (下記) ので、OkHttp を分け合う相手が無い。Media3 の勧め (HttpEngine) に乗るほうが依存が少ない
 
 **キャッシュ (`CacheDataSource`) は使わない。** ライブは流しっぱなしの1本で、溜めても二度と読まない。
 録画は LAN の denpa から読むので、端末に溜めても速くならず、テレビの少ない容量を食うだけ。
@@ -186,13 +183,13 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 
 ### 字幕の字: 丸ゴシックを APK に入れる ([danything/denpa-font](https://github.com/danything/denpa-font)、SIL OFL 1.1)
 
-2026-10-10 に決めた。字幕の文字の配置は、denpa が字幕を焼いていたのと同じ字 (Denpa Font。等幅・丸ゴシック・ARIB の外字を持つ)
-で描かないと、ブラウザ・焼いていた頃と字の幅や形が揃わない。
+字幕の文字の配置は、ブラウザの denpa と同じ字 (Denpa Font。等幅・丸ゴシック・ARIB の外字を持つ)
+で描かないと、ブラウザと字の幅や形が揃わない。
 
 - **焼くときに取ってきて assets に入れる** (`app/build.gradle.kts` の `fetchCaptionFont`)。ttf は 4.2MB あるのでリポジトリには置かない。
   リリースの ttf を版 (タグ) で留めて取り、同じリリースの SHA256SUMS で照らす。版は denpa の Dockerfile の `DENPA_FONT_VERSION` と揃え、
   Renovate が新しいリリースのタグを上げる (`renovate.json` の customManagers)
-- assets は縮めて入る (4.2MB → 2.1MB。APK は 4.4MB。前の Rounded M+ 1m for ARIB (5.5MB) のときは 5.2MB)。読むのは初めて字幕を描くときに1度だけ (`Typeface.createFromAsset`。
+- assets は縮めて入る (4.2MB → 2.1MB)。読むのは初めて字幕を描くときに1度だけ (`Typeface.createFromAsset`。
   縮めた asset は開くときに解くので、4.2MB を1度メモリに持つ)。読めなければ端末の字で描く
 - denpa の `api/font/denpa-font.woff2` からは取らない (配っているのはブラウザ向けの woff2 で、Android の Typeface は読めない)
 - 許諾は SIL OFL 1.1 (元の源柔ゴシック等幅 = 源ノ角ゴシック + M+ OUTLINE FONTS と同じ。原文は denpa-font の README)。

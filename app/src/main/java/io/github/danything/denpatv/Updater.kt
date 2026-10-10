@@ -128,10 +128,9 @@ enum class InstallStep {
 /**
  * 許可が見えるか (`allowed` = `canRequestPackageInstalls()`)、REQUEST_INSTALL_PACKAGES の appop (`appop`。Android 7.x は null)、
  * この版でもう許可の画面へ送ったか (`asked`) から決める。
- * **許可が見えなくても、一度送ったあとはセッションで入れてみる**: テレビによっては許可しても false のまま (denpa-tv#32 の
- * BRAVIA。設定には「許可」と出るのに appop は未設定のまま)、許可の画面と行き来するだけになる。本当に許可されていなければ、OS が確認の画面で尋ねるか断る。
+ * **許可が見えなくても、一度送ったあとはセッションで入れてみる**: テレビによっては許可しても false のまま (BRAVIA。設定には「許可」と出るのに appop は未設定のまま)、許可の画面と行き来するだけになる。本当に許可されていなければ、OS が確認の画面で尋ねるか断る。
  * ただ**はっきり拒否** (MODE_ERRORED) なら入れてみない: 確認の画面を経て拒否になったのなら、また尋ねても同じなので
- * 許可の画面を直接開く (denpa-tv#32 のログ。確認の画面のあとに 2 になり、押し直しても入らなかった)
+ * 許可の画面を直接開く
  */
 fun installStep(allowed: Boolean, appop: Int?, asked: InstallRequest?, version: String, now: Long): InstallStep = when {
     allowed -> InstallStep.Install
@@ -199,8 +198,7 @@ class Updater(private val app: DenpaApp) {
     }
 
     /**
-     * 画面に戻った (MainActivity の onResume)。許可の画面から戻ったら**もう一度押さなくても続けて入れる**
-     * (denpa-tv#32。前は「もう一度押してください」と出したまま待っていた)。許可が見えなくても入れてみる (`installStep`)
+     * 画面に戻った (MainActivity の onResume)。許可の画面から戻ったら**もう一度押さなくても続けて入れる**。許可が見えなくても入れてみる (`installStep`)
      */
     fun resume() {
         val state = _state.value as? UpdateState.NeedsPermission ?: return
@@ -301,7 +299,7 @@ class Updater(private val app: DenpaApp) {
             is UpdateState.NeedsPermission -> start(state.update, state.file?.takeIf { it.exists() })
             is UpdateState.Failed -> start(state.update, state.file?.takeIf { it.exists() })
             // 確認の画面を戻るで閉じると、OS から何も返らないことがある。押せばもう一度出す
-            // (セッションを書いている最中 = 確認の画面を出す前・出した直後は何もしない。denpa-tv#32 で続けて押されて作り直し続けた)
+            // (セッションを書いている最中 = 確認の画面を出す前・出した直後は何もしない。続けて押されても作り直さない)
             is UpdateState.Installing -> when {
                 !state.confirming -> Unit
                 !reopenConfirm(confirmShownAt, SystemClock.elapsedRealtime()) -> Log.i(TAG, "確認の画面を出したばかりなので、押されても出し直しません")
@@ -376,7 +374,7 @@ class Updater(private val app: DenpaApp) {
     private fun start(update: Update, downloaded: File?) {
         // 先に「不明なアプリのインストール」を確かめる (取ってきてから断られると無駄になる)
         // 許可して戻ったら続けて入れる (`resume`)。アプリが閉じられても開き直したときに続けられるよう、先に覚えておく。
-        // 一度送ったあとは、許可が見えなくても入れてみる (`installStep`。denpa-tv#32)
+        // 一度送ったあとは、許可が見えなくても入れてみる (`installStep`)
         // はっきり拒否なら、送ったあとでも入れてみずに許可の画面を開き直す
         val allowed = allowedToInstall()
         val appop = appop()
@@ -426,7 +424,7 @@ class Updater(private val app: DenpaApp) {
     }
 
     /**
-     * 許可まわりをログに書くための1行 (denpa-tv#32: 許可したのに canRequestPackageInstalls が false のテレビがある)。
+     * 許可まわりをログに書くための1行 (許可したのに canRequestPackageInstalls が false のテレビがある)。
      * `appop` は REQUEST_INSTALL_PACKAGES の mode (0 許可・1 無視・2 断る・3 既定)、`制限` はユーザーの制限
      */
     private fun permissionReport(): String = buildString {
@@ -503,7 +501,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * PackageInstaller のセッションで入れる。結果は `onStatus` に返る。
-     * 1本ずつ: 前のセッションを書いている・渡している最中に捨てない (denpa-tv#32 で書いている途中に捨てて EPIPE になった)
+     * 1本ずつ: 前のセッションを書いている・渡している最中に捨てない (書いている途中に捨てると EPIPE になる)
      */
     private suspend fun install(update: Update, file: File) = sessions.withLock {
         _state.value = UpdateState.Installing(update, file)
@@ -651,7 +649,7 @@ class Updater(private val app: DenpaApp) {
         const val CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000L
         const val STATUS_TIMEOUT_MS = 30_000L
         const val ACTION_STATUS = "io.github.danything.denpatv.UPDATE_STATUS"
-        /** BRAVIA は未設定でも設定に「許可」と出す (denpa-tv#32)。一度オフにしてオンにすると許可が書かれる */
+        /** BRAVIA は未設定でも設定に「許可」と出す。一度オフにしてオンにすると許可が書かれる */
         const val RETOGGLE = "許可と出ていても一度オフにしてオンに"
         /** AppOpsManager の OPSTR_REQUEST_INSTALL_PACKAGES (SDK には出ていない名前) */
         const val OPSTR_REQUEST_INSTALL_PACKAGES = "android:request_install_packages"
