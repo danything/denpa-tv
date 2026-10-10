@@ -29,7 +29,7 @@ import kotlin.math.roundToInt
 
 /**
  * **字幕を、下に重ねたものの上へ逃がす。** 操作の帯・ライブのメニュー・知らせ (下の端に出すもの) が自分の高さを知らせ
- * (`rememberCoverReport`)、字幕の層 (Media3 の `SubtitleView`・生の TS の `RawCaptionLayer`) はいちばん高いものの上へ
+ * (`rememberCoverReport`)、字幕の層 (Media3 の `SubtitleView`・denpa から受け取る字幕の `CaptionLayer`) はいちばん高いものの上へ
  * 持ち上がる (`liftCaptions`)。決め方は `captionLift`。`PlayerFrame` が1つ持って、上に重ねるものへ渡す (`LocalOverlayInsets`)
  */
 @Stable

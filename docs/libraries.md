@@ -28,10 +28,13 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
   `FragmentedMp4Extractor` が読む。流しっぱなし (長さ不明) でもそのまま再生できる
 - **Matroska (.mkv)** — denpa の焼いた録画。`MatroskaExtractor` が読む。**字幕の PGS
   (`S_HDMV/PGS`) にも対応している** ([MatroskaExtractor のソース](https://github.com/androidx/media/blob/release/libraries/extractor/src/main/java/androidx/media3/extractor/mkv/MatroskaExtractor.java))。
-  絵の字幕なので、出すのは Media3 の `SubtitleView` (View)。Compose の部品はまだ絵の字幕を描けない
+  絵の字幕なので、出すのは Media3 の `SubtitleView` (View)。Compose の部品はまだ絵の字幕を描けない。
+  新しく焼いた録画の字幕 (`S_ARIBSUB`、放送の字幕のまま) は読まないので、denpa の `captions.json` (下の文字の配置) で出す
 - **MPEG-TS (MPEG-2)** — 焼く前の録画と、ライブ・追っかけの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
 - **ARIB の字幕は Media3 では解かない。** Media3 に ARIB の字幕の読み手は無く、libaribcaption を NDK で抱えるのは重い。
-  denpa が描いた絵 (放送の PTS 付き) を受け取って、Compose の Canvas で重ねる (`ui/RawCaptions.kt`)。
+  denpa が解いて置き場所まで決めた**文字の配置** (放送の PTS 付き。古い denpa は描いた絵) を受け取り、android の Canvas で描いて重ねる
+  (`ui/RawCaptions.kt`・`ui/TextCaptions.kt`。描き方は denpa のブラウザの `caption-draw.ts` に揃える。字は denpa の `api/font?format=ttf` を
+  1度だけ取って `Typeface` で読む。woff2 は Typeface で読めない)。
   時計は **TsExtractor に自分の `TimestampAdjuster` を渡して**控え、寄せ幅 (`getTimestampOffsetUs`) で再生位置を放送の
   PTS に戻す。読み手は `DefaultExtractorsFactory` と同じ作りで、ほかの形はそのまま (`TsClock`)。
   PES を自分で覗いて最初の PTS を拾う手もあるが、Media3 がどの PES の PTS を 0 にしたかと食い違いうる (映像と音声で数百 ms 違う)。
@@ -71,7 +74,7 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
 読み 30 秒と書いてある)。叩くのは局と録画の一覧・番組の中身 (`detail`・`api/programs/<id>`)・観た位置・いまの番組の録画・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
-生の TS の字幕の絵 (`api/…/captions`、長さ付きのこまが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。
+生の TS の字幕 (`api/…/captions`、長さ付きのこまが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。焼いた録画の字幕 (`captions.json`) と字幕の字 (`api/font`) も同じ。
 
 → **アプリの中のアップデート (GitHub のリリースを引く・APK を取る) も HttpURLConnection** (`data/Update.kt`)。入れるのは OS の
 `PackageInstaller` のセッション (`Updater.kt`)。アップデートのライブラリは入れない。

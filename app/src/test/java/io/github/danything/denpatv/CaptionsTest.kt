@@ -6,6 +6,8 @@ import io.github.danything.denpatv.data.CaptionFrame
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.CueTimeline
 import io.github.danything.denpatv.data.Pts
+import io.github.danything.denpatv.data.lenientJson
+import io.github.danything.denpatv.data.parseCaptionPage
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -52,7 +54,7 @@ class CaptionsTest {
         }
         val tracks = CaptionFeed.read(stream) as CaptionFrame.Tracks
         assertEquals(1, tracks.count)
-        val cue = (CaptionFeed.read(stream) as CaptionFrame.Cue).cue
+        val cue = (CaptionFeed.read(stream) as CaptionFrame.Cue).cue as CaptionCue.Picture
         assertEquals(0x1_2345_6789L, cue.pts)
         assertEquals(listOf(0, 0, 1920, 1080), listOf(cue.x, cue.y, cue.width, cue.height))
         assertArrayEquals(png, cue.png)
@@ -114,7 +116,7 @@ class CaptionsTest {
         assertEquals(-180_000L, Pts.delta(Pts.WRAP - 90_000, 90_000))
     }
 
-    private fun cue(pts: Long) = CaptionCue(pts, 0, 0, 1920, 1080, ByteArray(0))
+    private fun cue(pts: Long) = CaptionCue.Picture(pts, 0, 0, 1920, 1080, ByteArray(0))
 
     @Test
     fun 時計を過ぎた中で最後の1枚を出し_前のものは捨てる() {
@@ -148,5 +150,45 @@ class CaptionsTest {
         assertEquals("api/recordings/12/captions", CaptionPaths.recording(12))
         assertEquals("api/services/1/captions", CaptionPaths.live("api/services/1/live?codec=raw"))
         assertNull(CaptionPaths.live("api/services/1/stream"))
+        assertEquals("api/recordings/12/captions.json", CaptionPaths.recordingText(12))
+        // 文字の配置で頼む。録画は読ませる位置も
+        assertEquals("?format=text", CaptionPaths.query(null))
+        assertEquals("?format=text&from=95", CaptionPaths.query(95))
+    }
+
+    private val page = """{"v":1,"plane":[960,540],"duration":null,"runs":[{"x":250,"y":450,"w":40,"h":60,"fx":2,"fy":12,"size":36,"scaleX":1,"text":"字幕","fg":"#ffffffff","bg":"#00000080"}]}"""
+
+    @Test
+    fun 文字の配置のこまを読む() {
+        val stream = input { out ->
+            frame(out, 0x22, 0x1_0000_0000L, page.toByteArray())
+            // 消す (runs が空)
+            frame(out, 0x22, 0x1_0000_1000L, """{"v":1,"plane":[960,540],"duration":null,"runs":[]}""".toByteArray())
+            // 知らない版は描かない1枚 (前の1枚は消える)
+            frame(out, 0x22, 0x1_0000_2000L, """{"v":2,"plane":[960,540],"runs":[]}""".toByteArray())
+            // JSON でなければ読み捨てる
+            frame(out, 0x22, 0x1_0000_3000L, "{".toByteArray())
+        }
+        val first = (CaptionFeed.read(stream) as CaptionFrame.Cue).cue as CaptionCue.Text
+        assertEquals(0x1_0000_0000L, first.pts)
+        assertEquals("字幕", first.page!!.text)
+        val cleared = (CaptionFeed.read(stream) as CaptionFrame.Cue).cue as CaptionCue.Text
+        assertEquals(0, cleared.page!!.runs.size)
+        assertNull(((CaptionFeed.read(stream) as CaptionFrame.Cue).cue as CaptionCue.Text).page)
+        assertSame(CaptionFrame.Other, CaptionFeed.read(stream))
+    }
+
+    @Test
+    fun 出しておく長さを過ぎたら次を待たずに消す() {
+        val timeline = CueTimeline()
+        val shown = CaptionCue.Text(90_000, parseCaptionPage(lenientJson.parseToJsonElement(page.replace("\"duration\":null", "\"duration\":3000"))))
+        timeline.add(shown)
+        assertSame(shown, timeline.at(90_000))
+        assertSame(shown, timeline.at(90_000 + 90 * 2_999L))
+        assertNull(timeline.at(90_000 + 90 * 3_000L))
+        // 長さの決まっていないものは次まで
+        val forever = CaptionCue.Text(900_000, parseCaptionPage(lenientJson.parseToJsonElement(page)))
+        timeline.add(forever)
+        assertSame(forever, timeline.at(900_000L + 90 * 600_000L))
     }
 }

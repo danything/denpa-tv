@@ -2,6 +2,7 @@ package io.github.danything.denpatv.smoke
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
@@ -21,7 +22,7 @@ import org.junit.rules.Timeout
  * **画面の絵を撮る** (README・PR に貼る絵)。CI の Screenshots の流れ (`.github/workflows/screenshots.yml`) だけが
  * `-e shots 1` を付けて走らせる。付けなければ何もしない (smoke では飛ばす)。
  *
- * 作り物の録画 (`Showcase`) を返す偽の denpa に繋ぎ、録画の一覧 (下の端・頭・長い題)・開いたメニュー・設定を
+ * 作り物の録画 (`Showcase`) を返す偽の denpa に繋ぎ、録画の一覧 (下の端・頭・長い題)・開いたメニュー・設定・録画の字幕 (`FakeCaptions`) を
  * `/data/local/tmp/shots/<名前>.png` に撮る (CI が adb pull で取ってくる)。終わりに一覧を上下に送り、こまの描き時間を測れるようにする
  * (前と後の見比べ用。読むのは scripts/shots-run.sh)
  */
@@ -78,16 +79,19 @@ class Screenshots {
             SystemClock.sleep(SETTLE_MS)
             shot("settings")
 
-            // 軽さ: 一覧に戻り、上下に送るあいだのこまを数える (読むのは scripts/shots-run.sh の dumpsys gfxinfo)
-            for (i in 0 until 6) {
-                if ("録画" in texts()) break
-                press(KeyEvent.KEYCODE_DPAD_LEFT)
-                SystemClock.sleep(KEY_GAP_MS)
-            }
-            val recordings = node { it.text?.toString() == "録画" }?.let(::clickable) ?: error("「録画」がありません: ${texts()}")
-            assertTrue("「録画」を押せません", recordings.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-            await("録画の一覧が出ません") { texts().any { "名城" in it } }
-            press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            // 録画の字幕 (作り物の文字の配置。FakeCaptions.showcase)。字が届いて描き直すのを待ってから撮る
+            val link = Intent(Intent.ACTION_VIEW, Uri.parse("denpa://recording/${Showcase.CAPTION_ID}")).setPackage(APP).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            instrumentation.context.startActivity(link)
+            await("字幕が出ません") { nodes().any { it.contentDescription?.contains("字幕を文字で描く") == true } }
+            // 開いてすぐの番組名の知らせが消えるのを待つ (出ている間は字幕がその上へ逃げている)
+            await("番組名の知らせが消えません") { texts().none { it.startsWith("下でシークバー") } }
+            SystemClock.sleep(CAPTION_SETTLE_MS)
+            shot("captions")
+
+            // 軽さ: 一覧に戻り (リンクで開いた映像から戻ると録画の一覧)、上下に送るあいだのこまを数える
+            // (読むのは scripts/shots-run.sh の dumpsys gfxinfo)
+            press(KeyEvent.KEYCODE_BACK)
+            await("録画の一覧に戻りません") { texts().any { "名城" in it } }
             SystemClock.sleep(SETTLE_MS)
             shell("dumpsys gfxinfo $APP reset")
             repeat(2) {
@@ -176,6 +180,8 @@ class Screenshots {
 
         /** 合わせてから撮るまで (上の段の絵を替える・ポスターを読む・膨らむのを待つ) */
         const val SETTLE_MS = 3_000L
+        /** 知らせが消えてから撮るまで (字幕が下りきる) */
+        const val CAPTION_SETTLE_MS = 1_000L
         const val KEY_GAP_MS = 400L
 
         /** 測るときに続けて送る数と間 (リモコンを続けて押す速さ) */

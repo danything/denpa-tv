@@ -29,6 +29,10 @@ jobs:
         with:
           # CI の流れのキャッシュを読むだけ (ここからは書かない)
           cache-read-only: true
+      # 字幕の字 (denpa が配るのと同じ丸ゴシック)。偽の denpa が api/font で返す。5MB あるのでリポジトリには置かない
+      # (版は denpa の Dockerfile の ARIB_FONT_SHA と同じ)
+      - name: Caption font
+        run: curl -fsSL -o smoke/src/main/assets/caption-font.ttf https://raw.githubusercontent.com/5ym/arib-font/a9c834099818c59ba9c3721a2b1a860f6c0af61a/rounded-mplus-1m-arib.ttf
       - name: Build APKs
         run: ./gradlew :app:assembleMinified :smoke:assembleMinified -x lintVitalMinified --console=plain
       - name: Enable KVM

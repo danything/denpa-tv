@@ -36,6 +36,9 @@ internal object Showcase {
     const val ENCODING_ID = 102L
     const val ENCODING_PERCENT = 0.42
 
+    /** 字幕を撮る録画 (続きが無いので頭から流れる) */
+    const val CAPTION_ID = 104L
+
     /** 長い題 (撮るときに合わせる) */
     const val LONG_TITLE = "凶乱令嬢ニア・リストン 病弱令嬢に転生した神殺しの武人の華麗なる無双録 #1"
 
