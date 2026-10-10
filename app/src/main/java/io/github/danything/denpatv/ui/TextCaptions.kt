@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 import java.nio.ByteBuffer
 import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.round
 
 /**
  * **字幕の文字の配置を描く** (`CaptionPage`)。denpa のブラウザの描き方 (`src/lib/components/player/caption-draw.ts`) に揃えてある。
@@ -129,11 +130,13 @@ internal class TextCaptionPainter {
         val baseline = captionBaseline(fontPx, ascent, descent)
         glyph.textSize = fontPx
         edge.textSize = fontPx
-        val top = run.y * sy
-        val bottom = (run.y + run.h) * sy
+        // 枠は画素の境目にそろえる。半端な位置のまま塗ると、隣の字との境の1画素が両方から
+        // 半分ずつしか塗られず、半透明の背景に縦の筋が出ていた。隣どうしは同じ値に丸まる
+        val top = round(run.y * sy)
+        val bottom = round((run.y + run.h) * sy)
         for (i in 0 until run.count) {
-            val left = (run.x + i * run.w) * sx
-            val right = (run.x + (i + 1) * run.w) * sx
+            val left = round((run.x + i * run.w) * sx)
+            val right = round((run.x + (i + 1) * run.w) * sx)
             if (run.bg ushr 24 != 0) {
                 fill.color = run.bg
                 canvas.drawRect(left, top, right, bottom, fill)
