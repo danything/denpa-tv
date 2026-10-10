@@ -51,6 +51,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
@@ -87,7 +88,7 @@ data class Control(
  */
 @Composable
 fun BoxScope.ControlBar(
-    title: String,
+    title: CharSequence,
     groups: List<Pair<String, List<Control>>>,
     /** 引数は操作の列の最初のもの (シークバーから下で、そこへ行けるように) */
     header: (@Composable ColumnScope.(FocusRequester) -> Unit)? = null,
@@ -205,10 +206,14 @@ fun BoxScope.BottomPanel(modifier: Modifier = Modifier, spacing: Dp, content: @C
     )
 }
 
-/** 板の題。1行目は白く、2行目からは小さく (番組名・位置など) */
+/**
+ * 板の題。1行目は白く、2行目からは小さく (番組名・位置など)。
+ * AnnotatedString なら、印 (`appendBroadcast`) の付いたところ (番組名・局名) を放送の字にする
+ */
 @Composable
-fun TitleLines(text: String) {
-    text.lines().forEachIndexed { index, line ->
+fun TitleLines(text: CharSequence) {
+    val styled = (text as? AnnotatedString ?: AnnotatedString(text.toString())).withBroadcastFont()
+    styled.splitLines().forEachIndexed { index, line ->
         Text(
             line,
             style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,

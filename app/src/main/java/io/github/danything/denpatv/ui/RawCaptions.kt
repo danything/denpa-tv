@@ -111,8 +111,8 @@ class TsClock(private val inner: DefaultExtractorsFactory = DefaultExtractorsFac
  * (`rememberRawCaptions`) と、焼いた録画の `captions.json` (`rememberCaptionPages`)。描くのは `CaptionLayer`
  */
 class CaptionState(
-    /** 文字の配置を描く字 (`DenpaApp.captionFont`) */
-    val font: CaptionFont,
+    /** 文字の配置を描く字 (`DenpaApp.denpaFont`。アプリを開いたときに読む) */
+    val font: DenpaFont,
 ) {
     /** 選べる字幕があるか。操作の列の「字幕」の札を出すかに使う */
     var available by mutableStateOf(false)
@@ -120,15 +120,6 @@ class CaptionState(
     var page by mutableStateOf<CaptionPage?>(null)
     internal val timeline = CueTimeline()
     internal var key: Any? = null
-}
-
-/** 文字の配置が出たら、字を読む (APK の assets から1度だけ。`CaptionFont`) */
-@Composable
-private fun LoadCaptionFont(state: CaptionState) {
-    val showing = state.page != null
-    LaunchedEffect(showing) {
-        if (showing) state.font.load()
-    }
 }
 
 /**
@@ -155,9 +146,8 @@ fun rememberRawCaptions(
     fromMs: (() -> Long)? = null,
     onUnauthorized: () -> Unit = {},
 ): CaptionState {
-    val state = remember { CaptionState(repo.app.captionFont) }
+    val state = remember { CaptionState(repo.app.denpaFont) }
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
-    LoadCaptionFont(state)
 
     LaunchedEffect(path, generation, enabled) {
         // 選べる字幕は局 (録画) ごと。頼み直し・シークでは消さない (札がちらつく)
@@ -240,10 +230,9 @@ fun rememberRawCaptions(
  */
 @Composable
 fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUnauthorized: () -> Unit = {}): CaptionState {
-    val state = remember { CaptionState(repo.app.captionFont) }
+    val state = remember { CaptionState(repo.app.denpaFont) }
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
     var pages by remember { mutableStateOf<CaptionPages?>(null) }
-    LoadCaptionFont(state)
 
     LaunchedEffect(path) {
         val url = repo.url(path)?.let { URI(it) } ?: return@LaunchedEffect

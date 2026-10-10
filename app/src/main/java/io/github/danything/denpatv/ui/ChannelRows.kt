@@ -212,9 +212,9 @@ private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modi
                     )
                 }
             }
-            Text(service.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(service.name, style = MaterialTheme.typography.titleSmall, fontFamily = BroadcastFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
             service.now?.title?.takeIf { it.isNotBlank() }?.let { title ->
-                Text(title, style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted, fontFamily = BroadcastFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

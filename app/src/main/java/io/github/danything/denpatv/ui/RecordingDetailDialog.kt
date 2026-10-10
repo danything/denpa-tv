@@ -89,6 +89,7 @@ internal fun recordingFacts(recording: Recording, detail: RecordingDetail?, watc
     return DetailFacts(
         title = recording.title,
         meta = programMeta(recording.serviceName, recording.startAt, end),
+        service = recording.serviceName,
         chips = (if (recording.recording) emptyList() else recording.codecLabels) + recordingAudioLabels(recording),
         badge = if (recording.recording) RECORDING_BADGE else null,
         progress = if (resume != null && length != null && length > 0) resume to length else null,

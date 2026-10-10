@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -67,8 +68,13 @@ private val Colors = darkColorScheme(
     error = Palette.Recording,
 )
 
+/**
+ * アプリの字は端末の字のまま。**放送から来た字だけ** `broadcastFonts` (Denpa Font。`BroadcastFont` で引く) で描く。
+ * null (まだ読めていない・読めない) なら端末の字
+ */
 @Composable
-fun DenpaTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = Colors, content = content)
+fun DenpaTheme(broadcastFonts: BroadcastFonts?, content: @Composable () -> Unit) =
+    CompositionLocalProvider(LocalBroadcastFont provides broadcastFonts) { MaterialTheme(colorScheme = Colors, content = content) }
 
 /**
  * **合わせたものの見せ方 (アプリ全体で同じ)。** Google TV と同じく、合わせたものは少し膨らみ (カードは 1.05、札は 1.1。

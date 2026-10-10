@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -170,7 +171,13 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     }
     LaunchedEffect(Unit) {
         val resume = recording.resumeMs ?: 0L
-        flash("録画中  ${recording.title}\n" + (if (resume > 0) "続きから (${position(from)})  " else "") + SEEK_HINT)
+        flash(
+            buildAnnotatedString {
+                append("録画中  ")
+                appendBroadcast(recording.title)
+                append("\n" + (if (resume > 0) "続きから (${position(from)})  " else "") + SEEK_HINT)
+            },
+        )
     }
     // 位置と録れた長さを取り直す。最新に追いついたら等速に
     LaunchedEffect(player) {
@@ -351,7 +358,11 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         } else bar?.let { which ->
             LaunchedEffect(which) { if (which == Bar.SeekBar) runCatching { seekFocus.requestFocus() } }
             ControlBar(
-                "録画中  ${recording.title}\n${position(at)} / ${position(length)} (録れたところまで)  ${codec.heading}",
+                buildAnnotatedString {
+                    append("録画中  ")
+                    appendBroadcast(recording.title)
+                    append("\n${position(at)} / ${position(length)} (録れたところまで)  ${codec.heading}")
+                },
                 listOf(
                     "" to listOfNotNull(
                         playControl(playing) { togglePause() },

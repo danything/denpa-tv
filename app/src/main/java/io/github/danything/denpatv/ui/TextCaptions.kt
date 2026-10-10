@@ -46,7 +46,7 @@ import kotlin.math.round
  * **描くのは替わったときだけ** (1枚が替わった・字が届いた・点滅の切り替わり)。Paint や外字の絵は使い回し、描くたびに作らない
  */
 @Composable
-internal fun TextCaptionLayer(page: CaptionPage, font: CaptionFont, inset: () -> Float) {
+internal fun TextCaptionLayer(page: CaptionPage, font: DenpaFont, inset: () -> Float) {
     val painter = remember { TextCaptionPainter() }
     /** 点滅で消えている間か */
     var dark by remember { mutableStateOf(false) }

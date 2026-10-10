@@ -56,7 +56,7 @@ import kotlinx.serialization.Serializable
 
 @Composable
 fun DenpaTv(app: DenpaApp, link: MutableState<DeepLink?>) {
-    DenpaTheme {
+    DenpaTheme(app.denpaFont.fonts) {
         val back = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
         Surface(modifier = Modifier.fillMaxSize().backKeyGoesBack(back)) {
             // 未設定 (null) と読み込み中を分ける。読み込み中は何も出さない

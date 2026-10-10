@@ -38,7 +38,7 @@ import io.github.danything.denpatv.data.keepEpisode
  * 描くのは `Text` に任せる: 測ったものを自分で描くと、API 28 で Native Heap が 4〜5MB ほど増えた (一覧を送ったあと。
  * `Text` で描けば増えない)。読み上げ (と smoke) には、切っていない題を渡す。
  *
- * `unwatched` なら**頭に小さな点** (まだ観ていない。ブラウザの denpa の一覧と同じ)。1行目を点のぶん下げて組み
+ * 字は放送の字 (`BroadcastFont`)。`unwatched` なら**頭に小さな点** (まだ観ていない。ブラウザの denpa の一覧と同じ)。1行目を点のぶん下げて組み
  * (切りかたも下げた幅で測る)、空いたところに描く。札 (「NEW」) にしないのは、番組名に入っている [新] と紛れるため
  */
 @Composable
@@ -55,7 +55,10 @@ internal fun EpisodeTitle(
 ) {
     // 字の大きさ・向き・字体が替わると、別の measurer になる (測り直す)
     val measurer = rememberTextMeasurer(cacheSize = 0)
-    val merged = LocalTextStyle.current.merge(style).let { if (unwatched) it.copy(textIndent = TextIndent(firstLine = DOT_INDENT)) else it }
+    // 番組名は放送の字 (太いものは太らせた字。`broadcastFont`)。切りかたもその字で測る
+    val base = LocalTextStyle.current.merge(style)
+    val merged = base.copy(fontFamily = broadcastFont(base.fontWeight) ?: base.fontFamily)
+        .let { if (unwatched) it.copy(textIndent = TextIndent(firstLine = DOT_INDENT)) else it }
     /** 1行目の上下の真ん中 (px。点を置く高さ) */
     var firstLine by remember { mutableFloatStateOf(0f) }
     val fitter = remember(title, merged, maxLines, measurer) { TitleFitter(title, merged, maxLines, measurer) }
