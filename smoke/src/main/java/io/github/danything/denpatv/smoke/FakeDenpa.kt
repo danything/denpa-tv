@@ -48,6 +48,10 @@ class FakeDenpa(
      */
     val emptyLive = AtomicInteger(0)
 
+    /** 画面の絵のライブで、選局にかかったつもりで待つ長さ (`Screenshots` が選局の間を撮るときだけ延ばす) */
+    @Volatile
+    var tuneMs = 300L
+
     /** アプリに覚えさせる繋ぐ先 */
     val url = "http://127.0.0.1:${server.localPort}/"
 
@@ -126,7 +130,7 @@ class FakeDenpa(
 
     /**
      * 画面の絵を撮るときの口 (`Showcase`)。答えたら true (ほかは smoke と同じ口へ)。
-     * ライブは**選局に [TUNE_MS] かかったつもりで待ってから**流す (選局の間の回るものを撮る)。作り物の録画は、どれも同じ映像と字幕
+     * ライブは**選局に [tuneMs] かかったつもりで待ってから、放送と同じ速さで**流す (`paced`)。作り物の録画は、どれも同じ映像と字幕
      */
     private fun showcaseRoute(method: String, path: String, range: String?, out: OutputStream): Boolean {
         val (serviceId, servicePart) = Regex("/api/services/(\\d+)/(live|logo|record)").matchEntire(path)?.destructured
@@ -141,11 +145,11 @@ class FakeDenpa(
             serviceId != null -> when (servicePart) {
                 "live" -> {
                     try {
-                        Thread.sleep(TUNE_MS)
+                        Thread.sleep(tuneMs)
                     } catch (_: InterruptedException) {
                         return true
                     }
-                    media(out, Showcase.liveAsset(serviceId), "video/mp4", range)
+                    paced(out, Showcase.liveAsset(serviceId))
                 }
                 "logo" -> respond(out, 200, "image/png", Showcase.logo(serviceId) ?: ByteArray(0))
                 else -> json(out, """{"recorded":"","programId":${serviceId * 10},"reserved":true}""")
@@ -155,7 +159,7 @@ class FakeDenpa(
                 "detail" -> json(out, Showcase.detail(recordingId))
                 "poster" -> respond(out, 200, "image/jpeg", Showcase.poster(recordingId))
                 "file" -> media(out, "showcase.mkv", "video/x-matroska", range)
-                "chase" -> media(out, Showcase.liveAsset(recordingId), "video/mp4", range)
+                "chase" -> paced(out, Showcase.liveAsset(recordingId))
                 else -> json(out, FakeCaptions.showcase)
             }
         }
@@ -211,6 +215,30 @@ class FakeDenpa(
         out.flush()
         try {
             Thread.sleep(STALL_HOLD_MS)
+        } catch (_: InterruptedException) {
+        }
+    }
+
+    /**
+     * 長さを言わずに (denpa のライブと同じ)、**放送と同じ速さで**送る (頭の [HEAD_START_MS] ぶんだけは先に)。まとめて送ると、
+     * アプリは溜まりすぎ (遅れ) とみなして先へ飛び、すぐ終わりまで観て繋ぎ直してしまう (`CatchUp`)。速さは大きさを長さで割って見積もる
+     */
+    private fun paced(out: OutputStream, asset: String) {
+        val bytes = assets.open(asset).use(InputStream::readBytes)
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nConnection: close\r\n\r\n".toByteArray())
+        val start = System.nanoTime()
+        var sent = 0
+        try {
+            while (sent < bytes.size && !server.isClosed) {
+                val elapsed = (System.nanoTime() - start) / 1_000_000 + HEAD_START_MS
+                val due = (bytes.size * elapsed / SHOWCASE_LIVE_MS).coerceAtMost(bytes.size.toLong()).toInt()
+                if (due > sent) {
+                    out.write(bytes, sent, due - sent)
+                    out.flush()
+                    sent = due
+                }
+                Thread.sleep(PACE_MS)
+            }
         } catch (_: InterruptedException) {
         }
     }
@@ -276,8 +304,10 @@ class FakeDenpa(
         const val CHASE_TITLE = "偽の録画中"
         /** 黙っている長さ (アプリが見張りで気付いて頼み直すより十分長く) */
         private const val STALL_HOLD_MS = 60_000L
-        /** 画面の絵のライブで、選局にかかったつもりで待つ長さ (アプリが回るものを出す 1.5 秒より長く) */
-        private const val TUNE_MS = 3_500L
+        /** 画面の絵のライブ・追っかけの映像の長さ (`scripts/smoke-media.sh` の showcase-live) と、先に送るぶん・送る間 */
+        private const val SHOWCASE_LIVE_MS = 120_000L
+        private const val HEAD_START_MS = 2_000L
+        private const val PACE_MS = 200L
         private val REASONS = mapOf(200 to "OK", 204 to "No Content", 206 to "Partial Content", 404 to "Not Found", 503 to "Service Unavailable", 416 to "Range Not Satisfiable")
     }
 }

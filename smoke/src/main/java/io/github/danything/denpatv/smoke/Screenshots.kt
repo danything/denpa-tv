@@ -53,7 +53,7 @@ class Screenshots {
             click("繋ぐ")
 
             recordings()
-            live()
+            live(denpa)
             settings()
             recording()
             chase()
@@ -108,9 +108,10 @@ class Screenshots {
 
     /**
      * 左のメニューからライブへ (ここまでが README の動く絵) → 局送り → 選局の間 → メニュー → 局の列 → 番組の詳しく。
-     * 偽の denpa は選局に 3.5 秒かける (`FakeDenpa.TUNE_MS`) ので、1.5 秒たつと回るものが出る
+     * 選局の間 (1.5 秒たつと回るものが出る) を撮るときだけ、偽の denpa の選局を [SLOW_TUNE_MS] に延ばす。
+     * ほかは速く映す (替えたときの局と番組の知らせは、頼んでから 4 秒で消える)
      */
-    private fun live() {
+    private fun live(denpa: FakeDenpa) {
         frame(1800)
         for (i in 0 until 6) {
             if ("設定" in texts()) break
@@ -125,12 +126,13 @@ class Screenshots {
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         SystemClock.sleep(FOCUS_MS)
         frame(900)
-        press(KeyEvent.KEYCODE_DPAD_CENTER)
         // 入ってすぐは局と番組とキーの手引き。選局の間は回るもの
+        denpa.tuneMs = SLOW_TUNE_MS
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
         SystemClock.sleep(BUSY_MS)
-        frame(1200)
-        awaitTuned()
-        frame(1800)
+        frame(1500)
+        awaitTuned(denpa)
+        frame(1500)
 
         // 上で局の列 (いま映している局に合う)、右で隣の局、決定で替える (替える間は前の局の絵のまま回るもの)
         press(KeyEvent.KEYCODE_DPAD_UP)
@@ -143,22 +145,25 @@ class Screenshots {
         press(KeyEvent.KEYCODE_DPAD_CENTER)
         SystemClock.sleep(BUSY_MS)
         frame(1200)
-        awaitTuned()
+        awaitTuned(denpa)
         frame(1200)
 
-        // 右で次の局へ。押すとすぐ行き先の局と番組が出る
+        // 右で次の局へ。押すとすぐ行き先の局と番組が出て、映ってからもしばらく出ている
+        denpa.tuneMs = FAST_TUNE_MS
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
-        SystemClock.sleep(FOCUS_MS)
-        frame(1000)
-        awaitTuned()
+        SystemClock.sleep(KEY_GAP_MS)
+        frame(900)
+        awaitTuned(denpa)
         shot("live")
-        frame(1500)
+        frame(1800)
 
         // もう一度右。選局に時間がかかっている間 (前の局の絵のまま回るもの)
+        denpa.tuneMs = SLOW_TUNE_MS
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
         SystemClock.sleep(BUSY_MS)
         shot("live-tuning")
-        awaitTuned()
+        awaitTuned(denpa)
+        denpa.tuneMs = FAST_TUNE_MS
         // 替えたときの局と番組の知らせが消えるのを待つ
         SystemClock.sleep(NOTICE_MS)
 
@@ -251,11 +256,17 @@ class Screenshots {
         press(KeyEvent.KEYCODE_BACK)
     }
 
-    /** 選局を待つ (回るものが消える)。替えたらすぐは回るものがまだ出ていないので、偽の denpa が答えるまで待ってから見る */
-    private fun awaitTuned() {
-        SystemClock.sleep(TUNED_MS)
-        await("映りません") { texts().none { it == "選局しています" || it == "映像を待っています" } }
-        SystemClock.sleep(FOCUS_MS)
+    /**
+     * 映るのを待つ。選局を延ばしているときは回るものが出ているので、それが消えるまで。速いときは回るものが出ないので、
+     * 偽の denpa が答えて映りはじめるくらい待つ
+     */
+    private fun awaitTuned(denpa: FakeDenpa) {
+        if (denpa.tuneMs >= SLOW_TUNE_MS) {
+            await("映りません") { texts().none { it == "選局しています" || it == "映像を待っています" } }
+        } else {
+            SystemClock.sleep(FAST_SETTLE_MS)
+        }
+        SystemClock.sleep(FIRST_FRAME_MS)
     }
 
     /** 録画の帯 (操作の列) が開いている */
@@ -399,10 +410,18 @@ class Screenshots {
         const val SETTLE_MS = 3_000L
         /** キーで合いを移してから撮るまで */
         const val FOCUS_MS = 1_000L
-        /** 局を替えてから、回るもの (1.5 秒たってから出る) を撮るまで。偽の denpa が答える (3.5 秒) より前 */
-        const val BUSY_MS = 2_200L
-        /** 局を替えてから、偽の denpa が答えるまで (ここから回るものが消えるのを待つ) */
-        const val TUNED_MS = 3_000L
+        /** 選局の間を撮るときの偽の denpa の選局の長さと、ふだんの長さ */
+        const val SLOW_TUNE_MS = 4_500L
+        const val FAST_TUNE_MS = 300L
+        /**
+         * 局を替えてから、回るものを撮るまで。左右の局送りは離して 0.5 秒たってから頼み、頼んで 1.5 秒たつと回るものが出る。
+         * 偽の denpa が答える ([SLOW_TUNE_MS]) より前
+         */
+        const val BUSY_MS = 2_800L
+        /** 速く映すとき、局を替えてから映りはじめるまで (離して 0.5 秒 + 選局 + 最初のこま) */
+        const val FAST_SETTLE_MS = 1_200L
+        /** 回るものが消えてから、映像のこまが出るまで */
+        const val FIRST_FRAME_MS = 500L
         /** 局を替えたときの局と番組の知らせが消えるまで */
         const val NOTICE_MS = 5_000L
         /** 知らせが消えてから撮るまで (字幕が下りきる) */
