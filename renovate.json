@@ -5,15 +5,15 @@
   ],
   "customManagers": [
     {
-      "description": "字幕の字 (danything/arib-font) は焼くときに取ってくる (app/build.gradle.kts)。タグが無いので枝の先頭のコミットで固定し、枝が動いたら新しいコミットで PR を出す (denpa の Dockerfile と同じ追い方)",
+      "description": "字幕の字 (danything/denpa-font のリリース) は焼くときに取ってくる (app/build.gradle.kts)。版をタグで留め、新しいリリースが出たら PR を出す (denpa の Dockerfile と同じ追い方)。sha256 は Renovate が直せないので、PR でそのリリースの SHA256SUMS の値を写す",
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)build\\.gradle\\.kts$/"
       ],
       "matchStrings": [
-        "// renovate: datasource=git-refs depName=(?<depName>\\S+) branch=(?<currentValue>\\S+)\\s+val \\w+ = \"(?<currentDigest>[0-9a-f]{40})\""
+        "// renovate: datasource=github-releases depName=(?<depName>\\S+)\\s+val \\w+ = \"(?<currentValue>[^\"]+)\""
       ],
-      "datasourceTemplate": "git-refs"
+      "datasourceTemplate": "github-releases"
     }
   ],
   "packageRules": [
