@@ -197,7 +197,7 @@ sealed interface TokenResult {
     data class Error(val error: String) : TokenResult
 }
 
-/** `api/health` の答え。`version` はリリースのタグ (`v1.44.0`。手元・develop は `dev`)、版を返さないとても古い denpa では null *
+/** `api/health` の答え。`version` はリリースのタグ (`v1.44.0`。手元・develop は `dev`)、版を返さないとても古い denpa では null */
 data class DenpaHealth(val version: String?)
 
 /**
