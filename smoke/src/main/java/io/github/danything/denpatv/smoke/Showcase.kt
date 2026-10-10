@@ -15,15 +15,16 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * 画面の絵を撮るときの、作り物の録画・局・番組 (`Screenshots`)。実際の放送にありそうな長い題・局・観た割合・録画中・エンコード中を並べる。
  * **番組名・人名・説明はどれも作り物** (実在の番組は使わない)。局名だけは実在の名前で、局ロゴは番号を書いただけの札をその場で描く。
- * ポスターもその場で描く (空と日と影)。録画の時刻は端末の時間帯で組む (出る時刻が決まるように)。ライブの番組の時刻は今に合わせる
+ * ポスターもその場で描く (空と日と影)。録画の日は今日から何日前かで組む (エミュレータの時計がずれていても、録っている最中の録画
+ * (今) が一覧の頭に来るように)。ライブの番組の時刻も今に合わせる
  */
 internal object Showcase {
     private class Item(
         val id: Long,
         val title: String,
         val service: String,
-        /** 放送日 (2026年10月の日) と時刻 */
-        val day: Int,
+        /** 放送日 (今日から何日前か) と時刻 */
+        val daysAgo: Int,
         val hour: Int,
         val minute: Int,
         val minutes: Int = 30,
@@ -55,12 +56,12 @@ internal object Showcase {
     const val LONG_TITLE = "病弱令嬢に転生した神殺しの武人は、今日も華麗に無双する ～辺境伯家の静かな日々～ #1"
 
     private val items = listOf(
-        Item(CHASE_ID, "辺境に追放された薬師令嬢は、王都で最強の錬金術師になる #3", "ＡＴ－Ｘ", 7, 15, 0, recording = true),
-        Item(ENCODING_ID, "まち歩き紀行「川越 蔵の町をゆく」", "ＮＨＫ総合１・東京", 7, 10, 5, minutes = 45, description = "蔵造りの町並みが残る川越を歩く。時の鐘の下で、老舗の菓子屋と鍛冶屋を訪ねる。"),
-        Item(103, "きょうの台所「秋の炊き込みごはん」", "ＮＨＫＥテレ１東京", 7, 9, 0, minutes = 25, watched = true),
-        Item(CAPTION_ID, "追放された荷物持ちは、実は最強の鍛冶師でした #1", "ＴＯＫＹＯ　ＭＸ１", 7, 1, 5, description = "荷物持ちとして勇者の一行を追い出されたロイドは、辺境の村で鍛冶屋を開く。打った剣が評判を呼び、やがて王都から使者が訪れる。"),
+        Item(CHASE_ID, "辺境に追放された薬師令嬢は、王都で最強の錬金術師になる #3", "ＡＴ－Ｘ", 0, 15, 0, recording = true),
+        Item(ENCODING_ID, "まち歩き紀行「川越 蔵の町をゆく」", "ＮＨＫ総合１・東京", 1, 10, 5, minutes = 45, description = "蔵造りの町並みが残る川越を歩く。時の鐘の下で、老舗の菓子屋と鍛冶屋を訪ねる。"),
+        Item(103, "きょうの台所「秋の炊き込みごはん」", "ＮＨＫＥテレ１東京", 1, 9, 0, minutes = 25, watched = true),
+        Item(CAPTION_ID, "追放された荷物持ちは、実は最強の鍛冶師でした #1", "ＴＯＫＹＯ　ＭＸ１", 1, 1, 5, description = "荷物持ちとして勇者の一行を追い出されたロイドは、辺境の村で鍛冶屋を開く。打った剣が評判を呼び、やがて王都から使者が訪れる。"),
         Item(
-            DETAIL_ID, "星読みの薬師 #18「月下の花」", "日テレ", 6, 23, 0, resume = 0.4f,
+            DETAIL_ID, "星読みの薬師 #18「月下の花」", "日テレ", 2, 23, 0, resume = 0.4f,
             description = "月に一度だけ咲く花を求めて、リセは北の峠へ向かう。",
             extended = listOf(
                 "番組内容" to "月に一度だけ咲く花を求めて、リセは北の峠へ向かう。道中で出会った旅の楽師ユノは、花の咲く夜にだけ聞こえる歌を探していた。" +
@@ -72,13 +73,13 @@ internal object Showcase {
                 "おしらせ" to "次回は1週お休みし、10月20日に放送します。",
             ),
         ),
-        Item(106, "星降る街の図書館 #5", "ＢＳ１１イレブン", 6, 22, 0, resume = 1f),
-        Item(107, "サイエンス最前線「深海の生きもの」", "ＮＨＫ総合１・東京", 6, 20, 0, minutes = 50, resume = 0.3f),
-        Item(108, "鉄道の旅 ~ローカル線をゆく~ 山あいの小さな駅", "ＢＳ日テレ", 6, 19, 0, minutes = 55),
-        Item(109, LONG_TITLE, "ＴＯＫＹＯ　ＭＸ１", 5, 23, 30, description = "神殺しの武人が転生したのは、病弱で余命わずかな貴族の令嬢だった。"),
-        Item(110, "追放された付与魔術師は、気ままな旅暮らしを満喫する #2", "ＢＳ１１イレブン", 5, 23, 0),
-        Item(111, "山里の木こり、剣聖になる #7「森の選択」", "ＴＢＳ", 5, 1, 28, watched = true),
-        Item(112, "水曜バラエティ「街角クイズ王」", "ＴＢＳ", 5, 22, 0, minutes = 60, resume = 0.75f),
+        Item(106, "星降る街の図書館 #5", "ＢＳ１１イレブン", 2, 22, 0, resume = 1f),
+        Item(107, "サイエンス最前線「深海の生きもの」", "ＮＨＫ総合１・東京", 2, 20, 0, minutes = 50, resume = 0.3f),
+        Item(108, "鉄道の旅 ~ローカル線をゆく~ 山あいの小さな駅", "ＢＳ日テレ", 2, 19, 0, minutes = 55),
+        Item(109, LONG_TITLE, "ＴＯＫＹＯ　ＭＸ１", 3, 23, 30, description = "神殺しの武人が転生したのは、病弱で余命わずかな貴族の令嬢だった。"),
+        Item(110, "追放された付与魔術師は、気ままな旅暮らしを満喫する #2", "ＢＳ１１イレブン", 3, 23, 0),
+        Item(111, "山里の木こり、剣聖になる #7「森の選択」", "ＴＢＳ", 3, 1, 28, watched = true),
+        Item(112, "夜のバラエティ「街角クイズ王」", "ＴＢＳ", 3, 22, 0, minutes = 60, resume = 0.75f),
         Item(113, "世界の路地を歩く「リスボン」", "ＮＨＫ　ＢＳ", 4, 19, 30, minutes = 45),
         Item(114, "ニュース21", "ＮＨＫ総合１・東京", 4, 21, 0, minutes = 60, watched = true),
         Item(115, "迷宮ごはん 第8話「炎の竜の巣」", "ＴＯＫＹＯ　ＭＸ１", 4, 22, 30),
@@ -86,7 +87,13 @@ internal object Showcase {
     )
 
     fun recordings(): String = items.joinToString(",", "[", "]") { item ->
-        val start = Calendar.getInstance().apply { clear(); set(2026, Calendar.OCTOBER, item.day, item.hour, item.minute) }.timeInMillis
+        val start = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_MONTH, -item.daysAgo)
+            set(Calendar.HOUR_OF_DAY, item.hour)
+            set(Calendar.MINUTE, item.minute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
         val length = item.minutes * 60_000L
         val files = if (item.recording) "[]" else
             """[{"source":"encoded","codec":"av1","url":"api/recordings/${item.id}/file"},
