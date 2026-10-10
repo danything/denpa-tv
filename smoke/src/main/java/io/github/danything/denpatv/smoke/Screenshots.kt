@@ -269,6 +269,7 @@ class Screenshots {
         val seen = mutableSetOf<String>()
         fun matching() = nodes().filter { n -> n.text?.toString()?.contains(title) == true }.also { list -> list.forEach { seen += it.text.toString() } }
         for (i in 0 until 16) {
+            shot("debug-${title.length}-$i") // DEBUG
             if (matching().size >= 2) return
             // カードの中の題から、合わせられるもの (カード) をたどる
             val card = matching().firstNotNullOfOrNull { generateSequence(it) { n -> n.parent }.firstOrNull { n -> n.isFocusable } }
