@@ -12,7 +12,17 @@
 
 ## 画面の絵
 
-`docs/images/` の絵は CI の Screenshots の流れ (`.github/workflows/screenshots.yml`) で撮ります。smoke/ の `Screenshots` が
-Android TV のエミュレータ (API 36、1080p) で、作り物の番組・録画・説明を返す偽の denpa に繋いで撮り、1280 幅の webp にします。
-番組名・人名は作り物で、ポスターと映像はぼかした場面に見えるように描いたもの、局ロゴは番号を書いただけの札、ライブは色の映像です
-(観た割合の帯や追っかけの「録画中」も、偽の denpa がそう返しているだけ)。
+`docs/images/` の絵は全部、CI の Screenshots の流れ (`.github/workflows/screenshots.yml`) で撮ります。smoke/ の `Screenshots` が
+Android TV のエミュレータ (API 36、1080p) で、作り物の局・番組・録画・説明 (`Showcase`) を返す偽の denpa に繋ぎ、
+繋ぐ画面 → 録画の一覧・詳しく → ライブ (局送り・選局の間・メニュー・局の列・詳しく) → 設定 → 録画の再生 (字幕・操作の列・詳しく・最後まで) → 追っかけ
+の順に撮って、1280 幅の webp にします。README の頭の動く絵 (`navigation.webp`) は、途中で撮ったこまを繋いだものです。
+番組名・人名・説明は作り物で、ポスターと映像はぼかした場面に見えるように描いたもの、局ロゴは番号を書いただけの札です
+(観た割合の帯・録画中・予約済み・エンコード中も、偽の denpa がそう返しているだけ)。局名だけは実在の名前です。
+
+撮り直すとき:
+
+1. Actions の Screenshots を手で走らせる (`gh workflow run screenshots.yml --ref <枝>`)
+2. 終わったら artifact (`shots`) を取ってきて (`gh run download <run id> -n shots`)、`docs/images/` にあるのと同じ名前の webp を上書きする
+3. 絵が変わったら、README・usage.md の alt も合わせる
+
+ライブの字幕は撮れません (生の TS でしか出ないが、エミュレータには MPEG-2 のデコーダが無く、生の TS を選べない)。字幕は録画の再生の絵に出ています。
