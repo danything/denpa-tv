@@ -213,13 +213,9 @@ fun BoxScope.BottomPanel(modifier: Modifier = Modifier, spacing: Dp, content: @C
 @Composable
 fun TitleLines(text: CharSequence) {
     val styled = (text as? AnnotatedString ?: AnnotatedString(text.toString())).withBroadcastFont()
-    var start = 0
-    styled.text.split('\n').forEachIndexed { index, line ->
-        val end = start + line.length
-        val shown = styled.subSequence(start, end)
-        start = end + 1
+    styled.splitLines().forEachIndexed { index, line ->
         Text(
-            shown,
+            line,
             style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
             color = if (index == 0) Color.White else Color(0xFFD0D0D0),
         )

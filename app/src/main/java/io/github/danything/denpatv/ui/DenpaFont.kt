@@ -79,11 +79,21 @@ fun AnnotatedString.Builder.appendBroadcast(text: String) {
 /** 印 (`appendBroadcast`) の付いたところを放送の字にする */
 @Composable
 @ReadOnlyComposable
-fun AnnotatedString.withBroadcastFont(): AnnotatedString {
-    val family = BroadcastFont ?: return this
+fun AnnotatedString.withBroadcastFont(): AnnotatedString = BroadcastFont?.let { withFont(it) } ?: this
+
+/** 印 (`appendBroadcast`) の付いたところを `family` にする */
+internal fun AnnotatedString.withFont(family: FontFamily): AnnotatedString {
     val marks = getStringAnnotations(BROADCAST_TAG, 0, length)
     if (marks.isEmpty()) return this
     return AnnotatedString.Builder(this).apply {
         marks.forEach { addStyle(SpanStyle(fontFamily = family), it.start, it.end) }
     }.toAnnotatedString()
+}
+
+/** 行ごとに分ける。印・字体は行ごとに切って残る */
+internal fun AnnotatedString.splitLines(): List<AnnotatedString> {
+    var start = 0
+    return text.split('\n').map { line ->
+        subSequence(start, start + line.length).also { start += line.length + 1 }
+    }
 }
