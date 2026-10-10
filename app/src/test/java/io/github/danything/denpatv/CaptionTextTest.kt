@@ -114,6 +114,10 @@ class CaptionTextTest {
         assertNull(decodeDrcs(8, 8, 2, 1, "lg=="))
         assertNull(decodeDrcs(0, 8, 2, 1, "lg=="))
         assertNull(decodeDrcs(4, 2, 2, 1, "!!"))
+        // 1画素がバイトをまたぐビット数は読まない
+        assertNull(decodeDrcs(4, 2, 8, 3, "lg=="))
+        // 16 階調 (4 ビット): 0x0F → 0, 255
+        assertArrayEquals(byteArrayOf(0, 255.toByte()), decodeDrcs(2, 1, 16, 4, "Dw==")!!.alpha)
         assertNotNull(decodeDrcs(4, 2, 2, 1, "lg=="))
     }
 

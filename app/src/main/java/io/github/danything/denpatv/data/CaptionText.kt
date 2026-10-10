@@ -133,9 +133,10 @@ fun captionColor(text: String?): Int? {
 
 /**
  * 外字の絵を濃さに開く。`data` は base64 で、左上から1画素 `bits` ビットずつ上の桁から詰めたもの。値 v の濃さは v / (depth − 1)
+ * (`bits` は 1・2・4・8 だけ読む。1画素がバイトをまたがない。denpa のブラウザの読み方も同じ前提)
  */
 fun decodeDrcs(width: Int, height: Int, depth: Int, bits: Int, data: String): CaptionDrcs? {
-    if (width !in 1..MAX_DRCS || height !in 1..MAX_DRCS || depth < 2 || bits !in 1..8) return null
+    if (width !in 1..MAX_DRCS || height !in 1..MAX_DRCS || depth < 2 || bits !in DRCS_BITS) return null
     val bytes = runCatching { Base64.Default.decode(data) }.getOrNull() ?: return null
     if (bytes.size * 8 < width * height * bits) return null
     val mask = (1 shl bits) - 1
@@ -147,6 +148,9 @@ fun decodeDrcs(width: Int, height: Int, depth: Int, bits: Int, data: String): Ca
     }
     return CaptionDrcs(width, height, alpha)
 }
+
+/** 読める1画素のビット数 */
+private val DRCS_BITS = setOf(1, 2, 4, 8)
 
 /** 外字の絵の大きさの上限 (ふつう 16〜36 画素) */
 private const val MAX_DRCS = 256

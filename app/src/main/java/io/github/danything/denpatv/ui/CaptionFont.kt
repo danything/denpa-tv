@@ -27,12 +27,14 @@ class CaptionFont(private val assets: AssetManager) {
     /** 何度呼んでもよい (読むのは1度だけ) */
     suspend fun load() = lock.withLock {
         if (done) return@withLock
-        done = true
-        typeface = withContext(Dispatchers.IO) {
+        val loaded = withContext(Dispatchers.IO) {
             runCatching { Typeface.createFromAsset(assets, ASSET) }
                 .onFailure { Log.w("denpa", "字幕の字を読めません (端末の字で描きます)", it) }
                 .getOrNull()
         }
+        // 読み終えてから印を付ける (途中で取り消されたら、次に字幕が出たときに読み直す)
+        typeface = loaded
+        done = true
     }
 
     private companion object {
