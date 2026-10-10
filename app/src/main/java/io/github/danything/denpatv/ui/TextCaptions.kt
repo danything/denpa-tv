@@ -130,25 +130,30 @@ internal class TextCaptionPainter {
         val baseline = captionBaseline(fontPx, ascent, descent)
         glyph.textSize = fontPx
         edge.textSize = fontPx
-        // 枠は画素の境目にそろえる。半端な位置のまま塗ると、隣の字との境の1画素が両方から
-        // 半分ずつしか塗られず、半透明の背景に縦の筋が出ていた。隣どうしは同じ値に丸まる
-        val top = round(run.y * sy)
-        val bottom = round((run.y + run.h) * sy)
+        val top = run.y * sy
+        val bottom = (run.y + run.h) * sy
+        // 塗る枠だけ画素の境目にそろえる。半端な位置のまま塗ると、隣の字との境の1画素が両方から
+        // 半分ずつしか塗られず、半透明の背景に縦の筋が出ていた。隣どうしは同じ値に丸まる。
+        // 字の位置は丸めない (字間が不揃いになる)
+        val t = round(top)
+        val b = round(bottom)
         for (i in 0 until run.count) {
-            val left = round((run.x + i * run.w) * sx)
-            val right = round((run.x + (i + 1) * run.w) * sx)
+            val left = (run.x + i * run.w) * sx
+            val right = (run.x + (i + 1) * run.w) * sx
+            val l = round(left)
+            val r = round(right)
             if (run.bg ushr 24 != 0) {
                 fill.color = run.bg
-                canvas.drawRect(left, top, right, bottom, fill)
+                canvas.drawRect(l, t, r, b, fill)
             }
             if (run.box != 0) {
                 fill.color = run.fg
                 val w = max(1f, floor(sx))
                 val h = max(1f, floor(sy))
-                if (run.box and 4 != 0) canvas.drawRect(left, top, right, top + h, fill)
-                if (run.box and 1 != 0) canvas.drawRect(left, bottom - h, right, bottom, fill)
-                if (run.box and 8 != 0) canvas.drawRect(left, top, left + w, bottom, fill)
-                if (run.box and 2 != 0) canvas.drawRect(right - w, top, right, bottom, fill)
+                if (run.box and 4 != 0) canvas.drawRect(l, t, r, t + h, fill)
+                if (run.box and 1 != 0) canvas.drawRect(l, b - h, r, b, fill)
+                if (run.box and 8 != 0) canvas.drawRect(l, t, l + w, b, fill)
+                if (run.box and 2 != 0) canvas.drawRect(r - w, t, r, b, fill)
             }
             if (run.flash && dark) continue
             val x = left + run.fx * sx
