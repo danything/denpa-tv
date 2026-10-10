@@ -5,7 +5,7 @@ import java.text.Normalizer
 
 /**
  * 外から局や録画を直に開くリンク (`denpa://…`)。Home Assistant の Android TV Remote (`media_player.play_media` の url) や
- * `adb shell am start -a android.intent.action.VIEW -d <uri>` から来る。README の「リンクで開く」の表と同じ
+ * `adb shell am start -a android.intent.action.VIEW -d <uri>` から来る。docs/usage.md の「リンクで開く」の表と同じ
  */
 sealed interface DeepLink {
     /** ライブ。`channel` は局の id・名前・番号 (無ければ最後に観ていた局) */

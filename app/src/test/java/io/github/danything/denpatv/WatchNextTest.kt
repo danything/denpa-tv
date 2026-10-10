@@ -38,7 +38,7 @@ class WatchNextTest {
         assertEquals(600_000, item.positionMs)
         assertEquals(1_800_000, item.durationMs)
         assertEquals(5, item.engagedAt)
-        // アプリのリンクで開く (README の「リンクで開く」)
+        // アプリのリンクで開く (docs/usage.md の「リンクで開く」)
         assertEquals(DeepLink.Watch("12"), DeepLink.parse(item.link))
     }
 

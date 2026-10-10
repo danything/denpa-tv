@@ -97,7 +97,7 @@ android {
 
 /*
  * 字幕の字 (denpa が字幕を描くのと同じ丸ゴシック。Denpa Font = danything/denpa-font のリリース、SIL OFL 1.1)。
- * 4.2MB あるのでリポジトリには置かず、**焼くときに取ってきて assets に入れる** (ui/CaptionFont.kt が読む)。
+ * 4.2MB あるのでリポジトリには置かず、**焼くときに取ってきて assets に入れる** (ui/DenpaFont.kt が読む)。
  * **留めるのはタグだけ** (denpa の Dockerfile の DENPA_FONT_VERSION と揃える。Renovate はタグを上げるだけ)。
  * 中身は同じリリースの SHA256SUMS で照らす (違えば焼くのを止める)
  */
