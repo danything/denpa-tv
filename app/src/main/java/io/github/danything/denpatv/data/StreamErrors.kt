@@ -17,7 +17,7 @@ import androidx.media3.datasource.TransferListener
  * と言うだけで、空だったのか中身が違ったのかが分からないので、ここで見分けて名前を付ける。
  *
  * `ParserException` にするのは、Media3 に中で読み直させないため (読み直しても同じ。繋ぎ直しは `Recovery` が決める)。
- * 番号は前と同じ `ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED` になる
+ * 番号は `ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED` になる
  */
 @OptIn(UnstableApi::class)
 class EmptyStreamException(uri: Uri?) :

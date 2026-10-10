@@ -18,12 +18,9 @@ class TwoPressTest {
     fun 二回押しで実行し_間が空いたら数え直す() {
         val press = TwoPress(windowMs = 4_000)
         assertFalse(press.press(0))
-        assertTrue(press.armed(1_000))
         assertTrue(press.press(3_000))
-        assertFalse(press.armed(3_000))
 
         assertFalse(press.press(10_000))
-        assertFalse(press.armed(15_000))
         assertFalse(press.press(15_000))
         press.reset()
         assertFalse(press.press(15_500))

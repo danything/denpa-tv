@@ -28,10 +28,10 @@ import io.github.danything.denpatv.data.selectedChoice
 import kotlinx.coroutines.launch
 
 /**
- * 字幕と音声の切り替え。**ブラウザの denpa の再生の字幕・音声のボタンにあたる。** Media3 のトラックの選び方で切り替える。
+ * 字幕と音声の切り替え。**ブラウザの denpa の再生の字幕・音声のボタンにあたる。**
  *
- * - 字幕: 入れ切り (端末ごとに覚える)。字幕のトラックがあるときだけ札を出す
- * - 音声: 押すたびに次の音声へ。選べるものが2つ以上あるときだけ札を出す。名前の付いた音声 (「解説ステレオ」など) は覚えて、
+ * - 字幕: 入れ切り (端末ごとに覚える)。denpa が選べる字幕があると言ったときだけ札を出す
+ * - 音声: Media3 のトラックの選び方で、押すたびに次の音声へ。選べるものが2つ以上あるときだけ札を出す。名前の付いた音声 (「解説ステレオ」など) は覚えて、
  *   次に同じ名前があればそれで始める
  * - **1本の中の二か国語 (デュアルモノ)** は、denpa がそう言っていれば (`DenpaAudio`) ブラウザと同じく「主音声」「副音声」「主+副」の
  *   3つに分けて並べ、選んだ側を両耳へ配り直す (`DualMonoProcessor`)。どちら側かは端末ごとに覚える (既定は主音声)
@@ -54,8 +54,7 @@ class TrackControls(
 }
 
 /**
- * @param rawCaptions denpa から別に受け取る字幕 (Media3 のトラックには出てこない。`rememberRawCaptions`・`rememberCaptionPages`)。選べる字幕があると
- *   言われたら、焼いた映像の字幕と同じ札を出す (入れ切りの設定も同じもの)
+ * @param captions denpa から受け取る字幕 (`rememberRawCaptions`・`rememberCaptionPages`)。選べる字幕があると言われたら札を出す
  * @param dualMono デュアルモノの配り直し (`rememberPlayer` の `dualMono`)
  * @param denpaAudios denpa が言う選べる音声 (`DenpaAudio`)。**生の TS のときだけ渡す** — 焼いたものは denpa が先に分けている
  *   (録画は主・副の2本に割って名前を付ける。ライブ・追っかけは選んだ1つだけを焼く。`rememberBakedAudio`) ので、配り直すものが無い
@@ -65,7 +64,7 @@ fun rememberTracks(
     repo: Repository,
     player: ExoPlayer,
     onChange: (String) -> Unit,
-    rawCaptions: CaptionState,
+    captions: CaptionState,
     dualMono: DualMonoProcessor,
     denpaAudios: List<DenpaAudio>,
 ): TrackControls {
@@ -94,7 +93,6 @@ fun rememberTracks(
     // 選んでいる音声がデュアルモノなら覚えている側を両耳へ、そうでなければそのまま
     val mix = choices.getOrNull(selectedAudio)?.side ?: AudioSide.Both
     SideEffect { dualMono.side = mix }
-    val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
 
     fun selectAudio(index: Int) {
         val group = audioGroups.getOrNull(index) ?: return
@@ -103,14 +101,6 @@ fun rememberTracks(
             .build()
     }
 
-    // 字幕の入れ切り。入れるときは、どれも選ばれていなければ最初の字幕を選ぶ (既定の印が無い字幕は選ばれないので)
-    LaunchedEffect(subtitles, textGroups.size) {
-        val builder = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitles)
-        if (subtitles && textGroups.isNotEmpty() && textGroups.none { it.isSelected }) {
-            builder.setOverrideForType(TrackSelectionOverride(textGroups.first().mediaTrackGroup, 0))
-        }
-        player.trackSelectionParameters = builder.build()
-    }
     // 覚えている名前の音声があれば、それにする (並びが変わるたび。選んだものと同じなら何もしない)
     LaunchedEffect(groupTracks, remembered) {
         val index = rememberedAudio(groupTracks, remembered) ?: return@LaunchedEffect
@@ -119,7 +109,7 @@ fun rememberTracks(
 
     return TrackControls(
         subtitles = subtitles,
-        hasText = textGroups.isNotEmpty() || rawCaptions.available,
+        hasText = captions.available,
         audio = choices.map { it.track },
         selectedAudio = selectedAudio,
         toggleSubtitles = {

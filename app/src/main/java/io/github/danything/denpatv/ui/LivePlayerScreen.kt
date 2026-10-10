@@ -110,7 +110,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         ReconnectPlan("live 局 ${playing?.id}", stream = true, endedIsLost = true) { returns++ },
     )
     val (overlay, flash) = rememberFlash()
-    // 生の TS の字幕は denpa が解いた文字の配置を別の口で受け取る (焼いたものは映像に入っている)
+    // 生の TS の字幕は denpa が解いた文字の配置を別の口で受け取る (焼いたライブには字幕が載らない)
     val captions = rememberRawCaptions(
         repo,
         player,

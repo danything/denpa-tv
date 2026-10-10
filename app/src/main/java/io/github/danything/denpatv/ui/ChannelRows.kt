@@ -93,8 +93,8 @@ fun ChannelRows(
     val scope = rememberCoroutineScope()
     /*
      * **縦は自分で送る (上の `focusedRow`) ので、札に合わせたときの送りは縦には効かせない。** テレビでは Compose の既定が
-     * 「合わせたものを枠の 3 割の高さへ」なので、150dp の枠では BS に下りたあと左右に送るたびに、上に揃えた列を
-     * 札の頭が 3 割に来るまで下げ、また上に揃え直して、列ががたがた上下していた
+     * 「合わせたものを枠の 3 割の高さへ」なので、効かせると左右に送るたびに
+     * 上に揃えた列が上下に揺れる
      */
     CompositionLocalProvider(LocalBringIntoViewSpec provides StayPut) {
         LazyColumn(

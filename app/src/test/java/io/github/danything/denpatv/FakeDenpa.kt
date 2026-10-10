@@ -9,7 +9,7 @@ import java.util.concurrent.LinkedBlockingQueue
  * 届いた要求は `requests` に溜める
  */
 /** denpa の `api/health` の返事 */
-const val HEALTH_OK = """{"ok":true,"version":"v1.44.0"}"""
+const val HEALTH_OK = """{"ok":true,"version":"v1.50.0"}"""
 
 class FakeDenpa : AutoCloseable {
     data class Request(val method: String, val target: String, val body: String, val authorization: String?, val contentType: String? = null)

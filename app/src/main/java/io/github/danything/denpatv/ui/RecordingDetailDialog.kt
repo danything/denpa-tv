@@ -90,7 +90,7 @@ internal fun recordingFacts(recording: Recording, detail: RecordingDetail?, watc
         title = recording.title,
         meta = programMeta(recording.serviceName, recording.startAt, end),
         chips = (if (recording.recording) emptyList() else recording.codecLabels) + recordingAudioLabels(recording),
-        badge = if (recording.recording) "● 録画中" else null,
+        badge = if (recording.recording) RECORDING_BADGE else null,
         progress = if (resume != null && length != null && length > 0) resume to length else null,
         progressLabel = resume?.let { "${position(it)} まで観た" },
         description = detail?.description.orEmpty(),

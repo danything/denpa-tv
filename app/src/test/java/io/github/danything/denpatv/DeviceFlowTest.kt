@@ -46,8 +46,7 @@ class DeviceFlowTest {
     }
 
     @Test
-    fun 断られた_期限切れ_そのほかの誤り() = runTest {
-        assertEquals(PairingOutcome.Denied, run("access_denied").first)
+    fun 期限切れ_そのほかの誤り() = runTest {
         assertEquals(PairingOutcome.Expired, run("expired_token").first)
         assertEquals(PairingOutcome.Failed("invalid_grant"), run("invalid_grant").first)
     }

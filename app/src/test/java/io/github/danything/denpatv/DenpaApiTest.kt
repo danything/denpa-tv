@@ -51,7 +51,6 @@ class DenpaApiTest {
         val withNow = api.services(base)
         assertEquals("アニメ", withNow[0].now?.title)
         assertEquals(3L, withNow[0].now?.remainingMinutes(1000))
-        assertEquals(0.5f, withNow[0].now!!.progress(91_000))
         assertNull(withNow[1].now)
         assertEquals(754_000L, api.recordings(base).single().resumeMs)
     }
@@ -96,8 +95,7 @@ class DenpaApiTest {
     }
 
     /**
-     * 未視聴は `watchedAt` も `resumeMs` も null のもの。`watchedAt` を送らない古い denpa (v1.45.0 より前) では分からないので、
-     * 印を付けない。形が違っても一覧は読む
+     * 未視聴は `watchedAt` も `resumeMs` も null のもの。形が違っても一覧は読む
      */
     @Test
     fun 未視聴を見分ける() = runTest {
@@ -105,11 +103,10 @@ class DenpaApiTest {
             """[{"id":1,"title":"a","startAt":1,"watchedAt":null,"resumeMs":null},
                {"id":2,"title":"b","startAt":1,"watchedAt":null,"resumeMs":754000},
                {"id":3,"title":"c","startAt":1,"watchedAt":1790000000000,"resumeMs":null},
-               {"id":4,"title":"d","startAt":1,"resumeMs":null},
                {"id":5,"title":"e","startAt":1,"watchedAt":"2026-10-07"}]""",
         )
         val recordings = api.recordings(BaseUrl.normalize(denpa.url())!!)
-        assertEquals(listOf(true, false, false, false, false), recordings.map { it.unwatched })
+        assertEquals(listOf(true, false, false, false), recordings.map { it.unwatched })
     }
 
     /** 観た位置は秒で預ける (denpa の POST api/recordings/<id>/resume は {at, length} を秒で受ける) */

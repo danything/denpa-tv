@@ -62,7 +62,7 @@ class DenpaApp : Application() {
 /**
  * HttpEngine が使えるか。**S 拡張の版だけでは決めない** — Android TV 12 の BRAVIA (KJ-75X80WK) は
  * S 拡張 7 以上と答えるのに `android.net.http.HttpEngine` が無く、映像を開いた瞬間に
- * NoClassDefFoundError で落ちていた (denpa-tv#24)。クラスが本当に引けるかも確かめる
+ * NoClassDefFoundError で落ちる。クラスが本当に引けるかも確かめる
  */
 fun hasHttpEngine(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&

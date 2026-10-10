@@ -1,6 +1,5 @@
 package io.github.danything.denpatv.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -30,8 +29,6 @@ import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.chaseEnd
-import io.github.danything.denpatv.data.RecordingCenter
-import io.github.danything.denpatv.data.recordingCenter
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.resyncAfterSpeedChange
 import kotlinx.coroutines.delay
@@ -118,21 +115,14 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         flash(label)
     }
 
-    var bar by remember { mutableStateOf<Bar?>(null) }
-    /** 番組の詳しいところを開いているか (決定の長押し) */
-    var details by remember { mutableStateOf(false) }
     /** 詳しくから消した (閉じるときに観た位置を預けない。「続きを視聴」に戻さない) */
     var deleted by remember { mutableStateOf(false) }
-    /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
-    var leaving by remember { mutableStateOf(false) }
-    // 戻るを続けて押しても、1つだけ戻る (2回目は受けない。録画の再生と同じ)
-    val leave = { if (!leaving) { leaving = true; onLeave() } }
-    // 戻るは1つで受ける (帯が開いていれば閉じ、無ければ一覧へ。ライブと同じ理由)
-    BackHandler(enabled = !leaving) { if (bar != null) bar = null else leave() }
     var at by remember { mutableLongStateOf(from) }
     var length by remember { mutableLongStateOf(recorded()) }
     var playing by remember { mutableStateOf(true) }
-    var touched by remember { mutableLongStateOf(0L) }
+    val ui = rememberPlayerBar(onLeave, playing)
+    var bar by ui::bar
+    var details by ui::details
     var ended by remember { mutableStateOf(false) }
     /** 止めたとき。長く止めたら、動かすときに頼み直す (止めている間に繋がりが切れるので) */
     var pausedAt by remember { mutableLongStateOf(0L) }
@@ -194,12 +184,6 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
             }
             delay(500)
         }
-    }
-    LaunchedEffect(bar, touched, playing) {
-        // 止めている間も同じ (止めて開いた帯も、触らなければ消して絵だけにする)
-        if (bar == null) return@LaunchedEffect
-        delay(5_000)
-        bar = null
     }
     // 続けて押した左右は、止まってから1度だけ頼み直す
     LaunchedEffect(pending) {
@@ -358,11 +342,11 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     }
     val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, if (refused) REFUSED else error, active = bar == null && !details && !ended && !leaving, captions = captions, recovery = recovery, above = {
+    PlayerFrame(player, overlay, if (refused) REFUSED else error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました (録り終えました)",
-                listOf("" to listOf(Control("一覧に戻る", on = true, icon = R.drawable.ic_back) { leave() })),
+                listOf("" to listOf(Control("一覧に戻る", on = true, icon = R.drawable.ic_back) { ui.leave() })),
             )
         } else bar?.let { which ->
             LaunchedEffect(which) { if (which == Bar.SeekBar) runCatching { seekFocus.requestFocus() } }
@@ -387,7 +371,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                     ProgressLine(at, length, focus = seekFocus, down = actions, onUp = { bar = null }) { direction -> step(direction) }
                 },
                 focusActions = which == Bar.Actions,
-                onActivity = { touched = System.nanoTime() },
+                onActivity = { ui.touched = System.nanoTime() },
             )
         }
     }, onKey = { event ->
@@ -402,15 +386,10 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
             RecordingCommand.NextChapter, RecordingCommand.PreviousChapter -> { flash("チャプターがありません"); true }
             null -> false
         }
-    }, onCenter = { press ->
-        when (recordingCenter(press)) {
-            RecordingCenter.PlayPause -> togglePause()
-            RecordingCenter.Details -> details = true
-        }
-    })
+    }, onCenter = { press -> ui.center(press) { togglePause() } })
 
     /** 消して一覧へ戻る (録画の再生と同じ。録っている間は denpa が断る)。消したら観た位置は預けない */
-    fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; leave() }
+    fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; ui.leave() }
 
     if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }

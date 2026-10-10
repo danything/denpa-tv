@@ -7,6 +7,7 @@ import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -14,6 +15,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
 import androidx.media3.common.C
@@ -24,10 +26,11 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
-import io.github.danything.denpatv.data.ChapterMark
-import io.github.danything.denpatv.data.Recording
+import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.RecordingCenter
 import io.github.danything.denpatv.data.recordingCenter
+import io.github.danything.denpatv.data.ChapterMark
+import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.skipCmAtStart
@@ -65,10 +68,6 @@ import kotlinx.coroutines.launch
 @OptIn(UnstableApi::class)
 @Composable
 fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
-    /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
-    var leaving by remember { mutableStateOf(false) }
-    // 戻るを続けて押しても、1つだけ戻る (2回目は受けない)
-    val leave = { if (!leaving) { leaving = true; onLeave() } }
     val file = remember { pickFile(recording.files, repo.app.decoders) }
     if (file == null) {
         Centered("この端末で再生できる形のファイルがありません")
@@ -99,10 +98,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
     }
-    /*
-     * 字幕は denpa から別の口で受け取る。生の TS は字幕の口、焼いた録画は文字の配置まるごと (`captions.json`)。
-     * 焼いた録画で 404 なら字幕が絵 (PGS) で動画に入っている前の録画で、そちらは Media3 が出す。ファイルは開いている間替わらない
-     */
+    // 字幕は denpa から受け取る。生の TS は字幕の口、焼いた録画は文字の配置まるごと (`captions.json`)。ファイルは開いている間替わらない
     val captions = if (file.source == "ts") {
         rememberRawCaptions(
             repo,
@@ -129,17 +125,12 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         if (recording.cmReliable) scope.launch { repo.app.settings.setSkipCm(skipCm) }
         flash(if (skipCm) "CM 飛ばし 入" else "CM 飛ばし 切")
     }
-    /** 開いている帯 (null なら何も出していない) */
-    var bar by remember { mutableStateOf<Bar?>(null) }
-    /** 番組の詳しいところを開いているか (決定の長押し) */
-    var details by remember { mutableStateOf(false) }
-    // 戻るは1つで受ける (帯が開いていれば閉じ、無ければ一覧へ。ライブと同じ理由)
-    BackHandler(enabled = !leaving) { if (bar != null) bar = null else leave() }
     /** 帯に出す位置と、止まっているか (帯を開いている間だけ取り直す) */
     var at by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(true) }
-    /** 帯で最後にキーを押したとき。5 秒触らなければ帯を閉じる (止めている間も) */
-    var touched by remember { mutableLongStateOf(0L) }
+    val ui = rememberPlayerBar(onLeave, playing)
+    var bar by ui::bar
+    var details by ui::details
     // 帯を開いている間と止めている間 (止めると位置の帯を出す) は、位置を取り直す
     LaunchedEffect(bar, playing) {
         while (bar != null || !playing) {
@@ -147,12 +138,6 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
             playing = player.playWhenReady
             delay(500)
         }
-    }
-    LaunchedEffect(bar, touched, playing) {
-        // 止めている間も同じ (止めて開いた帯も、触らなければ閉じて止めた位置の帯だけにする)
-        if (bar == null) return@LaunchedEffect
-        delay(5_000)
-        bar = null
     }
     /**
      * 一度でも流れ始めたか。速さを変えたときに飛び直すかの判定に使う (`resyncAfterSpeedChange`)。
@@ -297,7 +282,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     )
 
     /** 消して一覧へ戻る。一覧からも抜き、隣に合わせる */
-    fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; leave() }
+    fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; ui.leave() }
     /**
      * 止める・動かす。**止めたら操作の列を開いて「再生」に合わせる** (決定でそのまま動かせる)。
      * 動かしたら帯を閉じて何も出さない (映像を観たいだけなので)。帯を閉じて止めたままなら位置の帯を出す
@@ -339,12 +324,12 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     val deleteControl = Control(deleteLabel(delete.armed), icon = R.drawable.ic_delete) { if (delete.press()) deleteNow() }
     val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, error, active = bar == null && !details && !ended && !leaving, captions = captions, recovery = recovery, above = {
+    PlayerFrame(player, overlay, error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
                 // 観終えたものは消すことが多いので、最初は削除に合わせる (2回押しなので、1回では消えない)
-                listOf("" to listOf(Control("一覧に戻る", icon = R.drawable.ic_back) { leave() }, deleteControl.copy(initial = true))),
+                listOf("" to listOf(Control("一覧に戻る", icon = R.drawable.ic_back) { ui.leave() }, deleteControl.copy(initial = true))),
             )
         } else if (bar == null && !playing) {
             // 止めている間の位置の帯。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳しく)
@@ -383,7 +368,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
                     ProgressLine(at, total ?: 0, chapters, seekFocus, down = actions, onUp = { bar = null }) { direction -> step(direction) }
                 },
                 focusActions = which == Bar.Actions,
-                onActivity = { touched = System.nanoTime() },
+                onActivity = { ui.touched = System.nanoTime() },
             )
         }
     }, onKey = { event ->
@@ -399,18 +384,55 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
             RecordingCommand.NextSpeed -> { flash(scope.stepSpeed(repo, speed)); true }
             null -> false
         }
-    }, onCenter = { press ->
-        when (recordingCenter(press)) {
-            RecordingCenter.PlayPause -> togglePause()
-            RecordingCenter.Details -> details = true
-        }
-    })
+    }, onCenter = { press -> ui.center(press) { togglePause() } })
 
     if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }
 
 /** 録画・追っかけの帯をどこに合わせて開いたか。下キーならシークバー、上キー・Menu なら操作の列 */
 internal enum class Bar { SeekBar, Actions }
+
+/**
+ * 録画・追っかけの帯と戻る (`rememberPlayerBar`)。帯は 5 秒触らなければ閉じる (止めている間も)。
+ * 戻るは1つで受け、帯が開いていれば閉じ、無ければ一覧へ (ライブと同じ理由)。続けて押しても1つだけ戻る
+ */
+@Stable
+internal class PlayerBar(private val onLeave: () -> Unit) {
+    /** 開いている帯 (null なら何も出していない) */
+    var bar by mutableStateOf<Bar?>(null)
+    /** 帯で最後にキーを押したとき */
+    var touched by mutableLongStateOf(0L)
+    /** 番組の詳しいところを開いているか (決定の長押し) */
+    var details by mutableStateOf(false)
+    /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
+    var leaving by mutableStateOf(false)
+        private set
+
+    fun leave() {
+        if (leaving) return
+        leaving = true
+        onLeave()
+    }
+
+    /** 決定の短押しで止める・動かす、長押しで詳しく */
+    fun center(press: CenterPress.Action, togglePause: () -> Unit) = when (recordingCenter(press)) {
+        RecordingCenter.PlayPause -> togglePause()
+        RecordingCenter.Details -> details = true
+    }
+}
+
+@Composable
+internal fun rememberPlayerBar(onLeave: () -> Unit, playing: Boolean): PlayerBar {
+    val leave by rememberUpdatedState(onLeave)
+    val state = remember { PlayerBar { leave() } }
+    BackHandler(enabled = !state.leaving) { if (state.bar != null) state.bar = null else state.leave() }
+    LaunchedEffect(state.bar, state.touched, playing) {
+        if (state.bar == null) return@LaunchedEffect
+        delay(5_000)
+        state.bar = null
+    }
+    return state
+}
 
 /** 止める・動かすの札 (録画・追っかけ) */
 internal fun playControl(playing: Boolean, onClick: () -> Unit) =

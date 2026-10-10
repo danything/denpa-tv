@@ -91,7 +91,7 @@ class Settings(private val context: Context) {
         context.dataStore.edit { it[liveQualityKey] = quality.name }
     }
 
-    /** 字幕を出すか (焼いた録画の PGS など)。既定は出す。端末ごと (ブラウザの再生と同じく観ながら変える) */
+    /** 字幕を出すか。既定は出す。端末ごと (ブラウザの再生と同じく観ながら変える) */
     val subtitles: Flow<Boolean> = context.dataStore.data.map { it[subtitlesKey] ?: true }
 
     suspend fun setSubtitles(on: Boolean) {

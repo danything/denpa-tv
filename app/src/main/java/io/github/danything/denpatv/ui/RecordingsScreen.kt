@@ -91,7 +91,6 @@ fun RecordingsScreen(
     /** 観る。true なら続きではなく頭から (詳しくの「最初から」) */
     onWatch: (Recording, Boolean) -> Unit,
     onUnauthorized: () -> Unit,
-    modifier: Modifier = Modifier,
     /** 開いたときにカードに合わせるか (ライブから戻ったときは左のメニューが合いを取るので false) */
     takeFocus: Boolean = true,
 ) {
@@ -186,7 +185,7 @@ fun RecordingsScreen(
     if (!loaded) return Centered("読み込んでいます…")
     error?.let { message ->
         Column(
-            modifier.fillMaxSize(),
+            Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -205,7 +204,7 @@ fun RecordingsScreen(
     val titleWidth = remember { IntArray(1) }
 
     val groups = recordings.groupBy { DAY.format(Date(it.startAt)) }
-    Box(modifier.fillMaxSize().background(Palette.Background)) {
+    Box(Modifier.fillMaxSize().background(Palette.Background)) {
         /*
          * 上の段 (背景の絵と見出し) だけが、合わせている録画を読む (`{ focusedCard ?: lastFocused }` を渡して中で読む)。
          * 合いが動いても組み直すのは上の段だけで、一覧 (この関数と格子) は組み直さない
@@ -480,7 +479,7 @@ private fun Badge(label: String, background: Color, color: Color) {
  *
  * 絵は放送から切り出したもの (暗転・CM・字幕の無い場面のこともある) で、絵だけでは何の番組か分からないことがあるので、
  * **合わせていないカードも題で見分けられるように**する。題を絵の下に置くと1段が高くなり、下の段は絵だけ見えて題が切れる
- * (いちばん見たいものが見えない) ので、絵に重ねて段の高さを前と同じにしている。収まらない題は話数を残して途中を切る (`EpisodeTitle`)。
+ * (いちばん見たいものが見えない) ので、絵に重ねる。収まらない題は話数を残して途中を切る (`EpisodeTitle`)。
  *
  * 絵の上に、録っている最中なら「● 録画中」、焼いている最中なら進み、下の縁に観た割合の帯。まだ観ていないものは番組名の頭に点 (`unwatched`)。
  * 合わせると膨らみ、azure の縁と光 (`Focus`)
@@ -594,7 +593,7 @@ private fun gridIndex(recordings: List<Recording>, id: Long): Int? {
     return null
 }
 
-private const val RECORDING_BADGE = "● 録画中"
+internal const val RECORDING_BADGE = "● 録画中"
 
 private val DAY = SimpleDateFormat("M月d日(E)", Locale.JAPAN)
 /** 上の段の放送日時 */

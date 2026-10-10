@@ -4,7 +4,6 @@ import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
 
 /**
  * denpa の `GET /api/services` の1件 (denpa の docs/api.md)。URL は denpa の根からの相対 (`api/…`)
@@ -73,10 +72,6 @@ data class NowProgram(
     /** 番組 ID (`GET api/programs/<id>` で中身を引く。ライブの詳しく)。無ければ詳しくは `now` のぶんだけ */
     val id: Long? = null,
 ) {
-    /** 進み具合 (0..1) */
-    fun progress(at: Long): Float =
-        if (endAt <= startAt) 0f else ((at - startAt).toFloat() / (endAt - startAt)).coerceIn(0f, 1f)
-
     /** 残り (分。切り上げ) */
     fun remainingMinutes(at: Long): Long = ((endAt - at).coerceAtLeast(0) + 59_999) / 60_000
 }
@@ -95,10 +90,9 @@ data class Recording(
     /** 続きの位置 (ミリ秒)。無い・null なら頭から */
     val resumeMs: Long? = null,
     /**
-     * 末尾まで観た時刻 (ミリ秒)。まだなら `JsonNull`。denpa v1.45.0 から。古い denpa は送らないので `NOT_SENT` のまま
-     * (`unwatched`)。形は問わない (版のずれで一覧ごと読めなくならないように)
+     * 末尾まで観た時刻 (ミリ秒)。まだなら `JsonNull` (`unwatched`)。形は問わない (版のずれで一覧ごと読めなくならないように)
      */
-    val watchedAt: JsonElement = NOT_SENT,
+    val watchedAt: JsonElement = JsonNull,
     /** 予定の終わり (UNIX ミリ秒)。追っかけで観た位置を預けるときの尺に使う */
     val endAt: Long? = null,
     /** いま録っている。`files` は伸びている生TSだけなので、`chase` で観る */
@@ -123,13 +117,9 @@ val Recording.watched: Float?
     }
 
 /**
- * まだ観ていない (番組名の頭の点。ブラウザの denpa と同じ: 観終えた時刻も続きの位置も無い。途中まで観たものは観た割合の帯で分かる)。
- * 古い denpa (`watchedAt` を送らない) では分からないので false (全部に点を付けない)
+ * まだ観ていない (番組名の頭の点。ブラウザの denpa と同じ: 観終えた時刻も続きの位置も無い。途中まで観たものは観た割合の帯で分かる)
  */
 val Recording.unwatched: Boolean get() = watchedAt == JsonNull && resumeMs == null
-
-/** `watchedAt` が来なかった (古い denpa)。`JsonNull` (まだ観ていない) でなければ何でもよい */
-private val NOT_SENT: JsonElement = JsonObject(emptyMap())
 
 /** 札にする形の名前 (AV1 / H.264 / 生TS)。並びは軽いものから */
 val Recording.codecLabels: List<String>

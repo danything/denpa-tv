@@ -1,10 +1,7 @@
 package io.github.danything.denpatv.ui
 
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.annotation.OptIn
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -12,12 +9,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.media3.common.C
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.TimestampAdjuster
@@ -40,7 +31,6 @@ import io.github.danything.denpatv.data.CueTimeline
 import io.github.danything.denpatv.data.Http
 import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.Unauthorized
-import io.github.danything.denpatv.data.inkRows
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
@@ -51,7 +41,6 @@ import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.io.IOException
 import java.net.URI
-import kotlin.math.roundToInt
 
 /**
  * **TS の読み手が 0 に寄せた幅を覚えておく** (生の TS の字幕を放送の PTS で突き合わせるため。`Pts.broadcast`)。
@@ -117,18 +106,8 @@ class TsClock(private val inner: DefaultExtractorsFactory = DefaultExtractorsFac
     }
 }
 
-/** 字幕の口の canvas の大きさ (denpa の `CANVAS`)。映像の枠いっぱいに引き伸ばす */
-private const val CANVAS_WIDTH = 1920f
-private const val CANVAS_HEIGHT = 1080f
-
 /**
- * 解いた字幕の絵と置き場所。`ink` は何か描いてある行の上の端と下の端 (絵の中の行。画面まるごとの絵で届くので、
- * 帯の上へ逃がすときに字の在りかを見る。`inkRows`)。何も描いていなければ null
- */
-class CaptionPicture(val bitmap: ImageBitmap, val cue: CaptionCue.Picture, val ink: Pair<Int, Int>?)
-
-/**
- * denpa から別に受け取る字幕 (Media3 のトラックには出てこないもの) の、画面に出すぶん。生の TS の字幕の口
+ * denpa から受け取る字幕 (Media3 は ARIB の字幕を読まない) の、画面に出すぶん。生の TS の字幕の口
  * (`rememberRawCaptions`) と、焼いた録画の `captions.json` (`rememberCaptionPages`)。描くのは `CaptionLayer`
  */
 class CaptionState(
@@ -137,8 +116,6 @@ class CaptionState(
 ) {
     /** 選べる字幕があるか。操作の列の「字幕」の札を出すかに使う */
     var available by mutableStateOf(false)
-    /** いま重ねている絵 (古い denpa の字幕の口) */
-    var picture by mutableStateOf<CaptionPicture?>(null)
     /** いま重ねている文字の配置 */
     var page by mutableStateOf<CaptionPage?>(null)
     internal val timeline = CueTimeline()
@@ -157,8 +134,7 @@ private fun LoadCaptionFont(state: CaptionState) {
 /**
  * **生の TS の字幕を受け取って、出す番のものを選ぶ。** 描くのは `CaptionLayer`。
  *
- * - **文字の配置で頼む** (`?format=text`、0x22)。古い denpa (v1.49.0 まで) は知らずに絵 (0x20) を返すので、届いたほうを出す
- * - 字幕の入れ切りは焼いた映像の字幕と同じ設定 (端末ごと)。切ってある間も、選べる字幕があるかだけは訊く
+ * - 字幕の入れ切りは焼いた録画の字幕と同じ設定 (端末ごと)。切ってある間も、選べる字幕があるかだけは訊く
  *   (札を出すため。分かったら切る)
  * - **映像が流れはじめてから頼む** — TS の読み手が最初の PTS を読むまで時計が無く、ライブは映像の口が
  *   開いていないと字幕の口が 404 を返す (denpa は字幕のためにチューナーを掴まない)
@@ -190,7 +166,6 @@ fun rememberRawCaptions(
             state.available = false
         }
         state.timeline.clear()
-        state.picture = null
         state.page = null
         if (path == null) return@LaunchedEffect
         // 切ってあって、選べる字幕があるかはもう分かっている
@@ -234,7 +209,6 @@ fun rememberRawCaptions(
     // 出す番のものを選ぶ。**時計は再生位置を放送の PTS に戻したもの**
     LaunchedEffect(state, enabled) {
         if (!enabled) {
-            state.picture = null
             state.page = null
             return@LaunchedEffect
         }
@@ -254,20 +228,7 @@ fun rememberRawCaptions(
                 continue
             }
             shown = cue
-            when (cue) {
-                is CaptionCue.Text -> {
-                    state.picture = null
-                    state.page = cue.page?.takeIf { it.runs.isNotEmpty() }
-                }
-                is CaptionCue.Picture -> {
-                    state.page = null
-                    state.picture = decode(cue)
-                }
-                null -> {
-                    state.picture = null
-                    state.page = null
-                }
-            }
+            state.page = cue?.page?.takeIf { it.runs.isNotEmpty() }
         }
     }
     return state
@@ -275,10 +236,7 @@ fun rememberRawCaptions(
 
 /**
  * **焼いた録画の字幕を、文字の配置で丸ごと受け取る** (`GET api/recordings/<id>/captions.json`)。再生位置を追い越していない
- * 中の最後の1枚を出す (シークしても頼み直さない)。
- *
- * 字幕が絵 (PGS) で入っている前の録画と、この口の無い古い denpa は 404 — そのときは何もしない (PGS は Media3 が動画から
- * 読んで `SubtitleView` に出す)。新しく焼いた録画の字幕 (S_ARIBSUB) は Media3 が読まないので、こちらだけが出す
+ * 中の最後の1枚を出す (シークしても頼み直さない)。字幕を持たない録画は 404 で、そのときは何もしない
  */
 @Composable
 fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUnauthorized: () -> Unit = {}): CaptionState {
@@ -298,7 +256,7 @@ fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUn
             when {
                 response == null -> delay(RETRY_MS)
                 response.code == 401 -> return@LaunchedEffect onUnauthorized()
-                // 前の録画・古い denpa。読み直しても同じ
+                // 字幕を持たない録画。読み直しても同じ
                 !response.ok -> return@LaunchedEffect
                 else -> {
                     val read = withContext(Dispatchers.Default) { CaptionPages.parse(response.text()) }
@@ -371,43 +329,10 @@ private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGo
     }
 }
 
-/** 絵を解く。PNG は RGBA で、1920x1080 まるごと。字のある行もここで探す (上と下から見て、字に当たったら止める) */
-private suspend fun decode(cue: CaptionCue.Picture): CaptionPicture? = withContext(Dispatchers.Default) {
-    BitmapFactory.decodeByteArray(cue.png, 0, cue.png.size)?.let { bitmap ->
-        val ink = inkRows(bitmap.width, bitmap.height) { y, rows, into -> bitmap.getPixels(into, 0, bitmap.width, 0, y, bitmap.width, rows) }
-        CaptionPicture(bitmap.asImageBitmap(), cue, ink)
-    }
-}
-
-/**
- * 字幕を映像の枠に重ねる。文字の配置なら描き (`TextCaptionLayer`)、絵なら伸ばして貼る。
- * 映像は枠いっぱいに伸ばして出している (`PlayerFrame`) ので、どちらも枠いっぱいに伸ばす
- */
+/** 字幕を映像の枠に重ねる (`TextCaptionLayer`)。映像は枠いっぱいに伸ばして出している (`PlayerFrame`) ので、字幕も枠いっぱいに伸ばす */
 @Composable
 fun CaptionLayer(state: CaptionState, inset: () -> Float) {
-    state.page?.let { return TextCaptionLayer(it, state.font, inset) }
-    val picture = state.picture ?: return
-    // 下に重ねたもの (帯・メニュー) があれば、字のある行がその上に来るまで持ち上げる
-    val lifted = Modifier.fillMaxSize().liftCaptions(inset) { _, height ->
-        picture.ink?.let { (top, bottom) ->
-            val scale = picture.cue.height.toFloat() / picture.bitmap.height * height / CANVAS_HEIGHT
-            val y = picture.cue.y * height / CANVAS_HEIGHT
-            y + top * scale to y + bottom * scale
-        }
-    }
-    Canvas(lifted) {
-        val sx = size.width / CANVAS_WIDTH
-        val sy = size.height / CANVAS_HEIGHT
-        val cue = picture.cue
-        drawImage(
-            picture.bitmap,
-            srcOffset = IntOffset.Zero,
-            srcSize = IntSize(picture.bitmap.width, picture.bitmap.height),
-            dstOffset = IntOffset((cue.x * sx).roundToInt(), (cue.y * sy).roundToInt()),
-            dstSize = IntSize((cue.width * sx).roundToInt(), (cue.height * sy).roundToInt()),
-            filterQuality = FilterQuality.Medium,
-        )
-    }
+    state.page?.let { TextCaptionLayer(it, state.font, inset) }
 }
 
 /** 出す番を見直す間 (ミリ秒)。字幕の時刻の細かさ (1 コマ 33ms) くらい */
@@ -422,7 +347,7 @@ private const val MAX_REFUSED = 5
 /** ライブで断られ続けたときの頼み直しの間 (ミリ秒) */
 private const val SLOW_RETRY_MS = 30_000L
 
-/** 先読みして持っておく字幕の枚数の上限。1枚 数十 KB (PNG のまま持つ) */
+/** 先読みして持っておく字幕の枚数の上限 */
 private const val MAX_AHEAD = 200
 
 /** 頼み直すまでの間 (ミリ秒) */

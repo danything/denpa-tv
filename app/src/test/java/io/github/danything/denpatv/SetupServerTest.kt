@@ -17,7 +17,6 @@ class SetupServerTest {
         val request = parseRequest(raw.byteInputStream())!!
         assertEquals("POST", request.method)
         assertEquals("/abc/", request.path)
-        assertEquals("tv", request.headers["host"])
         assertEquals("https://dp.example/x y", parseForm(request.body)["url"])
     }
 

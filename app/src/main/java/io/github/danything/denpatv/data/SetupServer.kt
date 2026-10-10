@@ -80,7 +80,7 @@ class SetupServer(
         }
 
         /** テレビの LAN の IPv4 (192.168.x.x など)。Wi-Fi か有線の、上がっているもの */
-        fun lanAddress(): String? = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+        private fun lanAddress(): String? = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
             .filter { it.isUp && !it.isLoopback }
             .flatMap { it.inetAddresses.toList() }
             .filterIsInstance<Inet4Address>()
@@ -89,7 +89,7 @@ class SetupServer(
     }
 }
 
-data class HttpRequest(val method: String, val path: String, val headers: Map<String, String>, val body: String)
+data class HttpRequest(val method: String, val path: String, val body: String)
 
 /**
  * HTTP の要求を1つ読む。**大きすぎるもの (64 KB 超) は読まない** — フォームに入るのは URL 1つだけ
@@ -116,7 +116,7 @@ fun parseRequest(input: InputStream): HttpRequest? {
         if (n < 0) break
         read += n
     }
-    return HttpRequest(parts[0], parts[1], headers, body.copyOf(read).toString(Charsets.UTF_8))
+    return HttpRequest(parts[0], parts[1], body.copyOf(read).toString(Charsets.UTF_8))
 }
 
 /** `application/x-www-form-urlencoded` を読む */

@@ -72,7 +72,6 @@ private val SUM_LINE = Regex("""([0-9A-Fa-f]{64}) [ *](.+)""")
 data class GitHubRelease(
     @SerialName("tag_name") val tagName: String,
     val draft: Boolean = false,
-    val prerelease: Boolean = false,
     val assets: List<GitHubAsset> = emptyList(),
 )
 
@@ -120,7 +119,7 @@ open class UpdateRejected(message: String) : IOException(message)
 class HashMismatch(message: String) : UpdateRejected(message)
 
 /** ファイルの SHA-256 (小文字の16進) */
-fun sha256Hex(file: File): String {
+private fun sha256Hex(file: File): String {
     val digest = MessageDigest.getInstance("SHA-256")
     file.inputStream().use { input ->
         val buffer = ByteArray(64 * 1024)
@@ -137,7 +136,7 @@ private fun ByteArray.toHex() = joinToString("") { (it.toInt() and 0xff).toStrin
 
 /**
  * 新しい版が見えたときにどうするか。**確かめた APK が手元にあればそれを使う** (取り直さない)。
- * 無ければ裏で取ってくる。ただし SHA256SUMS の無いリリースは取っても入れられないので、前のとおり知らせだけ出す
+ * 無ければ裏で取ってくる。ただし SHA256SUMS の無いリリースは取っても入れられないので、知らせだけ出す
  * (押すと断る文が出る)。裏で何度も取れないときも知らせだけ出し、押したら取ってくる。
  * `fresh` は GitHub をいま引いた (開いたときの 12 時間ごと・設定の「確かめる」) とき。そのときは数えずにもう一度取りに行く
  */
@@ -160,7 +159,7 @@ fun offerAfterFailure(failures: Int, manual: Boolean): Boolean = manual || failu
 const val MAX_SILENT_FAILURES = 3
 
 /**
- * 押して「不明なアプリのインストール」の許可の画面へ送った (denpa-tv#32)。**許可して戻ったら、もう一度押さなくても続けて入れる。**
+ * 押して「不明なアプリのインストール」の許可の画面へ送った。**許可して戻ったら、もう一度押さなくても続けて入れる。**
  * テレビによっては許可の画面にいる間・許可したときにアプリが閉じられ、戻ると開き直しになるので、覚えておく (Settings)。
  * 古い頼み (許可せずに戻って、ずっと後に開いた) では勝手に入れ始めない
  */
