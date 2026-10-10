@@ -192,7 +192,7 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 - **焼くときに取ってきて assets に入れる** (`app/build.gradle.kts` の `fetchCaptionFont`)。ttf は 4.2MB あるのでリポジトリには置かない。
   リリースの ttf を版 (タグ) と sha256 で留めて取る。版は denpa の Dockerfile の `DENPA_FONT_VERSION` と揃え、Renovate が新しい
   リリースを追う (`renovate.json` の customManagers)。sha256 は Renovate が直せないので、その PR でリリースの SHA256SUMS の値を写す
-- assets は縮めて入る (APK は SIZE_LINE)。読むのは初めて字幕を描くときに1度だけ (`Typeface.createFromAsset`。
+- assets は縮めて入る (4.2MB → 2.1MB。APK は 4.4MB。前の Rounded M+ 1m for ARIB (5.5MB) のときは 5.2MB)。読むのは初めて字幕を描くときに1度だけ (`Typeface.createFromAsset`。
   縮めた asset は開くときに解くので、4.2MB を1度メモリに持つ)。読めなければ端末の字で描く
 - denpa の `api/font/denpa-font.woff2` からは取らない (配っているのはブラウザ向けの woff2 で、Android の Typeface は読めない)
 - 許諾は SIL OFL 1.1 (元の源柔ゴシック等幅 = 源ノ角ゴシック + M+ OUTLINE FONTS と同じ。足した和田研中丸ゴシックの記号は
