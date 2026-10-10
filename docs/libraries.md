@@ -198,7 +198,7 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 - assets は縮めて入る (4.2MB → 2.1MB)。読むのはアプリを開いたときに1度だけ、画面の糸の外で (`Typeface.createFromAsset`。
   縮めた asset は開くときに解くので、4.2MB をメモリに持つ)。読み終えるまで・読めなければ (取ってこずに焼いた版) 端末の字で描く
 - denpa の `api/font/denpa-font.woff2` からは取らない (配っているのはブラウザ向けの woff2 で、Android の Typeface は読めない)
-- 許諾は SIL OFL 1.1 (元の源柔ゴシック等幅 = 源ノ角ゴシック + M+ OUTLINE FONTS と同じ。原文は denpa-font の README)。
+- 許諾は SIL OFL 1.1 (元の BIZ UDゴシック (モリサワ) と同じ。原文は denpa-font の README)。
   字幕・データ放送・番組表で使う字 (denpa の字の表から作る) に絞ってある
 
 ## まとめ: AndroidX / Kotlin の外から入れているもの
