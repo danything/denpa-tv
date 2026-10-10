@@ -17,7 +17,7 @@ mkdir -p "$out"
 adb install -r -t "$app"
 adb install -r -t "$smoke"
 # 終わりの印が出ても adb shell が戻らないことがある (smoke-run.sh) ので、上限を付ける
-timeout 600 adb shell am instrument -w -r -e shots 1 -e class io.github.danything.denpatv.smoke.Screenshots \
+timeout 900 adb shell am instrument -w -r -e shots 1 -e class io.github.danything.denpatv.smoke.Screenshots \
     io.github.danything.denpatv.smoke/androidx.test.runner.AndroidJUnitRunner | tee "$out/instrument.txt" || true
 adb pull /data/local/tmp/shots/. "$out/" || true
 # 終わりに一覧を上下に送ったあいだのこま (Screenshots の最後) と、そのあとの覚えの量
