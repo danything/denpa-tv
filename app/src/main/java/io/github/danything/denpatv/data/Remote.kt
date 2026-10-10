@@ -6,7 +6,7 @@ import android.view.KeyEvent
  * 再生の画面で、何も開いていないときのリモコンのキーの割り当て。**十字キーと決定・戻るだけで全部に届く**
  * (Menu キーの無いリモコンが多い)。README の「操作」の表と同じ。
  *
- * ライブ: **左右で前・次の局** (チャンネル送りも同じ。Fire TV のリモコンにはチャンネル送りが無いので十字キーだけで替えられる)。
+ * ライブ: **左右で前・次の局** (チャンネル送りも同じで、CH+ が次・CH- が前。Fire TV のリモコンにはチャンネル送りが無いので十字キーだけで替えられる)。
  * **下・決定・Menu でメニュー** (操作の列と局の列。YouTube・Prime Video・ABEMA などのテレビのアプリと同じく、下でメニューが出る)。
  * **上は同じメニューを、局の列のいま映している局に合わせて開く** (局を一覧から選ぶ近道)。
  * **決定の長押しは情報キーと同じく、いま放送中の番組の詳しくを開く** (`liveCenter`。録画の詳しくと同じもの)。
@@ -18,8 +18,8 @@ import android.view.KeyEvent
 enum class LiveCommand { PreviousChannel, NextChannel, Menu, Channels, Details }
 
 fun liveCommand(keyCode: Int): LiveCommand? = when (keyCode) {
-    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_CHANNEL_UP -> LiveCommand.PreviousChannel
-    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_CHANNEL_DOWN -> LiveCommand.NextChannel
+    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_CHANNEL_DOWN -> LiveCommand.PreviousChannel
+    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_CHANNEL_UP -> LiveCommand.NextChannel
     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_MENU -> LiveCommand.Menu
     KeyEvent.KEYCODE_DPAD_UP -> LiveCommand.Channels
     KeyEvent.KEYCODE_INFO -> LiveCommand.Details

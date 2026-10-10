@@ -23,9 +23,9 @@ class RemoteTest {
     @Test
     fun ライブのキー() {
         assertEquals(LiveCommand.PreviousChannel, liveCommand(KeyEvent.KEYCODE_DPAD_LEFT))
-        assertEquals(LiveCommand.PreviousChannel, liveCommand(KeyEvent.KEYCODE_CHANNEL_UP))
+        assertEquals(LiveCommand.PreviousChannel, liveCommand(KeyEvent.KEYCODE_CHANNEL_DOWN))
         assertEquals(LiveCommand.NextChannel, liveCommand(KeyEvent.KEYCODE_DPAD_RIGHT))
-        assertEquals(LiveCommand.NextChannel, liveCommand(KeyEvent.KEYCODE_CHANNEL_DOWN))
+        assertEquals(LiveCommand.NextChannel, liveCommand(KeyEvent.KEYCODE_CHANNEL_UP))
         assertEquals(LiveCommand.Menu, liveCommand(KeyEvent.KEYCODE_DPAD_DOWN))
         assertEquals(LiveCommand.Menu, liveCommand(KeyEvent.KEYCODE_MENU))
         assertEquals(LiveCommand.Channels, liveCommand(KeyEvent.KEYCODE_DPAD_UP))
