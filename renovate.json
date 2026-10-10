@@ -5,7 +5,7 @@
   ],
   "customManagers": [
     {
-      "description": "字幕の字 (danything/denpa-font のリリース) は焼くときに取ってくる (app/build.gradle.kts)。版をタグで留め、新しいリリースが出たら PR を出す (denpa の Dockerfile と同じ追い方)。sha256 は Renovate が直せないので、PR でそのリリースの SHA256SUMS の値を写す",
+      "description": "字幕の字 (danything/denpa-font のリリース) は焼くときに取ってくる (app/build.gradle.kts)。タグだけ留め、中身は同じリリースの SHA256SUMS で照らすので、新しいリリースが出たらタグを上げるだけ (denpa の Dockerfile と同じ追い方)",
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)build\\.gradle\\.kts$/"
@@ -30,6 +30,16 @@
         "androidx.media3:**"
       ],
       "groupName": "Media3"
+    },
+    {
+      "description": "danything/denpa-font の版は vX.Y のタグだけ (元フォントを置いた source-… のリリースは版ではない)",
+      "matchDatasources": [
+        "github-releases"
+      ],
+      "matchPackageNames": [
+        "danything/denpa-font"
+      ],
+      "allowedVersions": "/^v\\d+\\.\\d+$/"
     }
   ]
 }
