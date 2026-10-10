@@ -183,7 +183,7 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 
 ### 字幕と放送の字: 丸ゴシックを APK に入れる ([danything/denpa-font](https://github.com/danything/denpa-font)、SIL OFL 1.1)
 
-字幕の文字の配置は、ブラウザの denpa と同じ字 (Denpa Font。等幅・丸ゴシック・ARIB の外字を持つ)
+字幕の文字の配置は、ブラウザの denpa と同じ字 (Denpa Font。v3.0 は BIZ UDゴシックを丸めたもの。等幅で ARIB の外字を持つ)
 で描かないと、ブラウザと字の幅や形が揃わない。**放送から来た字 (番組名・説明・局名・いまの番組) も同じ字で出す**
 (番組表の記号 = 外字がテレビと同じく白黒で出る)。アプリの札・見出し・設定は端末の字のまま。
 
@@ -195,8 +195,8 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 - **焼くときに取ってきて assets に入れる** (`app/build.gradle.kts` の `fetchCaptionFont`)。ttf は 4.2MB あるのでリポジトリには置かない。
   リリースの ttf を版 (タグ) で留めて取り、同じリリースの SHA256SUMS で照らす。版は denpa の Dockerfile の `DENPA_FONT_VERSION` と揃え、
   Renovate が新しいリリースのタグを上げる (`renovate.json` の customManagers)
-- assets は縮めて入る (4.2MB → 2.1MB)。読むのはアプリを開いたときに1度だけ、画面の糸の外で (`Typeface.createFromAsset`。
-  縮めた asset は開くときに解くので、4.2MB をメモリに持つ)。読み終えるまで・読めなければ (取ってこずに焼いた版) 端末の字で描く
+- APK には縮めずに入れる (`noCompress += "ttf"`)。`Typeface.createFromAsset` が APK の中をそのまま mmap し、解いた写しをメモリに持たない。
+  読むのはアプリを開いたときに1度だけ、画面の糸の外で。読み終えるまで・読めなければ (取ってこずに焼いた版) 端末の字で描く
 - denpa の `api/font/denpa-font.woff2` からは取らない (配っているのはブラウザ向けの woff2 で、Android の Typeface は読めない)
 - 許諾は SIL OFL 1.1 (元の BIZ UDゴシック (モリサワ) と同じ。原文は denpa-font の README)。
   字幕・データ放送・番組表で使う字 (denpa の字の表から作る) に絞ってある
@@ -214,11 +214,9 @@ Navigation 3 と DataStore が既に使っている。QR の符号化だけは�
 
 ### エミュレータで動かすテスト (`smoke/`)
 
-2026-10-05 に足した。v0.6.0〜0.6.1 は Android TV 12 で再生を始めた瞬間に落ちていた (denpa-tv#24、`HttpEngine` の
-NoClassDefFoundError)。**R8 で縮めた APK を古い Android で動かしたときだけ**出る落ち方で、debug の APK の単体テストでは
-見つからない。そこで release と同じ縮め方の APK を、CI で API 24・28・31・34・36 の Android TV のエミュレータに入れて
-ライブと録画を映す (`.github/workflows/ci.yml` の `emulator`)。v0.6.1 に当てると、API 31 で `live` が
-`NoClassDefFoundError: Failed resolution of: Landroid/net/http/HttpEngine;` で落ちることを確かめてある。
+**R8 で縮めた APK を古い Android で動かしたときだけ**出る落ち方 (Android TV 12 で再生を始めた瞬間の `HttpEngine` の NoClassDefFoundError、#24) は、
+debug の APK の単体テストでは見つからない。そこで release と同じ縮め方の APK を、CI で API 24・28・31・34・36 の Android TV のエミュレータに入れて
+ライブと録画を映す (`.github/workflows/ci.yml` の `emulator`)。
 
 | 決めたこと | 理由 |
 | --- | --- |

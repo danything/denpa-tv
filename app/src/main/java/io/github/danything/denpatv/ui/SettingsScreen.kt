@@ -75,7 +75,7 @@ fun SettingsScreen(repo: Repository) {
                 },
                 onClick = { if (notice != null) updater.act() else updater.checkNow() },
             )
-            // 繋いだ denpa の版。古すぎれば要る版を言う (止めはしない。README の「対応する denpa の版」)
+            // 繋いだ denpa の版。古すぎれば要る版を言う (止めはしない。docs/pairing.md の「要る denpa の版」)
             val warning = repo.denpaWarning
             (warning ?: repo.denpaVersion?.let { "denpa $it" })?.let {
                 Text(

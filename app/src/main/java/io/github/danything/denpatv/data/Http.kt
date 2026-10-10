@@ -22,7 +22,7 @@ object Http {
     }
 
     /**
-     * `token` があれば `Authorization: Bearer` を付ける (家の外の denpa に登録したとき。README の「denpa に繋ぐ」)。
+     * `token` があれば `Authorization: Bearer` を付ける (家の外の denpa に登録したとき。docs/pairing.md)。
      * `headers` はほかに付けるもの (GitHub のリリースを引くときの Accept など)
      */
     fun request(

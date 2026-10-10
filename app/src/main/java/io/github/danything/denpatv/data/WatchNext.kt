@@ -37,7 +37,7 @@ data class WatchNextItem(
     val durationMs: Long,
     val positionMs: Long,
     val engagedAt: Long,
-    /** 選ばれたら開くリンク (README の「リンクで開く」) */
+    /** 選ばれたら開くリンク (docs/usage.md の「リンクで開く」) */
     val link: String,
 )
 

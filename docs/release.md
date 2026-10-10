@@ -23,11 +23,11 @@ base64 -w0 denpa-tv-release.jks > denpa-tv-release.jks.b64
 | `DENPA_TV_KEYSTORE_PASSWORD` | keystore のパスワード |
 
 鍵がまだ入っていない間は、debug の署名の APK (`denpa-tv-<版>-debug.apk`) を出します。鍵を入れたあとの
-リリースへ移るときは、使っている人に入れ直してもらう必要があります (docs/install.md の「署名について」)。
+リリースへ移るときは、使っている人に入れ直してもらう必要があります ([install.md](install.md#署名について))。
 
 ## アプリの中のアップデートを確かめる
 
-アプリの中で上げる流れ (README の「アップデート」) は、手元のエミュレータで偽のリリースから確かめられます。
+アプリの中で上げる流れ ([updates.md](updates.md)) は、手元のエミュレータで偽のリリースから確かめられます。
 **debug だけ**、焼くときに `DENPA_TV_UPDATE_API` で GitHub のリリースの API の代わりを指せます (release・minified は
 いつも GitHub)。同じ debug の鍵で、古い版と新しい版を焼きます。
 

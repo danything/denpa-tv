@@ -152,7 +152,7 @@ fun reopenConfirm(shownAt: Long, now: Long): Boolean = now - shownAt >= CONFIRM_
 const val CONFIRM_GRACE_MS = 3_000L
 
 /**
- * アプリの中から新しい版に上げる (README の「アップデート」)。**設定は増やさない**: 開いたとき (12 時間に1回まで) に
+ * アプリの中から新しい版に上げる (docs/updates.md)。**設定は増やさない**: 開いたとき (12 時間に1回まで) に
  * GitHub のリリースを見て、新しければ**黙って裏で取ってきて SHA256SUMS と照らし**、照らし終えたら録画の一覧の頭に1行出す。
  * 押すと PackageInstaller のセッションで入れる (リリースは同じ鍵で署名しているので上書きで入る)。
  * 照らした APK は cache に版ごとに置き、開き直しても (ハッシュを計り直して合えば) 取り直さない。

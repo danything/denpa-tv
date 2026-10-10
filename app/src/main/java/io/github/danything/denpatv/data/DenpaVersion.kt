@@ -22,7 +22,7 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 }
 
 /**
- * このアプリが要る denpa の版 (README の「対応する denpa の版」)。いちばん新しく足された口に合わせる:
+ * このアプリが要る denpa の版 (docs/pairing.md の「要る denpa の版」)。いちばん新しく足された口に合わせる:
  * 字幕の文字の配置 (生TSの字幕の口の 0x22・焼いた録画の `captions.json`) が 1.50.0 から
  */
 val MIN_DENPA = DenpaVersion(1, 50, 0)
