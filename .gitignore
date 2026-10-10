@@ -5,5 +5,3 @@ local.properties
 *.iml
 .kotlin/
 captures/
-# 画面の絵を撮るときだけ置く字幕の字 (screenshots.yml)
-smoke/src/main/assets/caption-font.ttf

@@ -242,8 +242,8 @@ class SmokeTest {
             "字幕の背景が塗られていません (青の点 $painted)",
             poll(TEXT_TIMEOUT_MS) { painted = screenshot()?.let { count(it, FakeCaptions.BACKGROUND) } ?: 0; painted >= CAPTION_DOTS },
         )
-        // 字は denpa から取りに行く (偽の denpa は返さないので、端末の字で描いている)
-        assertTrue("字を取りに行きません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { "GET /api/font" in denpa.requests })
+        // 字は APK に入れてある丸ゴシック (縮めた APK でも assets から読めた)
+        assertTrue("字幕の字を読めていません: ${appLog()}", "字幕の字を読めません" !in appLog())
 
         // 止めると操作の列が開いて「再生」に合う (決定でそのまま動かせる)
         press(KeyEvent.KEYCODE_DPAD_CENTER)

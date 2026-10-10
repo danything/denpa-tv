@@ -244,11 +244,3 @@ class CaptionPages(private val atMs: LongArray, private val pages: List<CaptionP
         }
     }
 }
-
-/** ファイルの頭が TrueType / OpenType (sfnt) か。woff2 (`wOF2`) などは Typeface で読めない */
-fun isSfnt(head: ByteArray): Boolean {
-    if (head.size < 4) return false
-    val tag = ((head[0].toInt() and 0xff) shl 24) or ((head[1].toInt() and 0xff) shl 16) or
-        ((head[2].toInt() and 0xff) shl 8) or (head[3].toInt() and 0xff)
-    return tag == 0x00010000 || tag == 0x4f54544f || tag == 0x74727565 // 1.0 / 'OTTO' / 'true'
-}

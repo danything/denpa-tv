@@ -48,9 +48,6 @@ class FakeDenpa(
      */
     val emptyLive = AtomicInteger(0)
 
-    /** 字幕の字 (assets の caption-font.ttf)。置いていなければ null */
-    private val font: ByteArray? by lazy { runCatching { assets.open(FONT_ASSET).use(InputStream::readBytes) }.getOrNull() }
-
     /** アプリに覚えさせる繋ぐ先 */
     val url = "http://127.0.0.1:${server.localPort}/"
 
@@ -122,9 +119,6 @@ class FakeDenpa(
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
             // 焼いた録画の字幕 (文字の配置)
             path == "/api/recordings/$RECORDING_ID/captions.json" -> json(out, FakeCaptions.smoke)
-            // 字幕の字。リポジトリには置かない (5MB ある) ので、ふだんは 404 でアプリは端末の字で描く。
-            // 画面の絵を撮る流れ (screenshots.yml) は assets に置いてから焼く
-            path == "/api/font" -> font.let { if (it != null) respond(out, 200, "font/ttf", it) else respond(out, 404, "text/plain", "not found".toByteArray()) }
             // 作り物の録画は、どれも同じ映像と字幕
             showcase && recording?.groupValues?.get(2) == "file" -> media(out, "recording.mkv", "video/x-matroska", range)
             showcase && Regex("/api/recordings/\\d+/captions\\.json").matches(path) -> json(out, FakeCaptions.showcase)
@@ -246,8 +240,6 @@ class FakeDenpa(
         /** 録っている最中の録画 (追っかけで観る) */
         const val CHASE_ID = 2L
         const val CHASE_TITLE = "偽の録画中"
-        /** 字幕の字を置く assets の名前 (.gitignore してある) */
-        const val FONT_ASSET = "caption-font.ttf"
         /** 黙っている長さ (アプリが見張りで気付いて頼み直すより十分長く) */
         private const val STALL_HOLD_MS = 60_000L
         private val REASONS = mapOf(200 to "OK", 204 to "No Content", 206 to "Partial Content", 404 to "Not Found", 503 to "Service Unavailable", 416 to "Range Not Satisfiable")

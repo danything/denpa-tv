@@ -145,12 +145,12 @@ class CaptionState(
     internal var key: Any? = null
 }
 
-/** 文字の配置が出たら、字を用意する (1度だけ取ってくる。`CaptionFont`) */
+/** 文字の配置が出たら、字を読む (APK の assets から1度だけ。`CaptionFont`) */
 @Composable
-private fun LoadCaptionFont(repo: Repository, state: CaptionState) {
+private fun LoadCaptionFont(state: CaptionState) {
     val showing = state.page != null
     LaunchedEffect(showing) {
-        if (showing) state.font.load(repo.url(CaptionFont.PATH), repo.token)
+        if (showing) state.font.load()
     }
 }
 
@@ -181,7 +181,7 @@ fun rememberRawCaptions(
 ): CaptionState {
     val state = remember { CaptionState(repo.app.captionFont) }
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
-    LoadCaptionFont(repo, state)
+    LoadCaptionFont(state)
 
     LaunchedEffect(path, generation, enabled) {
         // 選べる字幕は局 (録画) ごと。頼み直し・シークでは消さない (札がちらつく)
@@ -285,7 +285,7 @@ fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUn
     val state = remember { CaptionState(repo.app.captionFont) }
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
     var pages by remember { mutableStateOf<CaptionPages?>(null) }
-    LoadCaptionFont(repo, state)
+    LoadCaptionFont(state)
 
     LaunchedEffect(path) {
         val url = repo.url(path)?.let { URI(it) } ?: return@LaunchedEffect

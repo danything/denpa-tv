@@ -49,8 +49,8 @@ class DenpaApp : Application() {
         }
     }
 
-    /** 字幕の字 (denpa から1度だけ取って置いておく)。字幕の文字の配置を描くのに使う */
-    val captionFont: CaptionFont by lazy { CaptionFont(filesDir) }
+    /** 字幕の字 (APK に入れてある丸ゴシック)。字幕の文字の配置を描くのに使う */
+    val captionFont: CaptionFont by lazy { CaptionFont(assets) }
 
     /** Google TV のホームの「続きを視聴」。TvProvider の WatchNextPrograms は Android 8.0 からで、それより前は何もしない */
     val watchNext: WatchNextRows by lazy { WatchNextRows(this) }

@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -81,6 +83,42 @@ android {
         warningsAsErrors = false
         abortOnError = true
     }
+}
+
+/*
+ * 字幕の字 (denpa が字幕を焼いていたのと同じ丸ゴシック。Rounded M+ 1m for ARIB、M+ FONT LICENSE)。5MB あるので
+ * リポジトリには置かず、**焼くときに取ってきて assets に入れる** (ui/CaptionFont.kt が読む)。版は denpa の Dockerfile の
+ * ARIB_FONT_SHA と同じコミットに留め、Renovate が枝の先頭を追う (renovate.json)。差し替えるならここの URL だけ直す
+ */
+// renovate: datasource=git-refs depName=https://github.com/danything/arib-font branch=main
+val aribFontSha = "a9c834099818c59ba9c3721a2b1a860f6c0af61a"
+
+abstract class FetchCaptionFont : DefaultTask() {
+    @get:Input
+    abstract val url: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun fetch() {
+        val dir = outputDir.get().asFile.apply { deleteRecursively(); mkdirs() }
+        val bytes = URI(url.get()).toURL().openStream().use { it.readBytes() }
+        // TrueType (0x00010000) でなければ止める (取り違えた・HTML の失敗の頁が来た)
+        check(bytes.size > 4 && bytes[0] == 0.toByte() && bytes[1] == 1.toByte() && bytes[2] == 0.toByte() && bytes[3] == 0.toByte()) {
+            "字幕の字が TrueType ではありません: ${url.get()}"
+        }
+        dir.resolve("caption-font.ttf").writeBytes(bytes)
+    }
+}
+
+val fetchCaptionFont = tasks.register<FetchCaptionFont>("fetchCaptionFont") {
+    url.set("https://raw.githubusercontent.com/danything/arib-font/$aribFontSha/rounded-mplus-1m-arib.ttf")
+    outputDir.set(layout.buildDirectory.dir("generated/captionFont"))
+}
+
+androidComponents {
+    onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(fetchCaptionFont, FetchCaptionFont::outputDir) }
 }
 
 dependencies {

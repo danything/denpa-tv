@@ -5,7 +5,6 @@ import io.github.danything.denpatv.data.captionBaseline
 import io.github.danything.denpatv.data.captionColor
 import io.github.danything.denpatv.data.decodeDrcs
 import io.github.danything.denpatv.data.isCaptionSpace
-import io.github.danything.denpatv.data.isSfnt
 import io.github.danything.denpatv.data.lenientJson
 import io.github.danything.denpatv.data.parseCaptionPage
 import org.junit.Assert.assertArrayEquals
@@ -161,13 +160,5 @@ class CaptionTextTest {
         assertNull(pages.at(60_000))
         assertNull(CaptionPages.parse("""{"v":2,"pages":[]}"""))
         assertNull(CaptionPages.parse("not json"))
-    }
-
-    @Test
-    fun 字のファイルの形を見分ける() {
-        assertTrue(isSfnt(byteArrayOf(0, 1, 0, 0)))
-        assertTrue(isSfnt("OTTO".toByteArray()))
-        assertFalse(isSfnt("wOF2".toByteArray()))
-        assertFalse(isSfnt(byteArrayOf(0, 1)))
     }
 }
