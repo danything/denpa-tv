@@ -184,18 +184,19 @@ EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta0
 
 DataStore と通信の待ちに使う。AndroidX が既に依存しているので、版を明示しているだけ。
 
-### 字幕の字: 丸ゴシックを APK に入れる ([danything/arib-font](https://github.com/danything/arib-font)、M+ FONT LICENSE)
+### 字幕の字: 丸ゴシックを APK に入れる ([danything/denpa-font](https://github.com/danything/denpa-font)、SIL OFL 1.1)
 
-2026-10-10 に決めた。字幕の文字の配置は、denpa が字幕を焼いていたのと同じ字 (Rounded M+ 1m for ARIB。等幅・丸ゴシック・ARIB の外字を持つ)
+2026-10-10 に決めた。字幕の文字の配置は、denpa が字幕を焼いていたのと同じ字 (Denpa Font。等幅・丸ゴシック・ARIB の外字を持つ)
 で描かないと、ブラウザ・焼いていた頃と字の幅や形が揃わない。
 
-- **焼くときに取ってきて assets に入れる** (`app/build.gradle.kts` の `fetchCaptionFont`)。ttf は 5.5MB あるのでリポジトリには置かない。
-  版は denpa の Dockerfile の `ARIB_FONT_SHA` と同じコミットに留め、Renovate が枝 (main) の先頭を追う (`renovate.json` の customManagers。
-  denpa と同じ追い方)。小さくした字に替えるなら URL を直すだけ
-- assets は縮めて入る (5.5MB → 2.9MB。APK は 2.3MB → 5.2MB)。読むのは初めて字幕を描くときに1度だけ (`Typeface.createFromAsset`。
-  縮めた asset は開くときに解くので、5.5MB を1度メモリに持つ)。読めなければ端末の字で描く
-- denpa の `api/font` からは取らない (配っているのはブラウザ向けの woff2 で、Android の Typeface は読めない)
-- 許諾は M+ FONT LICENSE (使用・複製・配布・改変を無制限に許す。表示の求めは無い)
+- **焼くときに取ってきて assets に入れる** (`app/build.gradle.kts` の `fetchCaptionFont`)。ttf は 4.2MB あるのでリポジトリには置かない。
+  リリースの ttf を版 (タグ) と sha256 で留めて取る。版は denpa の Dockerfile の `DENPA_FONT_VERSION` と揃え、Renovate が新しい
+  リリースを追う (`renovate.json` の customManagers)。sha256 は Renovate が直せないので、その PR でリリースの SHA256SUMS の値を写す
+- assets は縮めて入る (APK は SIZE_LINE)。読むのは初めて字幕を描くときに1度だけ (`Typeface.createFromAsset`。
+  縮めた asset は開くときに解くので、4.2MB を1度メモリに持つ)。読めなければ端末の字で描く
+- denpa の `api/font/denpa-font.woff2` からは取らない (配っているのはブラウザ向けの woff2 で、Android の Typeface は読めない)
+- 許諾は SIL OFL 1.1 (元の源柔ゴシック等幅 = 源ノ角ゴシック + M+ OUTLINE FONTS と同じ。足した和田研中丸ゴシックの記号は
+  改変・再配布可の許諾。原文は denpa-font の README)。字幕・データ放送で使う字 (JIS X 0208 と ARIB の外字など) に絞ってある
 
 ## まとめ: AndroidX / Kotlin の外から入れているもの
 

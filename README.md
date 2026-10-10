@@ -87,7 +87,7 @@ Jetpack Compose for TV で書いています。
 - **字幕**は操作の列の「字幕 入 / 切」で出し入れします。テレビごとに覚えます (既定は入)。字幕の無い映像では札が出ません
 - 放送の字幕 (ARIB) は、denpa が解いて**置き場所・大きさ・色まで決めた文字の配置**を受け取り、アプリが描きます
   (ブラウザの denpa と同じもの・同じ描き方。縁取り・囲み・下線・点滅・ルビ・外字も)。字は denpa が字幕を焼いていたのと同じ丸ゴシック
-  ([danything/arib-font](https://github.com/danything/arib-font)、M+ FONT LICENSE) を APK に入れてあります
+  (Denpa Font。[danything/denpa-font](https://github.com/danything/denpa-font)、SIL OFL 1.1) を APK に入れてあります
   - **生の TS (MPEG-2)** (ライブ・追っかけ・焼く前の録画) は別の口 (`api/services/<id>/captions`・`api/recordings/<id>/captions`) で受け取り、
     映像の時刻 (放送の PTS) に合わせて重ねます。denpa が「字幕がある」と言った放送だけ札が出ます。
     v1.49.0 までの denpa は文字の配置を知らないので、denpa が描いた絵が来て、それを重ねます
@@ -337,3 +337,5 @@ denpa に焼かせず、放送そのもの (1局に絞った TS) を流します
 
 `app/src/main/java/io/nayuki/qrcodegen/` は [Project Nayuki の QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) を
 取り込んだもので、**MIT License** です (各ファイルの頭の表示のまま)。
+
+字幕の字 ([Denpa Font](https://github.com/danything/denpa-font)。焼くときに取ってきて APK に入れる) は **SIL Open Font License 1.1** です。
