@@ -259,18 +259,25 @@ class Screenshots {
     /** 録画の帯 (操作の列) が開いている */
     private fun barOpen() = texts().any { it.startsWith("CM 飛ばし") }
 
-    /** `title` を含む録画のカードに合わせる。まだ組まれていなければ `key` で送ってから探し直す */
+    /**
+     * `title` を含む録画のカードに合わせる。まだ組まれていなければ `key` で送ってから探し直す。
+     * 合ったかは上の段 (合わせている録画の番組名) に同じ題が出たかで見る (Compose の入力の合いは木では古いまま返ることがある。SmokeTest)
+     */
     private fun focusCard(title: String, key: Int) {
-        for (i in 0 until 12) {
-            // 上の段の番組名にも同じ題があるので、合わせられるもの (カード) の中のものを探す
-            val card = nodes().filter { n -> n.text?.toString()?.contains(title) == true }
-                .firstNotNullOfOrNull { generateSequence(it) { n -> n.parent }.firstOrNull { n -> n.isFocusable } }
-            // 合ったかは木では確かめない (Compose の入力の合いは古いまま返ることがある。SmokeTest)
-            if (card != null && card.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) return
+        val seen = mutableSetOf<String>()
+        fun matching() = nodes().filter { n -> n.text?.toString()?.contains(title) == true }.also { list -> list.forEach { seen += it.text.toString() } }
+        for (i in 0 until 16) {
+            if (matching().size >= 2) return
+            // カードの中の題から、合わせられるもの (カード) をたどる
+            val card = matching().firstNotNullOfOrNull { generateSequence(it) { n -> n.parent }.firstOrNull { n -> n.isFocusable } }
+            if (card != null && card.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
+                SystemClock.sleep(KEY_GAP_MS)
+                if (matching().size >= 2) return
+            }
             press(key)
             SystemClock.sleep(KEY_GAP_MS)
         }
-        error("「$title」が見つかりません: ${texts()}")
+        error("「$title」に合いません (見えた題: $seen): ${texts()}")
     }
 
     /** `label` の札に合わせて押す (合わせるのは、撮る絵で合っているように) */
