@@ -80,6 +80,15 @@ android {
         buildConfig = true
     }
 
+    /*
+     * Denpa Font (assets の ttf、4.2MB) は **縮めずに入れる**。縮めてあると、読むときに丸ごと解いて heap (古い API は Native、
+     * 新しい API は Java) に 4.2MB 置きっぱなしになる。
+     * 縮めなければ APK の中をそのまま mmap して、描いた字のところだけ読む (APK は 2MB ほど大きくなる)
+     */
+    androidResources {
+        noCompress += "ttf"
+    }
+
     lint {
         warningsAsErrors = false
         abortOnError = true
