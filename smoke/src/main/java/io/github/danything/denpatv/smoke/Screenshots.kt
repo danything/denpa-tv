@@ -81,8 +81,8 @@ class Screenshots {
         SystemClock.sleep(SETTLE_MS)
         shot("recordings-bottom")
 
-        // 一覧の頭の段 (焼いている最中の録画)
-        focusCard("まち歩き紀行", KeyEvent.KEYCODE_DPAD_UP)
+        // 一覧の頭 (録っている最中の録画。その下の段に焼いている最中の録画)
+        focusCard("辺境に追放された薬師令嬢", KeyEvent.KEYCODE_DPAD_UP)
         SystemClock.sleep(SETTLE_MS)
         shot("recordings")
 
@@ -95,6 +95,8 @@ class Screenshots {
         shot("detail")
         press(KeyEvent.KEYCODE_BACK)
         await("録画の詳しくが閉じません") { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } }
+        // 閉じた直後は、いちばん前の窓として閉じたダイアログが返ることがある。一覧が読めるまで待ってから合わせ直す
+        await("録画の一覧に戻りません") { texts().any { "星読みの薬師" in it } }
 
         // 長い題 (話数を残して途中を切る)
         focusCard("病弱令嬢", KeyEvent.KEYCODE_DPAD_DOWN)
