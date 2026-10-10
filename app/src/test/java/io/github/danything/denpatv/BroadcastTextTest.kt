@@ -4,6 +4,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import io.github.danything.denpatv.ui.appendBroadcast
+import io.github.danything.denpatv.ui.broadcastPrefix
 import io.github.danything.denpatv.ui.splitLines
 import io.github.danything.denpatv.ui.withFont
 import org.junit.Assert.assertEquals
@@ -47,5 +48,13 @@ class BroadcastTextTest {
         val text = buildAnnotatedString { append("CM を飛ばしました") }
         assertEquals(text, text.withFont(font))
         assertEquals(listOf("CM を飛ばしました"), text.splitLines().map { it.text })
+    }
+
+    @Test
+    fun 局と日時の行は頭の局名だけ() {
+        assertEquals(listOf(listOf("ＢＳ日テレ")), broadcastParts(broadcastPrefix("ＢＳ日テレ ・ 10/6(火) 21:00", "ＢＳ日テレ")))
+        // 局名が無い・頭に無ければ印を付けない
+        assertEquals(listOf(emptyList<String>()), broadcastParts(broadcastPrefix("10/6(火) 21:00", null)))
+        assertEquals(listOf(emptyList<String>()), broadcastParts(broadcastPrefix("番組表にいまの番組がありません", "ＮＨＫ")))
     }
 }

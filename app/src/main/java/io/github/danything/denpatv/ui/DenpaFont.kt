@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.Dispatchers
@@ -109,5 +110,15 @@ internal fun AnnotatedString.splitLines(): List<AnnotatedString> {
     var start = 0
     return text.split('\n').map { line ->
         subSequence(start, start + line.length).also { start += line.length + 1 }
+    }
+}
+
+/** 頭が局名 (`prefix`) の1行 (「局 ・ 日時」) で、局名に印 (`appendBroadcast`) を付ける。頭が局名でなければ印は付けない */
+fun broadcastPrefix(text: String, prefix: String?): AnnotatedString = buildAnnotatedString {
+    if (!prefix.isNullOrBlank() && text.startsWith(prefix)) {
+        appendBroadcast(prefix)
+        append(text.substring(prefix.length))
+    } else {
+        append(text)
     }
 }

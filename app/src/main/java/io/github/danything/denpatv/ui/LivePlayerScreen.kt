@@ -211,7 +211,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 // 知らせは消えたときに1度だけ (取り直しのたびに出さない)
                 !gone -> {
                     gone = true
-                    flash("${current.name} は局の一覧から無くなりました (スキャンし直した?)。左右で別の局へ")
+                    flash(broadcastPrefix("${current.name} は局の一覧から無くなりました (スキャンし直した?)。左右で別の局へ", current.name))
                 }
             }
         }

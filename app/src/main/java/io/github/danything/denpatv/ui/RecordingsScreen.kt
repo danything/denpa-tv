@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.intl.LocaleList
@@ -401,7 +402,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
             unwatched = recording.unwatched,
         )
         Text(
-            listOfNotNull(recording.serviceName?.let(::shortServiceName), WHEN.format(Date(recording.startAt)), recording.durationMs?.let(::durationLabel)).joinToString("  ・  "),
+            heroMeta(recording).withBroadcastFont(),
             style = MaterialTheme.typography.titleSmall,
             color = Palette.TextMuted,
             maxLines = 1,
@@ -541,7 +542,7 @@ private fun RecordingCard(
             }
         }
         Text(
-            cardMeta(recording),
+            cardMeta(recording).withBroadcastFont(),
             style = MaterialTheme.typography.labelLarge,
             color = Palette.TextMuted,
             maxLines = 1,
@@ -576,9 +577,18 @@ private val CARD_TITLE_PADDING = 12.dp
 /** 番組名の下に敷く帯 (上は透かし、字のあたりは濃く) */
 private val TITLE_SCRIM = Brush.verticalGradient(0f to Color.Transparent, 0.3f to Color(0xC0000000), 1f to Color(0xF0000000))
 
-/** カードの2行目: 局と放送の時刻 (日は見出しにある) */
-private fun cardMeta(recording: Recording): String =
-    listOfNotNull(recording.serviceName?.let(::shortServiceName), TIME.format(Date(recording.startAt))).joinToString("  ・  ")
+/** カードの2行目: 局と放送の時刻 (日は見出しにある)。局名は放送の字 */
+private fun cardMeta(recording: Recording): AnnotatedString = metaLine(recording, TIME.format(Date(recording.startAt)))
+
+/** 上の段の局と放送日時と長さ。局名は放送の字 */
+private fun heroMeta(recording: Recording): AnnotatedString =
+    metaLine(recording, WHEN.format(Date(recording.startAt)), recording.durationMs?.let(::durationLabel))
+
+/** 局 (略した名前) と、後ろに続くものを「・」で繋ぐ。局名に印を付ける (`broadcastPrefix`) */
+private fun metaLine(recording: Recording, vararg rest: String?): AnnotatedString {
+    val service = recording.serviceName?.let(::shortServiceName)
+    return broadcastPrefix((listOf(service) + rest).filterNotNull().joinToString("  ・  "), service)
+}
 
 private val TIME = SimpleDateFormat("HH:mm", Locale.JAPAN)
 

@@ -76,6 +76,7 @@ internal fun liveFacts(service: Service, info: ProgramInfo?, at: Long): DetailFa
     return DetailFacts(
         title = title,
         meta = programMeta(service.name, now.startAt, now.endAt),
+        service = service.name,
         chips = info?.chips.orEmpty(),
         badge = when {
             now.recording -> RECORDING_BADGE
