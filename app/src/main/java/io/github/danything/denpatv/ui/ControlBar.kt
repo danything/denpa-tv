@@ -177,6 +177,9 @@ fun BoxScope.ControlBar(
     }
 }
 
+/** 印だけの札 (丸) の大きさ。ほかの札の高さ (tv-material の Button の最小の高さ) と同じ */
+private val ICON_CHIP = 40.dp
+
 /** 帯の中に合いがあるか見張る間 (ミリ秒) */
 private const val HOLD_FOCUS_MS = 300L
 
@@ -225,17 +228,21 @@ fun TitleLines(text: CharSequence) {
 /** 下から薄く暗くする (映像の上でも文字が読めるだけ。上は透かす) */
 val SCRIM = Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000), Color(0xCC000000)))
 
-/** 印つきの小さな札。入っているものは塗る */
+/**
+ * 印つきの小さな札。入っているものは塗る。
+ * **`label` が空なら印だけの丸** (等速の速さの札。`speedControl`)。読み上げの名前は `description` に書く
+ */
 @Composable
 private fun Chip(control: Control, modifier: Modifier) {
-    val padding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+    val iconOnly = control.label.isEmpty() && control.icon != null
+    val padding = if (iconOnly) PaddingValues(0.dp) else PaddingValues(horizontal = 10.dp, vertical = 4.dp)
     val content: @Composable RowScope.() -> Unit = {
         control.icon?.let {
             Icon(painterResource(it), contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
+            if (!iconOnly) Spacer(Modifier.width(6.dp))
         }
         // 1行のまま中身に合わせて伸ばす (「もう一度押すと削除」のように押すと長くなる札が切れないように)
-        Text(control.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+        if (!iconOnly) Text(control.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
     }
     // 入れ切りで部品を替えない (Button と OutlinedButton を替えると、押した札から合いが外れて列の頭に飛ぶ・
     // どこにも合わなくなる)。色だけ変える。入っているものは azure で塗り、合わせたら白く (字は入っていれば azure)
@@ -255,7 +262,9 @@ private fun Chip(control: Control, modifier: Modifier) {
     val named = control.description?.let { name -> Modifier.semantics { contentDescription = name } } ?: Modifier
     OutlinedButton(
         onClick = control.onClick,
-        modifier = modifier.heightIn(min = 32.dp).wrapContentWidth(unbounded = true).then(named),
+        // 印だけの札は縦横をそろえて丸くする (`ICON_CHIP`)。何もしないと Button の最小の幅 (58dp) で横長になる
+        modifier = (if (iconOnly) modifier.size(ICON_CHIP) else modifier.heightIn(min = 32.dp).wrapContentWidth(unbounded = true))
+            .then(named),
         contentPadding = padding,
         colors = colors,
         border = border,

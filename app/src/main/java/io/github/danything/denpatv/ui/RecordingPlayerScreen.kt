@@ -38,7 +38,9 @@ import io.github.danything.denpatv.data.skipCmAtStart
 import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.resyncAfterSpeedChange
 import io.github.danything.denpatv.data.nextSpeed
+import io.github.danything.denpatv.data.speedDescription
 import io.github.danything.denpatv.data.speedLabel
+import io.github.danything.denpatv.data.speedNumber
 import io.github.danything.denpatv.data.CM_LEAD_MS
 import io.github.danything.denpatv.data.cmHopPoints
 import io.github.danything.denpatv.data.cmRunAt
@@ -452,9 +454,18 @@ internal fun rememberPlayerBar(onLeave: () -> Unit, playing: Boolean): PlayerBar
 internal fun playControl(playing: Boolean, onClick: () -> Unit) =
     Control(if (playing) "一時停止" else "再生", on = true, icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, onClick = onClick)
 
-/** 速さの札 (録画・追っかけ)。1つの札で送る (`stepSpeed`)。列を短くして、押す回数も少なく */
+/**
+ * 速さの札 (録画・追っかけ)。1つの札で送る (`stepSpeed`)。列を短くして、押す回数も少なく。
+ * **等速ならメーターの印だけの丸、速めている間は数字だけ (「1.25」)** — ブラウザの denpa の速さの口と同じ。
+ * ふだん (等速) は札に数字が居座らず、速めているときは数字そのものが「速めている」の印になる (塗るのも同じとき)。
+ * 札の上では × を付けない (速さの札だと分かっている)。読み上げは速さも読む (`speedDescription`)
+ */
 internal fun speedControl(speed: Float, onClick: () -> Unit) =
-    Control("速さ ${speedLabel(speed)}", on = speed != 1f, icon = R.drawable.ic_speed, onClick = onClick)
+    if (speed == 1f) {
+        Control("", icon = R.drawable.ic_speed, description = speedDescription(speed), onClick = onClick)
+    } else {
+        Control(speedNumber(speed), on = true, description = speedDescription(speed), onClick = onClick)
+    }
 
 /** 速さを1段送る (1 → 1.25 → 1.5 → 2 → 1。端末ごとに覚える)。知らせる文を返す */
 internal fun CoroutineScope.stepSpeed(repo: Repository, speed: Float): String {
