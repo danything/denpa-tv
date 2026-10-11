@@ -21,8 +21,9 @@ import kotlinx.coroutines.delay
  *
  * - 中身は denpa の `api/programs/<局の now.id>` から開いたときに取る。取れるまでと、取れないとき (番組表から消えた・
  *   届かない) は `now` のぶん (番組名・時間) だけ
- * - 札は **「録画」(録っている・録る予定なら「録画中」「録画予約済み」) → 「閉じる」**。録画はメニューの「録画」と同じ口
- *   (`POST api/services/<id>/record`)。結果は札の下に1行
+ * - 札は **「録画」→「閉じる」**。録画はメニューの「録画」と同じ口 (`POST api/services/<id>/record`)。結果は札の下に1行。
+ *   **録っている・録る予定なら「録画」の札は出さない** (押しても何も変わらない)。そのことは札の列の上の印 (「● 録画中」「予約済み」) で分かるので、
+ *   札は「閉じる」だけにして、開いたときもそこに合う
  * - 番組が替わったら (局を取り直して `now` が替わる) 新しい番組を取り直す。映像はそのまま流れる
  */
 @Composable
@@ -54,19 +55,27 @@ fun LiveDetailDialog(
             clock = System.currentTimeMillis()
         }
     }
-    val actions = listOf(
-        DetailAction(recordLabel(now), onRecord),
-        DetailAction("閉じる", onClose),
+    val booked = now?.recording == true || now?.reserved == true
+    val actions = listOfNotNull(
+        DetailAction(RECORD, primary = true, onClick = onRecord).takeUnless { booked },
+        DetailAction(CLOSE, onClick = onClose),
     )
     ProgramDetailDialog(liveFacts(service, info, clock).copy(logo = repo.url(service.logo)), actions, onClose, note, overVideo = true, token = repo.token)
 }
 
-/** 録画の札の名前 (メニューの「録画」の札と同じ) */
+/**
+ * ライブのメニューの録画の札の名前。録っている・録る予定ならそう出す。**呼び方は局の列の札の印・詳しくの印と同じ** (「録画中」「予約済み」)
+ */
 internal fun recordLabel(now: NowProgram?): String = when {
     now?.recording == true -> "録画中"
-    now?.reserved == true -> "録画予約済み"
-    else -> "録画"
+    now?.reserved == true -> RESERVED
+    else -> RECORD
 }
+
+private const val RECORD = "録画"
+
+/** 録る予定の印 (局の列の札・ライブの詳しく・メニューの録画の札で同じ呼び方) */
+internal const val RESERVED = "予約済み"
 
 /** ライブの詳しくの中身。`info` (番組表の中身) が無ければ `now` のぶんだけ */
 internal fun liveFacts(service: Service, info: ProgramInfo?, at: Long): DetailFacts {
@@ -80,7 +89,7 @@ internal fun liveFacts(service: Service, info: ProgramInfo?, at: Long): DetailFa
         chips = info?.chips.orEmpty(),
         badge = when {
             now.recording -> RECORDING_BADGE
-            now.reserved -> "録画予約済み"
+            now.reserved -> RESERVED
             else -> null
         },
         progress = (at - now.startAt).coerceAtLeast(0) to (now.endAt - now.startAt),

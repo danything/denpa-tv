@@ -36,6 +36,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -130,8 +134,8 @@ fun ChannelRows(
                     CompositionLocalProvider(LocalBringIntoViewSpec provides Keyline) {
                         LazyRow(
                             state = state,
-                            // 枠は幅いっぱい (局の少ない列でも、合わせて膨らんだ札の縁と光が枠で切れないように)
-                            modifier = Modifier.fillMaxWidth(),
+                            // 枠は幅いっぱい (局の少ない列でも、合わせて膨らんだ札の縁と光が枠で切れないように)。送れる側の端は溶かす
+                            modifier = Modifier.fillMaxWidth().fadeEdges(state),
                             /*
                              * 上下で列を移ったときは、**真上・真下の札へ** (どの列も合わせた札が `KEYLINE` に居るので、目を動かさずに済む)。
                              * 最後に合わせていた札へ戻す (`focusRestorer`) のはやめた。枠の外に出て捨てられた列では覚えが消え、
@@ -201,7 +205,7 @@ private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modi
                 val now = service.now
                 when {
                     now?.recording == true -> Mark("録画中", Palette.Recording)
-                    now?.reserved == true -> Mark("予約済み", Palette.Reserved)
+                    now?.reserved == true -> Mark(RESERVED, Palette.Reserved)
                 }
                 if (tuned) {
                     Text(
@@ -250,14 +254,37 @@ private val LOGO_WIDTH = 48.dp
 private val LOGO_HEIGHT = 27.dp
 
 private val CARD_WIDTH = 220.dp
-private val CARD_HEIGHT = 84.dp
+private val CARD_HEIGHT = 92.dp
 private val CARD_GAP = 12.dp
 
 /** 合わせた札の左の端を置く所 (横の枠の幅に対する割合)。左に1枚ぶんの札が見える */
 private const val KEYLINE_FRACTION = 0.25f
 
 /** 局の列を出す高さ。1列がまるごと見えて、次の列の名前と頭が少し覗く */
-private val ROWS_HEIGHT = 150.dp
+private val ROWS_HEIGHT = 160.dp
 
 /** 1列の高さ (種別の名前と札。札の上下の余白も)。だいたいでよい */
-private val ROW_HEIGHT = 112.dp
+private val ROW_HEIGHT = 122.dp
+
+/**
+ * **横に送れる側の端を、下の板の暗さへ溶かす** (端の札が字の途中でぶつりと切れて見えないように。続きがあるのも分かる)。
+ * 送れない側 (列の頭・終わり) は溶かさない。透かしの層 (offscreen) にすると、合わせた札の光が上下で切れるので、暗さを重ねるだけ
+ */
+private fun Modifier.fadeEdges(state: LazyListState): Modifier = drawWithContent {
+    drawContent()
+    val fade = EDGE_FADE.toPx().coerceAtMost(size.width / 2)
+    if (state.canScrollBackward) {
+        drawRect(Brush.horizontalGradient(0f to EDGE_SHADE, 1f to Color.Transparent, startX = 0f, endX = fade), size = Size(fade, size.height))
+    }
+    if (state.canScrollForward) {
+        drawRect(
+            Brush.horizontalGradient(0f to Color.Transparent, 1f to EDGE_SHADE, startX = size.width - fade, endX = size.width),
+            topLeft = Offset(size.width - fade, 0f),
+            size = Size(fade, size.height),
+        )
+    }
+}
+
+/** 端を溶かす幅と、溶かす先の暗さ (下の板の下のほう (`SCRIM`) と同じくらい) */
+private val EDGE_FADE = 56.dp
+private val EDGE_SHADE = Color(0xE6000000)

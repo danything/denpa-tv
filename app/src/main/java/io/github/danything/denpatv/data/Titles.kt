@@ -1,7 +1,5 @@
 package io.github.danything.denpatv.data
 
-import java.text.Normalizer
-
 /**
  * 題の話数 (`#1`・`＃12`・`第3話`・`第8回`・NHK の `(39)`)。最初に出てきたものを話数と見なす (話数は番組名のすぐ後ろに来る。
  * 後ろのサブタイトルの中の数字は拾わない)。`第2期` のような期は話数にしない
@@ -35,11 +33,3 @@ fun keepEpisode(title: String, visible: Int, room: (tail: String) -> Int, fits: 
 }
 
 private const val ELLIPSIS = "…"
-
-/**
- * 局の名前を短く (全角の英数字・記号を半角に。`ＴＯＫＹＯ　ＭＸ１` → `TOKYO MX1`)。放送波の局名は全角混じりで、
- * 狭いカードでは幅を取る (番組名は denpa が半角に寄せて返す)
- */
-fun shortServiceName(name: String): String = Normalizer.normalize(name, Normalizer.Form.NFKC).replace(SPACES, " ").trim()
-
-private val SPACES = Regex("\\s+")

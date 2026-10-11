@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Glow
@@ -23,6 +24,7 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.OutlinedButtonDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import androidx.tv.material3.Typography
 import androidx.tv.material3.darkColorScheme
 
 /**
@@ -69,12 +71,25 @@ private val Colors = darkColorScheme(
 )
 
 /**
+ * 字の大きさ。**離れて (2〜3 m) 読むので、tv-material の既定より小さいほうの段を上げる** (帯の題 14→16sp・2行目 12→14sp、
+ * 札 12→14sp、組の名前・局の札の印 11→13sp)。大きいほう (見出し・本文) は既定のまま
+ */
+private val Type = Typography().let { base ->
+    base.copy(
+        titleSmall = base.titleSmall.copy(fontSize = 16.sp, lineHeight = 22.sp),
+        bodySmall = base.bodySmall.copy(fontSize = 14.sp, lineHeight = 20.sp),
+        labelMedium = base.labelMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+        labelSmall = base.labelSmall.copy(fontSize = 13.sp, lineHeight = 18.sp),
+    )
+}
+
+/**
  * アプリの字は端末の字のまま。**放送から来た字だけ** `broadcastFonts` (Denpa Font。`TextStyle.broadcast()` で当てる) で描く。
  * null (まだ読めていない・読めない) なら端末の字
  */
 @Composable
 fun DenpaTheme(broadcastFonts: BroadcastFonts?, content: @Composable () -> Unit) =
-    CompositionLocalProvider(LocalBroadcastFont provides broadcastFonts) { MaterialTheme(colorScheme = Colors, content = content) }
+    CompositionLocalProvider(LocalBroadcastFont provides broadcastFonts) { MaterialTheme(colorScheme = Colors, typography = Type, content = content) }
 
 /**
  * **合わせたものの見せ方 (アプリ全体で同じ)。** Google TV と同じく、合わせたものは少し膨らみ (カードは 1.05、札は 1.1。

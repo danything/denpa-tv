@@ -8,8 +8,11 @@ import io.github.danything.denpatv.data.cmRuns
 import io.github.danything.denpatv.data.cmSkipTarget
 import io.github.danything.denpatv.data.nextChapter
 import io.github.danything.denpatv.data.previousChapter
+import io.github.danything.denpatv.data.resumedInCm
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** denpa が焼くときに書くチャプター (cm.ts の chapterMetadata): 本編と CM が交互に並ぶ */
@@ -144,5 +147,19 @@ class SpeedTest {
         assertEquals(false, io.github.danything.denpatv.data.resyncAfterSpeedChange(1f, 1.25f, playing = false))
         // 同じ速さ (画面を作り直しただけ) なら飛ばない
         assertEquals(false, io.github.danything.denpatv.data.resyncAfterSpeedChange(1.25f, 1.25f, playing = true))
+    }
+
+    @Test
+    fun 続きの位置が_CM_の中なら飛んでも知らせない() {
+        val cm = cmSkipTarget(chapters, 70_000, emptySet())!!
+        // 続きの位置 (70 秒) が CM (60〜150 秒) の中: 開いてすぐ飛ぶが「CM を飛ばしました」は出さない
+        assertTrue(resumedInCm(cm, resumeMs = 70_000, seeks = 0))
+        // 一度でも動かした (左右・チャプター送り・飛んだ) あとは知らせる
+        assertFalse(resumedInCm(cm, resumeMs = 70_000, seeks = 1))
+        // 頭から観ている・続きの位置が CM の外なら知らせる
+        assertFalse(resumedInCm(cm, resumeMs = null, seeks = 0))
+        assertFalse(resumedInCm(cm, resumeMs = 0, seeks = 0))
+        assertFalse(resumedInCm(cm, resumeMs = 30_000, seeks = 0))
+        assertFalse(resumedInCm(cm, resumeMs = 150_000, seeks = 0))
     }
 }
