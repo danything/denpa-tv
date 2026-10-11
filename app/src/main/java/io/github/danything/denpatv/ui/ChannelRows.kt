@@ -37,10 +37,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -141,7 +142,8 @@ fun ChannelRows(
                              * 最後に合わせていた札へ戻す (`focusRestorer`) のはやめた。枠の外に出て捨てられた列では覚えが消え、
                              * 見えていない札へ跳んだり、離れた札に合ったりした
                              */
-                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 4.dp),
+                            // 上下は、合わせた札の膨らみと光が端を溶かす層 (`fadeEdges`) で切れないだけ空ける
+                            contentPadding = PaddingValues(vertical = 12.dp, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
                         ) {
                             items(row, key = { it.id }) { service ->
@@ -261,30 +263,25 @@ private val CARD_GAP = 12.dp
 private const val KEYLINE_FRACTION = 0.25f
 
 /** 局の列を出す高さ。1列がまるごと見えて、次の列の名前と頭が少し覗く */
-private val ROWS_HEIGHT = 160.dp
+private val ROWS_HEIGHT = 172.dp
 
 /** 1列の高さ (種別の名前と札。札の上下の余白も)。だいたいでよい */
-private val ROW_HEIGHT = 122.dp
+private val ROW_HEIGHT = 134.dp
 
 /**
- * **横に送れる側の端を、下の板の暗さへ溶かす** (端の札が字の途中でぶつりと切れて見えないように。続きがあるのも分かる)。
- * 送れない側 (列の頭・終わり) は溶かさない。透かしの層 (offscreen) にすると、合わせた札の光が上下で切れるので、暗さを重ねるだけ
+ * **横に送れる側の端を透かして消す** (端の札が字の途中でぶつりと切れて見えないように。続きがあるのも分かる)。
+ * 送れない側 (列の頭・終わり) は透かさない。透かしは別の層に描いてから端だけ抜く (`DstIn`)。層の外は切れるので、
+ * 列の上下は札の光のぶん空けてある
  */
-private fun Modifier.fadeEdges(state: LazyListState): Modifier = drawWithContent {
-    drawContent()
-    val fade = EDGE_FADE.toPx().coerceAtMost(size.width / 2)
-    if (state.canScrollBackward) {
-        drawRect(Brush.horizontalGradient(0f to EDGE_SHADE, 1f to Color.Transparent, startX = 0f, endX = fade), size = Size(fade, size.height))
-    }
-    if (state.canScrollForward) {
-        drawRect(
-            Brush.horizontalGradient(0f to Color.Transparent, 1f to EDGE_SHADE, startX = size.width - fade, endX = size.width),
-            topLeft = Offset(size.width - fade, 0f),
-            size = Size(fade, size.height),
-        )
-    }
-}
+private fun Modifier.fadeEdges(state: LazyListState): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            val fade = (EDGE_FADE.toPx() / size.width).coerceAtMost(0.5f)
+            val start = if (state.canScrollBackward) Color.Transparent else Color.Black
+            val end = if (state.canScrollForward) Color.Transparent else Color.Black
+            drawRect(Brush.horizontalGradient(0f to start, fade to Color.Black, 1f - fade to Color.Black, 1f to end), blendMode = BlendMode.DstIn)
+        }
 
-/** 端を溶かす幅と、溶かす先の暗さ (下の板の下のほう (`SCRIM`) と同じくらい) */
-private val EDGE_FADE = 56.dp
-private val EDGE_SHADE = Color(0xE6000000)
+/** 端を透かす幅 */
+private val EDGE_FADE = 72.dp
