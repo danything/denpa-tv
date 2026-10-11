@@ -362,7 +362,9 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         // `::run` (関数の参照) にしない。Compose が参照を覚えたままにして、前の局から送ってしまう
         onKey = { event ->
             val code = event.nativeKeyEvent.keyCode
-            liveCommand(code)?.let { run(it) } != null || liveChannelKey(code)?.let { tune(it) } != null
+            // 数字キーは押し続けた繰り返しを捨てる (1回押したのと同じ。局を何度も頼み直さない)
+            liveCommand(code)?.let { run(it) } != null ||
+                liveChannelKey(code)?.let { if (event.nativeKeyEvent.repeatCount == 0) tune(it) } != null
         },
         onKeyUp = { held = false },
         // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳しく)
