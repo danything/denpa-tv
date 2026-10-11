@@ -69,7 +69,7 @@ private val Colors = darkColorScheme(
 )
 
 /**
- * アプリの字は端末の字のまま。**放送から来た字だけ** `broadcastFonts` (Denpa Font。`BroadcastFont` で引く) で描く。
+ * アプリの字は端末の字のまま。**放送から来た字だけ** `broadcastFonts` (Denpa Font。`TextStyle.broadcast()` で当てる) で描く。
  * null (まだ読めていない・読めない) なら端末の字
  */
 @Composable

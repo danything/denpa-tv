@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -69,10 +70,24 @@ class BroadcastFonts(val regular: FontFamily, val bold: FontFamily)
 internal val LocalBroadcastFont = compositionLocalOf<BroadcastFonts?> { null }
 
 /**
- * **放送から来た字 (番組名・説明・局名・番組表の名前) に使う字体。** テレビと同じ Denpa Font で、外字 (EPG の記号) も白黒で出る。
- * アプリの札・見出し・設定 (こちらで書いた字) には使わない。読めていなければ null で、`Text` は端末の字で描く。
- * 太くする字 (SemiBold 以上) は `broadcastFont(weight)`
+ * 放送の字で組むときの OpenType の機能。`palt` は Denpa Font (v3.1 から) の全角英数字・全角記号 (U+FF01–FF5E) だけを詰める
+ * (かな・漢字と、字の既定の送り幅 1em はそのまま。字そのものは替えない)。EPG の「ＮＨＫ総合１」「（再）」が間延びしない。
+ * **字幕には当てない** (字幕は ARIB が字の間と表示区画を決めている。`TextCaptions` は Paint で描き、これを使わない)。
+ * 端末の字 (Denpa Font を読めないとき) にも当てない (かなまで詰まる)
  */
+internal const val BROADCAST_FEATURES = "palt"
+
+/**
+ * **放送から来た字 (番組名・説明・局名・番組表の名前) を組む `style`。** テレビと同じ Denpa Font で、外字 (EPG の記号) も白黒で出る。
+ * 全角の英数字・記号は詰める (`BROADCAST_FEATURES`)。太くする字 (SemiBold 以上) は太らせた字 (`broadcastFont`)。
+ * アプリの札・見出し・設定 (こちらで書いた字) には使わない。読めていなければ `style` のまま (端末の字で、詰めない)
+ */
+@Composable
+@ReadOnlyComposable
+fun TextStyle.broadcast(): TextStyle =
+    broadcastFont(fontWeight)?.let { copy(fontFamily = it, fontFeatureSettings = BROADCAST_FEATURES) } ?: this
+
+/** 放送の字 (太さ1つ)。読めていなければ null。`Text` には `TextStyle.broadcast` を使う (詰める機能も付く) */
 val BroadcastFont: FontFamily?
     @Composable @ReadOnlyComposable
     get() = LocalBroadcastFont.current?.regular
@@ -80,7 +95,7 @@ val BroadcastFont: FontFamily?
 /** その太さで描く放送の字。SemiBold 以上は太らせた字 (Compose が字を太らせるのと同じ境目) */
 @Composable
 @ReadOnlyComposable
-fun broadcastFont(weight: FontWeight?): FontFamily? =
+private fun broadcastFont(weight: FontWeight?): FontFamily? =
     LocalBroadcastFont.current?.let { if (weight != null && weight >= FontWeight.SemiBold) it.bold else it.regular }
 
 /** 放送から来た字の印 (`appendBroadcast`) */
@@ -93,17 +108,17 @@ fun AnnotatedString.Builder.appendBroadcast(text: String) {
     pop()
 }
 
-/** 印 (`appendBroadcast`) の付いたところを放送の字にする */
+/** 印 (`appendBroadcast`) の付いたところを放送の字にする (全角の英数字・記号は詰める)。読めていなければそのまま */
 @Composable
 @ReadOnlyComposable
 fun AnnotatedString.withBroadcastFont(): AnnotatedString = BroadcastFont?.let { withFont(it) } ?: this
 
-/** 印 (`appendBroadcast`) の付いたところを `family` にする */
+/** 印 (`appendBroadcast`) の付いたところを `family` にし、全角の英数字・記号を詰める (`BROADCAST_FEATURES`) */
 internal fun AnnotatedString.withFont(family: FontFamily): AnnotatedString {
     val marks = getStringAnnotations(BROADCAST_TAG, 0, length)
     if (marks.isEmpty()) return this
     return AnnotatedString.Builder(this).apply {
-        marks.forEach { addStyle(SpanStyle(fontFamily = family), it.start, it.end) }
+        marks.forEach { addStyle(SpanStyle(fontFamily = family, fontFeatureSettings = BROADCAST_FEATURES), it.start, it.end) }
     }.toAnnotatedString()
 }
 

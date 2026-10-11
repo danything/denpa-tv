@@ -34,6 +34,18 @@ class BroadcastTextTest {
     }
 
     @Test
+    fun 放送の字だけ全角の英数字と記号を詰める() {
+        val text = buildAnnotatedString {
+            append("011  ")
+            appendBroadcast("ＮＨＫ総合１")
+            append("  高画質")
+        }.withFont(font)
+        // 字体を当てたところにだけ palt が付き、こちらの字 (チャンネル番号・画質) には付かない。字そのもの (全角) は替えない
+        assertEquals(listOf("ＮＨＫ総合１" to "palt"), text.spanStyles.map { text.text.substring(it.start, it.end) to it.item.fontFeatureSettings })
+        assertEquals("011  ＮＨＫ総合１  高画質", text.text)
+    }
+
+    @Test
     fun 行をまたぐ印は行ごとに切る() {
         val text = buildAnnotatedString {
             append("一時停止  ")
