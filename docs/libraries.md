@@ -183,7 +183,7 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 
 ### 字幕と放送の字: 丸ゴシックを APK に入れる ([danything/denpa-font](https://github.com/danything/denpa-font)、SIL OFL 1.1)
 
-字幕の文字の配置は、ブラウザの denpa と同じ字 (Denpa Font。v3.1 は BIZ UDゴシックを丸めたもの。等幅で ARIB の外字を持つ)
+字幕の文字の配置は、ブラウザの denpa と同じ字 (Denpa Font。v3.2 は BIZ UDゴシックを丸めたもの。等幅で ARIB の外字を持つ)
 で描かないと、ブラウザと字の幅や形が揃わない。**放送から来た字 (番組名・説明・局名・いまの番組) も同じ字で出す**
 (番組表の記号 = 外字がテレビと同じく白黒で出る)。アプリの札・見出し・設定は端末の字のまま。
 
