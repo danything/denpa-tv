@@ -10,8 +10,9 @@ import android.view.KeyEvent
  * **下・決定・Menu でメニュー** (操作の列と局の列。YouTube・Prime Video・ABEMA などのテレビのアプリと同じく、下でメニューが出る)。
  * **上は同じメニューを、局の列のいま映している局に合わせて開く** (局を一覧から選ぶ近道)。
  * **決定の長押しは情報キーと同じく、いま放送中の番組の詳しくを開く** (`liveCenter`。録画の詳しくと同じもの)。
+ * **数字キーでワンタッチ選局** (`liveChannelKey`。テレビのリモコンの 1〜12 と同じく、局のリモコン番号で選ぶ)。
  * 録画: 左右で 10 秒戻す・送る、決定で止める・動かす、下でシークバーと操作の列、上・Menu で操作の列。
- * **決定の長押しは番組の詳しいところ** (`recordingCenter`。ライブの長押し・録画の一覧のカードの長押しと揃える)。
+ * **決定の長押しと情報キーは番組の詳しいところ** (`recordingCenter`。ライブの長押し・情報キー、録画の一覧のカードの長押しと揃える)。
  * 開いたメニュー・帯は、いちばん上の段 (ライブは操作の列、録画はシークバー) で上を押すと閉じる (`UpToClose`)。
  * 決定の短押し・長押しは PlayerFrame が分ける (CenterPress)
  */
@@ -26,13 +27,27 @@ fun liveCommand(keyCode: Int): LiveCommand? = when (keyCode) {
     else -> null
 }
 
+/**
+ * ライブの数字キーの、局のリモコン番号 (1〜12)。**日本のテレビのリモコンと同じく、押した番号の局へすぐ替える** (`remoteKeyService`)。
+ * 0 は 10 (1〜12 のボタンの無いリモコンでも、10 の局を選べるように)。
+ * 11・12 は日本向けのリモコンのボタン (`KEYCODE_11`・`KEYCODE_12`)。テンキー (NUMPAD) も同じ。数字のキーでなければ null
+ */
+fun liveChannelKey(keyCode: Int): Int? = when (keyCode) {
+    in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9 -> keyCode - KeyEvent.KEYCODE_0
+    in KeyEvent.KEYCODE_NUMPAD_1..KeyEvent.KEYCODE_NUMPAD_9 -> keyCode - KeyEvent.KEYCODE_NUMPAD_0
+    KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_NUMPAD_0 -> 10
+    KeyEvent.KEYCODE_11 -> 11
+    KeyEvent.KEYCODE_12 -> 12
+    else -> null
+}
+
 /** ライブの決定。短押しはメニュー、長押しは情報キーと同じ (いま放送中の番組の詳しく)。長押しのあとの離しは CenterPress が捨てる */
 fun liveCenter(press: CenterPress.Action): LiveCommand = when (press) {
     CenterPress.Action.Short -> LiveCommand.Menu
     CenterPress.Action.Long -> LiveCommand.Details
 }
 
-enum class RecordingCommand { Back, Forward, SeekBar, Actions, NextChapter, PreviousChapter, PlayPause, NextSpeed }
+enum class RecordingCommand { Back, Forward, SeekBar, Actions, NextChapter, PreviousChapter, PlayPause, NextSpeed, Details }
 
 fun recordingCommand(keyCode: Int): RecordingCommand? = when (keyCode) {
     KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> RecordingCommand.Back
@@ -43,6 +58,7 @@ fun recordingCommand(keyCode: Int): RecordingCommand? = when (keyCode) {
     KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD -> RecordingCommand.PreviousChapter
     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> RecordingCommand.PlayPause
     KeyEvent.KEYCODE_PROG_GREEN -> RecordingCommand.NextSpeed
+    KeyEvent.KEYCODE_INFO -> RecordingCommand.Details
     else -> null
 }
 

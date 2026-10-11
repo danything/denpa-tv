@@ -52,6 +52,16 @@ fun neighbor(services: List<Service>, currentId: Long, step: Int): Service? {
         .first { it.id in candidates }
 }
 
+/**
+ * 数字キー (`liveChannelKey`) で選ぶ局。リモコン番号 (`remoteControlKey`) が `key` の局のうち、**いまの帯 (地上波 / BS など。`currentType`)
+ * を先に** (地上波の 1 と BS の 1 があれば、地上波を観ているなら地上波の 1)、次に放送している局 (同じものを流しているサブチャンネルより
+ * 本放送)、あとは一覧の並び。無ければ null
+ */
+fun remoteKeyService(services: List<Service>, key: Int, currentType: String?): Service? =
+    services.filter { it.remoteControlKey == key }
+        .sortedWith(compareBy<Service>({ it.type != currentType }, { !it.airing }))
+        .firstOrNull()
+
 /** 種別の並びと名前 (denpa の局の一覧と同じ並び。SKY も左右の局送りで回るので、列にも出す) */
 val SERVICE_TYPES = listOf("GR" to "地上波", "BS" to "BS", "CS" to "CS", "SKY" to "SKY")
 

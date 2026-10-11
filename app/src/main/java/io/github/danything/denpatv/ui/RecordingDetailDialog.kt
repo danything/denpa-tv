@@ -39,13 +39,13 @@ fun RecordingDetailDialog(
     val play = if (recording.chasing) "追っかけ再生" else "再生"
     val actions = buildList {
         if (resume != null) {
-            add(DetailAction("続きから$play (${position(resume)})") { onPlay(false) })
+            add(DetailAction("続きから$play (${position(resume)})", primary = true) { onPlay(false) })
             add(DetailAction("最初から") { onPlay(true) })
         } else {
-            add(DetailAction(play) { onPlay(false) })
+            add(DetailAction(play, primary = true) { onPlay(false) })
         }
         add(DetailAction(deleteLabel(delete.armed)) { if (delete.press()) onDelete() })
-        add(DetailAction("閉じる", onDismiss))
+        add(DetailAction(CLOSE, onClick = onDismiss))
     }
     // 後ろに録画の絵をうすく敷く (一覧の上で開くとき。映像の上で開くときは映像が見えるので敷かない)
     val facts = recordingFacts(recording, rememberRecordingDetail(repo, recording, onUnauthorized))
@@ -53,15 +53,16 @@ fun RecordingDetailDialog(
 }
 
 /**
- * 再生の画面 (録画・追っかけ) の決定の長押しで開く詳しく。一覧のものと同じ中身で、札は **「閉じる」(映像に戻るだけ) が先頭**、
- * 次に「削除」。映像は止めも動かしもしない。戻る・「閉じる」で閉じて映像に戻る (合いは PlayerFrame が取り戻す)
+ * 再生の画面 (録画・追っかけ) の決定の長押し・情報キーで開く詳しく。一覧のものと同じ中身で、札は **「削除」→「閉じる」**
+ * (閉じるはどの詳しくでも右の端)。**開いたときは「閉じる」に合う** (映像に戻るだけ)。映像は止めも動かしもしない。戻る・「閉じる」で閉じて映像に戻る (合いは PlayerFrame が取り戻す)
  */
 @Composable
 fun PlayerDetailDialog(repo: Repository, recording: Recording, onDelete: () -> Unit, onClose: () -> Unit, onUnauthorized: () -> Unit) {
     val delete = rememberTwoPress()
+    // 並びは一覧の詳しくと同じ (閉じるが右の端)。開いたときは閉じるに合わせる (決定の押し間違いで消えないように。映像に戻るだけ)
     val actions = listOf(
-        DetailAction("閉じる", onClose),
         DetailAction(deleteLabel(delete.armed)) { if (delete.press()) { onClose(); onDelete() } },
+        DetailAction(CLOSE, initial = true, onClick = onClose),
     )
     // 観た位置は出さない (一覧で読んだときのもので、観ているいまの位置とずれる)
     ProgramDetailDialog(recordingFacts(recording, rememberRecordingDetail(repo, recording, onUnauthorized), watched = false), actions, onClose, overVideo = true)

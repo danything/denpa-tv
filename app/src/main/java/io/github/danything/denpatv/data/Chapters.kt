@@ -52,6 +52,13 @@ fun cmSkipTarget(chapters: List<ChapterMark>, positionMs: Long, skipped: Set<Lon
     cmRuns(chapters).firstOrNull { positionMs >= it.startMs - leadMs && positionMs < it.endMs - END_SLACK_MS && it.startMs !in skipped }
 
 /**
+ * 開いたときの続きの位置 (`resumeMs`) が、この CM (`cmSkipTarget` が返したもの) の中か。**まだ一度も動かしていない (`seeks` = 0) 間だけ。**
+ * そこで飛んでも「CM を飛ばしました」とは言わない (ブラウザの denpa と同じく「続きから」だけ。観る人には続きから始まっただけ)
+ */
+fun resumedInCm(cm: ChapterMark, resumeMs: Long?, seeks: Int): Boolean =
+    seeks == 0 && resumeMs != null && resumeMs > 0 && resumeMs >= cm.startMs && resumeMs < cm.endMs
+
+/**
  * 先回りして飛ぶところ (位置と、そこで飛ぶ CM)。**まだ来ていない CM ごとに、頭の `leadMs` 手前** (0 より前にはしない)。
  * もうその手前の幅に入っている CM は入れない (`cmSkipTarget` で今すぐ飛ぶ)。飛ばしても得が無いほど短い CM も入れない
  */

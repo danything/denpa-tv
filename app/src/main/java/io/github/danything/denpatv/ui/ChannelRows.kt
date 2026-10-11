@@ -36,7 +36,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,7 +61,7 @@ import kotlinx.coroutines.launch
  * 番号・ロゴ・局名・いま放送中の番組を出し、いま映している局に印を付ける。** ブラウザのタブにあたるものを、
  * 十字キーで辿れるよう縦に積んだ列にした (地上波の列 → BS の列 → CS の列)。左右で局を選び、決定で替える。
  *
- * 開いたときは、いま映している局の列がいちばん上に見えていて、下の列が少し覗く (帯の高さを取りすぎない)。
+ * 開いたときは、いま映している局の列がいちばん上に見えていて、下の列の名前が覗く (帯の高さを取りすぎない)。
  * 操作の列から下キーで、いま映している局に合う (`current`)。列から列へは、真上・真下の札へ (横の送り具合は列ごとに覚える)。
  *
  * ブラウザのライブと同じく、**放送している局だけ並べる** (本放送と同じものを流しているサブチャンネルは出さない。
@@ -130,14 +135,15 @@ fun ChannelRows(
                     CompositionLocalProvider(LocalBringIntoViewSpec provides Keyline) {
                         LazyRow(
                             state = state,
-                            // 枠は幅いっぱい (局の少ない列でも、合わせて膨らんだ札の縁と光が枠で切れないように)
-                            modifier = Modifier.fillMaxWidth(),
+                            // 枠は幅いっぱい (局の少ない列でも、合わせて膨らんだ札の縁と光が枠で切れないように)。送れる側の端は溶かす
+                            modifier = Modifier.fillMaxWidth().fadeEdges(state),
                             /*
                              * 上下で列を移ったときは、**真上・真下の札へ** (どの列も合わせた札が `KEYLINE` に居るので、目を動かさずに済む)。
                              * 最後に合わせていた札へ戻す (`focusRestorer`) のはやめた。枠の外に出て捨てられた列では覚えが消え、
                              * 見えていない札へ跳んだり、離れた札に合ったりした
                              */
-                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 4.dp),
+                            // 上下は、合わせた札の膨らみと光が端を溶かす層 (`fadeEdges`) で切れないだけ空ける
+                            contentPadding = PaddingValues(vertical = 12.dp, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
                         ) {
                             items(row, key = { it.id }) { service ->
@@ -201,7 +207,7 @@ private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modi
                 val now = service.now
                 when {
                     now?.recording == true -> Mark("録画中", Palette.Recording)
-                    now?.reserved == true -> Mark("予約済み", Palette.Reserved)
+                    now?.reserved == true -> Mark(RESERVED, Palette.Reserved)
                 }
                 if (tuned) {
                     Text(
@@ -250,14 +256,32 @@ private val LOGO_WIDTH = 48.dp
 private val LOGO_HEIGHT = 27.dp
 
 private val CARD_WIDTH = 220.dp
-private val CARD_HEIGHT = 84.dp
+private val CARD_HEIGHT = 92.dp
 private val CARD_GAP = 12.dp
 
 /** 合わせた札の左の端を置く所 (横の枠の幅に対する割合)。左に1枚ぶんの札が見える */
 private const val KEYLINE_FRACTION = 0.25f
 
-/** 局の列を出す高さ。1列がまるごと見えて、次の列の名前と頭が少し覗く */
-private val ROWS_HEIGHT = 150.dp
+/** 局の列を出す高さ。1列がまるごと見えて、次の列の名前が覗く (下に続きがあると分かる) */
+private val ROWS_HEIGHT = 172.dp
 
 /** 1列の高さ (種別の名前と札。札の上下の余白も)。だいたいでよい */
-private val ROW_HEIGHT = 112.dp
+private val ROW_HEIGHT = 134.dp
+
+/**
+ * **横に送れる側の端を透かして消す** (端の札が字の途中でぶつりと切れて見えないように。続きがあるのも分かる)。
+ * 送れない側 (列の頭・終わり) は透かさない。透かしは別の層に描いてから端だけ抜く (`DstIn`)。層の外は切れるので、
+ * 列の上下は札の光のぶん空けてある
+ */
+private fun Modifier.fadeEdges(state: LazyListState): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            val fade = (EDGE_FADE.toPx() / size.width).coerceAtMost(0.5f)
+            val start = if (state.canScrollBackward) Color.Transparent else Color.Black
+            val end = if (state.canScrollForward) Color.Transparent else Color.Black
+            drawRect(Brush.horizontalGradient(0f to start, fade to Color.Black, 1f - fade to Color.Black, 1f to end), blendMode = BlendMode.DstIn)
+        }
+
+/** 端を透かす幅 */
+private val EDGE_FADE = 72.dp

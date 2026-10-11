@@ -50,6 +50,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -82,8 +83,14 @@ data class DetailFacts(
     val logo: String? = null,
 )
 
-/** 詳しくの札。並べた順に左から。**先頭が主な操作で、開いたときにそこに合う** */
-class DetailAction(val label: String, val onClick: () -> Unit)
+/**
+ * 詳しくの札。並べた順に左から。**「閉じる」はどの詳しくでも右の端** (開き方で並びを変えない)。
+ * `primary` は主な操作 (azure で塗る。「続きから再生」「録画」)。開いたときは `initial` の札、無ければ先頭に合う
+ */
+class DetailAction(val label: String, val primary: Boolean = false, val initial: Boolean = false, val onClick: () -> Unit)
+
+/** 詳しくを閉じる札 */
+internal const val CLOSE = "閉じる"
 
 /**
  * 番組の詳しく。**録画の一覧 (カードの長押し)・録画と追っかけの再生中・ライブ (決定の長押し・情報キー) で同じもの**。
@@ -92,8 +99,8 @@ class DetailAction(val label: String, val onClick: () -> Unit)
  *
  * - 左に寄せた1列。**番組名を大きく、その下に1行の「局 ・ 日時 (長さ)」**、ライブなら番組の進みと残り、札の列
  *   (録画中の印・ジャンル・映像・音声)
- * - **その下に操作の札を横1列**。先頭が主な操作で、開いたときにそこに合う (録画は「続きから再生」、ライブは「録画」、
- *   再生中は「閉じる」— 映像に戻るだけ)
+ * - **その下に操作の札を横1列**。主な操作が先頭で、「閉じる」が右の端。開いたときは主な操作に合う (録画は「続きから再生」、
+ *   ライブは「録画」)。再生中と、ライブで録っている・録る予定のときは「閉じる」に合う (映像に戻るだけ)
  * - 下の残りに説明と放送の詳細を**1列で、大事な順に** (`arrangeDetail`): 説明と番組内容・あらすじをまとめた読みもの →
  *   出演者 → 制作・音楽など (小さく詰めて) → おしらせ。ホームページは出さない。1行は画面の6割ほどまで (長すぎると読みにくい)。
  *   収まらなければ札の列から下キーで本文に入り、**上下で読み進める** (いちばん上でもう一度上を押すと札に戻る)
@@ -116,7 +123,9 @@ fun ProgramDetailDialog(
     token: String? = null,
 ) {
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    val start = actions.indexOfFirst { it.initial }.coerceAtLeast(0)
+    // 札の数が変わったら (ライブで録画を頼んで「録画」の札が消えた) 合わせ直す。合っていた札が消えると、どこにも合わなくなる
+    LaunchedEffect(actions.size) { runCatching { first.requestFocus() } }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val surface = MaterialTheme.colorScheme.surface
         Box(
@@ -133,14 +142,14 @@ fun ProgramDetailDialog(
                 ),
         ) {
             if (!overVideo && backdrop != null) FaintBackdrop(backdrop, token)
-            Column(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 40.dp, bottom = 24.dp)) {
+            Column(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 40.dp, bottom = SAFE_VERTICAL + 6.dp)) {
                 Header(facts, token)
                 Spacer(Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     actions.forEachIndexed { index, action ->
-                        val modifier = if (index == 0) Modifier.focusRequester(first) else Modifier
+                        val modifier = if (index == start) Modifier.focusRequester(first) else Modifier
                         // 札の文字は1行のまま伸ばす (「もう一度押すと削除」になっても切れないように)
-                        DenpaButton(onClick = action.onClick, modifier = modifier, primary = index == 0) {
+                        DenpaButton(onClick = action.onClick, modifier = modifier, primary = action.primary) {
                             Text(action.label, maxLines = 1, softWrap = false)
                         }
                     }
@@ -187,14 +196,14 @@ private fun Header(facts: DetailFacts, token: String?) {
                 Box(
                     Modifier
                         .height(CHIP_HEIGHT)
-                        .background(if (badge) BADGE_COLOR else MaterialTheme.colorScheme.surfaceVariant, TagShape)
+                        .background(if (badge) badgeColor(label) else MaterialTheme.colorScheme.surfaceVariant, TagShape)
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         label,
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (badge) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (badge) badgeTextColor(label) else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                     )
                 }
@@ -205,7 +214,7 @@ private fun Header(facts: DetailFacts, token: String?) {
 
 /**
  * 説明と放送の詳細を1列で (`arrangeDetail` の並び)。**収まらなければ合わせられて、上下で読み進める**
- * (合っている間は縁を出す。続きがあれば下の端に「▼」)。いちばん上で上を押すと、合いが先頭の札へ戻る
+ * (合っている間は縁を出す。続きがあれば本文の下の1行に「▼ 下キーで続き」)。いちばん上で上を押すと、合いが先頭の札へ戻る
  */
 @Composable
 private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
@@ -276,18 +285,25 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
                     .height(48.dp)
                     .background(Brush.verticalGradient(listOf(Color.Transparent, surface.copy(alpha = 0.95f)))),
             )
-            // 本文の上に重ねるので、下地を敷いて字が重ならないように
-            Text(
-                if (focused) "▼" else "▼ 下キーで続き",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp, bottom = 4.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 10.dp, vertical = 2.dp),
-            )
         }
+    }
+    /*
+     * 続きの手引きは本文の下の決まった1行に (本文に重ねると、その下の字を隠す)。収まらない本文のあいだはずっと行を取っておき
+     * (読み進めて終わりまで来ても本文の高さが変わらないように)、続きがあるときだけ字を出す
+     */
+    if (scrollable) {
+        Text(
+            when {
+                !scroll.canScrollForward -> ""
+                focused -> "▼ 下キーで続き・上キーで戻る"
+                else -> "▼ 下キーで続き"
+            },
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            modifier = Modifier.widthIn(max = TEXT_WIDTH + BODY_PADDING * 2).fillMaxWidth().offset(x = -BODY_PADDING).padding(top = 4.dp, end = 8.dp),
+        )
     }
 }
 
@@ -336,8 +352,10 @@ private val BODY_PADDING = 16.dp
 /** 札の高さ */
 private val CHIP_HEIGHT = 30.dp
 
-/** 録画中の印の赤 (一覧のカードの「● 録画中」と同じ) */
-private val BADGE_COLOR = Palette.Recording
+/** 札の頭の印の色。録画中は赤 (一覧のカードの「● 録画中」と同じ)、予約済みは琥珀 (局の列の札の印と同じ) */
+private fun badgeColor(label: String): Color = if (label == RESERVED) Palette.Reserved else Palette.Recording
+
+private fun badgeTextColor(label: String): Color = if (label == RESERVED) Palette.Background else Color.White
 
 /**
  * 詳しくの後ろにうすく敷く録画の絵。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (`BlurredImage`)、

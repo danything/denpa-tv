@@ -26,20 +26,16 @@ import kotlinx.coroutines.launch
 @Stable
 class CodecSwitching internal constructor(
     private val state: MutableState<CodecSwitch>,
-    private val note: MutableState<String?>,
     private val scope: CoroutineScope,
     private val repo: Repository,
     private val say: () -> (String) -> Unit,
     private val switching: () -> (LiveQuality) -> Unit,
 ) {
-    /** 局の知らせに添える画質 (切り替え中ならそう言う) */
-    val label: String get() = state.value.label
-
     /**
-     * メニュー・帯の見出しに出す画質。済んだ・切り替えられなかったときは、その1行をしばらく — メニューを開いている間は
-     * 下の1行の知らせが出ないので、見出しで知らせる
+     * 局の知らせ・メニューと帯の題に添える画質 (切り替え中ならそう言う)。済んだ・切り替えられなかったは知らせ (`flash`) で言う —
+     * メニュー・帯を開いている間は、その題の2行目に出る (`LocalBarNotice`)
      */
-    val heading: String get() = note.value ?: state.value.label
+    val label: String get() = state.value.label
 
     /** 札で入っているもの。選んだものをすぐ入れる */
     val chosen: LiveQuality get() = state.value.pending ?: state.value.shown
@@ -48,7 +44,6 @@ class CodecSwitching internal constructor(
     fun choose(next: LiveQuality) {
         val switched = state.value.choose(next) ?: return
         state.value = switched
-        note.value = null
         switching()(next)
         if (switched.pending != null) {
             say()("${next.label} に切り替え中")
@@ -85,18 +80,9 @@ fun rememberCodecSwitching(
 ): CodecSwitching {
     val switching by rememberUpdatedState(onSwitching)
     val state = remember { mutableStateOf(CodecSwitch(quality)) }
-    val note = remember { mutableStateOf<String?>(null) }
     val flashing by rememberUpdatedState(flash)
-    /** 済んだ・切り替えられなかった: 下の1行と見出し (`heading`) の両方に */
-    val tell = { text: String ->
-        note.value = text
-        flashing(text)
-    }
-    LaunchedEffect(note.value) {
-        if (note.value == null) return@LaunchedEffect
-        delay(NOTE_MS)
-        note.value = null
-    }
+    /** 済んだ・切り替えられなかった */
+    val tell = { text: String -> flashing(text) }
     // MPEG-2 との行き来ではプレーヤーごと作り直すので、プレーヤーごとに見る
     DisposableEffect(player) {
         fun pictured() {
@@ -134,11 +120,8 @@ fun rememberCodecSwitching(
         giveUp("映像が届きません")
     }
     val scope = rememberCoroutineScope()
-    return remember(repo) { CodecSwitching(state, note, scope, repo, { flashing }, { switching }) }
+    return remember(repo) { CodecSwitching(state, scope, repo, { flashing }, { switching }) }
 }
-
-/** 済んだ・切り替えられなかったを見出しに出しておく間 (ミリ秒)。下の1行の知らせ (`rememberFlash`) と同じ */
-private const val NOTE_MS = 4_000L
 
 /** 切り替えを諦めるまで (ミリ秒)。denpa が焼きはじめるのを待つ分 (ふつうは数秒) より十分に長く */
 private const val SWITCH_GIVE_UP_MS = 15_000L

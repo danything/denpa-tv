@@ -48,6 +48,7 @@ import io.github.danything.denpatv.data.cmSkipTarget
 import io.github.danything.denpatv.data.nextChapter
 import io.github.danything.denpatv.data.pickFile
 import io.github.danything.denpatv.data.previousChapter
+import io.github.danything.denpatv.data.resumedInCm
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -60,7 +61,7 @@ import kotlinx.coroutines.launch
  *
  * - 左右で 10 秒戻す・送る、決定で止める・動かす (キーの割り当ては data/Remote.kt と docs/controls.md)
  * - **下でシークバー** (左右で 10 秒ずつ。CM は色を変えて出す)、下でその下の操作の列へ
- * - **上 (か Menu) で操作の列**。**決定の長押しで番組の詳しいところ** (一覧のカードの長押しと同じ。削除もそこから)。帯の中は上下で操作の列とシークバーを行き来し、**シークバー (いちばん上) から上で閉じる**。操作の列: 再生 / 一時停止、前へ・次へ (チャプター)、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
+ * - **上 (か Menu) で操作の列**。**決定の長押し (と情報キー) で番組の詳しいところ** (一覧のカードの長押しと同じ。削除もそこから)。帯の中は上下で操作の列とシークバーを行き来し、**シークバー (いちばん上) から上で閉じる**。操作の列: 再生 / 一時停止、前へ・次へ (チャプター)、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
  *   **CM 飛ばし** (既定で入。ロゴで CM を判定できなかった録画は切で始まる)、**字幕**・**音声** (あれば)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
  *   5 秒触らなければ閉じる (止めている間も)。戻るでも閉じる。緑のボタンは速さを1段送る
  * - リモコンの次へ・前へでチャプター送り
@@ -88,7 +89,8 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         clock,
         ReconnectPlan("recording 録画 ${recording.id}", stream = false) { it.prepare() },
     )
-    val (overlay, flash) = rememberFlash()
+    val flasher = rememberFlash()
+    val (overlay, flash) = flasher
     val scope = rememberCoroutineScope()
     /** 飛んだ回数。生の TS の字幕を、飛んだ先から頼み直す */
     var seeks by remember { mutableIntStateOf(0) }
@@ -215,7 +217,11 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
      * 飛ぶところは ExoPlayer に預ける (`PlayerMessage`。流している位置がそこに来たら、再生の糸で呼ばれる)。
      * 呼ばれたら主の糸の列の先頭に割り込んで飛ぶ (列の後ろに並ぶと、そのぶん遅れて CM のコマが出ることがある)。
      * 飛んでいる間は前の絵 (本編の末尾) が残る。速いほど先に来るので、手前の幅も速さに合わせる。
-     * 飛んだ・戻した・送ったら (`seeks`) 預け直す。開いた・飛んだ先が CM の中なら、すぐ飛ぶ (映る前に。止めていれば動かしたら)
+     * 飛んだ・戻した・送ったら (`seeks`) 預け直す。開いた・飛んだ先が CM の中なら、すぐ飛ぶ (映る前に。止めていれば動かしたら)。
+     *
+     * **続きの位置が CM の中だったときは、飛んでも「CM を飛ばしました」と言わない** (ブラウザの denpa と同じ。開いたときの
+     * 「続きから」だけを残す — 観る人にとっては続きから始まっただけ)。CM の判定は動画のチャプターが届いてから
+     * (`chapters` が空なら何もしない) で、続きの位置は `setMediaItem` で渡してあるので、頭の CM を見て飛んでから続きへ移ることは無い
      */
     LaunchedEffect(player, chapters, skipCm, seeks, speed) {
         if (!skipCm || chapters.none { it.isCm }) return@LaunchedEffect
@@ -223,7 +229,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         fun hop(cm: ChapterMark) {
             skipped += cm.startMs
             player.seekTo(cm.endMs)
-            flash("CM を飛ばしました")
+            if (!resumedInCm(cm, recording.resumeMs, seeks)) flash("CM を飛ばしました")
         }
         val main = Handler(Looper.getMainLooper())
         /** 預け直したあとに、前に預けたぶんが割り込んでこないように */
@@ -300,6 +306,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         player.playWhenReady = !player.playWhenReady
         playing = player.playWhenReady
         at = player.currentPosition
+        if (!playing) flasher.clear()
         bar = if (playing) null else Bar.Actions
     }
     /** 10 秒ずつ戻す・送る (左右とシークバー)。戻して CM を観に行ったなら、そこは飛ばさない */
@@ -325,20 +332,24 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
             player.seekTo(previous.startMs); at = previous.startMs; flash("${previous.title}  ${position(previous.startMs)}")
         }
     }
+    /** 帯を開く。開く前の知らせ (開いてすぐの番組名など) は消す (帯の題と同じことを言うだけなので、帯の題に持ち込まない) */
     fun open(which: Bar) {
         at = player.currentPosition
         playing = player.playWhenReady
+        flasher.clear()
         bar = which
     }
     val deleteControl = Control(deleteLabel(delete.armed), icon = R.drawable.ic_delete) { if (delete.press()) deleteNow() }
     val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, above = {
+    // 帯 (終わり・止めている間・操作の列) を出している間は、知らせを帯の題に添える (`covered`)
+    val covered = ended || bar != null || !playing
+    PlayerFrame(player, overlay, error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, covered = covered, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
                 // 観終えたものは消すことが多いので、最初は削除に合わせる (2回押しなので、1回では消えない)
-                listOf("" to listOf(Control("一覧に戻る", icon = R.drawable.ic_back) { ui.leave() }, deleteControl.copy(initial = true))),
+                listOf("" to listOf(Control(BACK_TO_LIST, icon = R.drawable.ic_back) { ui.leave() }, deleteControl.copy(initial = true))),
             )
         } else if (bar == null && !playing) {
             // 止めている間の位置の帯。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳しく)
@@ -398,6 +409,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
             RecordingCommand.PreviousChapter -> { previousChapterNow(); true }
             RecordingCommand.PlayPause -> { togglePause(); true }
             RecordingCommand.NextSpeed -> { flash(scope.stepSpeed(repo, speed)); true }
+            RecordingCommand.Details -> { ui.details = true; true }
             null -> false
         }
     }, onCenter = { press -> ui.center(press) { togglePause() } })
@@ -450,9 +462,15 @@ internal fun rememberPlayerBar(onLeave: () -> Unit, playing: Boolean): PlayerBar
     return state
 }
 
-/** 止める・動かすの札 (録画・追っかけ) */
+/**
+ * 止める・動かすの札 (録画・追っかけ)。**塗らない** (塗るのは入り切りの札で入っているものだけ。「一時停止」が入っているように見える)。
+ * 帯を開いたときはここに合わせる (`initial`。止めて開いた帯は決定でそのまま動かせる)
+ */
 internal fun playControl(playing: Boolean, onClick: () -> Unit) =
-    Control(if (playing) "一時停止" else "再生", on = true, icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, onClick = onClick)
+    Control(if (playing) "一時停止" else "再生", icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, initial = true, onClick = onClick)
+
+/** 終わりの帯の、一覧へ戻る札 (ブラウザの denpa と同じ言い方) */
+internal const val BACK_TO_LIST = "一覧へ戻る"
 
 /**
  * 速さの札 (録画・追っかけ)。1つの札で送る (`stepSpeed`)。列を短くして、押す回数も少なく。

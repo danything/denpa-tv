@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -196,6 +197,9 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
  * 開いている間と、画面を離れるとき (一覧に戻る間に一覧が合いを取るので、取り返さない) は `active = false`
  *
  * **字幕 (`captions`) は、下に重ねたもの (知らせ・`above` の帯やメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
+ *
+ * **`above` が帯を出している間 (`covered`) は、下の端の知らせを出さない** (どちらも下の端の板なので重なる)。知らせとエラーは
+ * 帯の題の2行目に添える (`LocalBarNotice`。`ControlBar` が読む)。帯の中で押したもの (CM 飛ばし・画質) の返事もそこに出る
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -217,6 +221,8 @@ fun PlayerFrame(
     busyLabel: String = "読み込んでいます",
     /** 繋ぎ直しの様子 (`rememberPlayer` の `recovery`)。繋ぎ直している間は前の絵を残して「繋ぎ直しています」 */
     recovery: Recovery,
+    /** `above` が帯を出しているか。出している間は、知らせを下の端に出さずに帯の題に添える */
+    covered: Boolean = false,
     above: @Composable BoxScope.() -> Unit = {},
 ) {
     val loading = rememberLoading(player)
@@ -268,8 +274,9 @@ fun PlayerFrame(
         )
         CaptionLayer(captions, inset)
         if (error == null) LoadingVeil(loading, busyLabel, recovery)
-        CompositionLocalProvider(LocalOverlayInsets provides insets) {
-            Notice(error ?: overlay, if (error == null) progress else null)
+        val notice = error ?: overlay
+        CompositionLocalProvider(LocalOverlayInsets provides insets, LocalBarNotice provides notice.takeIf { covered }) {
+            if (!covered) Notice(notice, if (error == null) progress else null)
             above()
         }
     }
@@ -284,6 +291,9 @@ private fun BoxScope.Notice(text: CharSequence?, progress: Pair<Long, Long>?) {
         progress?.let { (at, length) -> ProgressLine(at, length) }
     }
 }
+
+/** 帯 (`ControlBar`) の題の2行目に添える知らせ。`PlayerFrame` が帯を出している間 (`covered`) だけ渡す */
+val LocalBarNotice = compositionLocalOf<CharSequence?> { null }
 
 /** 映像に合っているか見張る間 (ミリ秒) */
 private const val FOCUS_WATCH_MS = 250L
@@ -429,20 +439,42 @@ fun OnBackground(onStop: () -> Unit, onStart: () -> Unit) {
     }
 }
 
-/** 何秒かだけ出して消える文字。放送から来た字 (番組名・局名) は `appendBroadcast` で印を付けた AnnotatedString で渡す (`TitleLines`) */
-@Composable
-fun rememberFlash(): Pair<CharSequence?, (CharSequence) -> Unit> {
-    var text by remember { mutableStateOf<CharSequence?>(null) }
-    var shownAt by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(shownAt) {
-        if (shownAt == 0L) return@LaunchedEffect
-        delay(4_000)
-        text = null
-    }
-    return text to { value: CharSequence ->
+/**
+ * 何秒かだけ出して消える文字 (`rememberFlash`)。放送から来た字 (番組名・局名) は `appendBroadcast` で印を付けた AnnotatedString で渡す (`TitleLines`)。
+ * `val (overlay, flash) = …` で、いま出している文と出す口を受けられる
+ */
+@Stable
+class Flash internal constructor() {
+    /** いま出している文 (無ければ null) */
+    var text by mutableStateOf<CharSequence?>(null)
+        private set
+    internal var shownAt by mutableLongStateOf(0L)
+        private set
+
+    /** 出す (4 秒で消える) */
+    val show: (CharSequence) -> Unit = { value ->
         text = value
         shownAt = System.nanoTime()
     }
+
+    /** すぐ消す。帯を開いたとき (開く前の知らせ (開いてすぐの番組名など) を、帯の題に持ち込まない) */
+    fun clear() {
+        text = null
+    }
+
+    operator fun component1(): CharSequence? = text
+    operator fun component2(): (CharSequence) -> Unit = show
+}
+
+@Composable
+fun rememberFlash(): Flash {
+    val flash = remember { Flash() }
+    LaunchedEffect(flash.shownAt) {
+        if (flash.shownAt == 0L) return@LaunchedEffect
+        delay(4_000)
+        flash.clear()
+    }
+    return flash
 }
 
 /**

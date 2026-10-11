@@ -122,7 +122,8 @@ fun MainScreen(
                     .fillMaxHeight()
                     // 開いたら右の画面の上に重なるので、左から地の色で覆って字を読めるように
                     .then(if (open) Modifier.background(DRAWER_SCRIM) else Modifier)
-                    .padding(horizontal = RAIL_PADDING, vertical = 12.dp),
+                    // 左はテレビの縁で切れない所 (オーバースキャンの安全域) まで空ける
+                    .padding(start = SAFE_HORIZONTAL, end = RAIL_PADDING, top = SAFE_VERTICAL, bottom = SAFE_VERTICAL),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Brand(open)
@@ -147,7 +148,7 @@ fun MainScreen(
         // 観て戻ったら右の画面が合いを取る (録画の一覧なら開いた録画、設定なら頭のボタン)
         when (selected) {
             Destination.Settings -> SettingsScreen(repo)
-            else -> RecordingsScreen(repo, onWatch, onUnauthorized, takeFocus = !toMenu)
+            else -> RecordingsScreen(repo, onWatch, onUnauthorized, onLive = onLive, takeFocus = !toMenu)
         }
     }
 }
@@ -214,7 +215,7 @@ private fun RailItem(destination: Destination, selected: Boolean, open: Boolean,
     }
 }
 
-/** 畳んだ帯の左右の余白と、札 (畳んだときは丸) の大きさ・開いたときの幅、印の大きさ。畳んだ帯は 56dp */
+/** 畳んだ帯の右の余白と、札 (畳んだときは丸) の大きさ・開いたときの幅、印の大きさ。畳んだ帯は 96dp (左は安全域の 48dp) */
 private val RAIL_PADDING = 8.dp
 private val RAIL_ITEM = 40.dp
 private val RAIL_ITEM_OPEN = 200.dp

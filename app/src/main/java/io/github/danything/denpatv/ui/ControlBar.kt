@@ -52,6 +52,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
@@ -130,12 +135,14 @@ fun BoxScope.ControlBar(
             .ignoreHeldCenter(),
         spacing = 6.dp,
     ) {
+        // 帯を出している間の知らせ (帯の中で押したものの返事など) は、下の端に別に出さずに題の2行目へ (`PlayerFrame` の `covered`)
+        val notice = LocalBarNotice.current
         if (leading == null) {
-            TitleLines(title)
+            TitleLines(title, notice)
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 leading()
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { TitleLines(title) }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { TitleLines(title, notice) }
             }
         }
         header?.invoke(this, first)
@@ -203,7 +210,7 @@ fun BoxScope.BottomPanel(modifier: Modifier = Modifier, spacing: Dp, content: @C
             .background(SCRIM)
             .onSizeChanged(cover)
             .then(modifier)
-            .padding(start = 48.dp, end = 48.dp, top = SCRIM_TOP, bottom = 20.dp),
+            .padding(start = SAFE_HORIZONTAL, end = SAFE_HORIZONTAL, top = SCRIM_TOP, bottom = PANEL_BOTTOM),
         verticalArrangement = Arrangement.spacedBy(spacing),
         content = content,
     )
@@ -211,11 +218,12 @@ fun BoxScope.BottomPanel(modifier: Modifier = Modifier, spacing: Dp, content: @C
 
 /**
  * 板の題。1行目は白く、2行目からは小さく (番組名・位置など)。
- * AnnotatedString なら、印 (`appendBroadcast`) の付いたところ (番組名・局名) を放送の字にする
+ * AnnotatedString なら、印 (`appendBroadcast`) の付いたところ (番組名・局名) を放送の字にする。
+ * `notice` (帯を出している間の知らせ) は2行目の後ろに明るい azure で添える (`withNotice`)
  */
 @Composable
-fun TitleLines(text: CharSequence) {
-    val styled = (text as? AnnotatedString ?: AnnotatedString(text.toString())).withBroadcastFont()
+fun TitleLines(text: CharSequence, notice: CharSequence? = null) {
+    val styled = withNotice(text, notice).withBroadcastFont()
     styled.splitLines().forEachIndexed { index, line ->
         Text(
             line,
@@ -225,8 +233,52 @@ fun TitleLines(text: CharSequence) {
     }
 }
 
-/** 下から薄く暗くする (映像の上でも文字が読めるだけ。上は透かす) */
-val SCRIM = Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000), Color(0xCC000000)))
+/**
+ * 題の2行目の後ろに知らせを添える (帯を出している間の知らせ。`LocalBarNotice`)。題が1行なら知らせが2行目になる。
+ * 知らせが何行かあれば1行に繋ぐ。印 (`appendBroadcast`) はそのまま残る
+ */
+internal fun withNotice(text: CharSequence, notice: CharSequence?): AnnotatedString {
+    val title = text as? AnnotatedString ?: AnnotatedString(text.toString())
+    val parts = (notice as? AnnotatedString ?: notice?.let { AnnotatedString(it.toString()) })
+        ?.splitLines()?.filter { it.isNotBlank() }.orEmpty()
+    if (parts.isEmpty()) return title
+    val lines = title.splitLines()
+    return buildAnnotatedString {
+        append(lines[0])
+        append("\n")
+        if (lines.size > 1) {
+            append(lines[1])
+            append(NOTICE_GAP)
+        }
+        withStyle(SpanStyle(color = Palette.AccentBright)) {
+            parts.forEachIndexed { index, part ->
+                if (index > 0) append(NOTICE_GAP)
+                append(part)
+            }
+        }
+        lines.drop(2).forEach {
+            append("\n")
+            append(it)
+        }
+    }
+}
+
+/** 題の2行目と知らせの間 */
+private const val NOTICE_GAP = "   "
+
+/**
+ * 下から暗くする (映像の上でも文字が読めるように)。上の透かし (`SCRIM_TOP`) を過ぎた題のあたりから、もう十分に暗く
+ * (明るい場面でも題の白い字が沈まないように)。上の端だけ透かして映像に溶かす
+ */
+val SCRIM = Brush.verticalGradient(0f to Color.Transparent, 0.25f to Color(0xB3000000), 0.5f to Color(0xCC000000), 1f to Color(0xE0000000))
+
+/**
+ * テレビの縁で切れない所 (オーバースキャンの安全域。Android TV の指針の 5%: 横 48dp・縦 27dp)。
+ * 下の端に出す板の横の余白と、下の余白 (合わせて膨らんだ札の縁と光も入るよう、少し多めに)
+ */
+val SAFE_HORIZONTAL = 48.dp
+val SAFE_VERTICAL = 27.dp
+private val PANEL_BOTTOM = 32.dp
 
 /**
  * 印つきの小さな札。入っているものは塗る。
@@ -275,7 +327,10 @@ private fun Chip(control: Control, modifier: Modifier) {
 
 /**
  * 進み具合の帯。`chapters` の CM は色を変えて出す。`onStep` を渡すと合わせられるシークバーになり、
- * 合っている間は左右で `onStep(-1 / 1)` (呼ぶ側が 10 秒ずつ動かす)。下で操作の列へ、上で `onUp` (帯を閉じる。`closeOnUp`)
+ * 合っている間は左右で `onStep(-1 / 1)` (呼ぶ側が 10 秒ずつ動かす)。下で操作の列へ、上で `onUp` (帯を閉じる。`closeOnUp`)。
+ *
+ * **合っているのが離れても分かるように**、合っている間は帯を太くし、位置に大きな白い丸を明るい azure の縁で置き、
+ * 丸の上に位置 (1:02:03) を出す。位置の字のぶん、シークバーは上を空けておく (合わせても帯の高さが変わらないように)
  */
 @Composable
 fun ProgressLine(
@@ -292,6 +347,8 @@ fun ProgressLine(
     var focused by remember { mutableStateOf(false) }
     val accent = MaterialTheme.colorScheme.primary
     val seekable = onStep != null && focus != null
+    val measurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelLarge.copy(color = Color.White)
     val modifier = if (seekable) {
         Modifier
             .focusRequester(focus!!)
@@ -313,10 +370,12 @@ fun ProgressLine(
     Box(
         modifier
             .fillMaxWidth()
-            .height(16.dp)
+            .height(if (seekable) LINE_HEIGHT + SEEK_LABEL_HEIGHT else LINE_HEIGHT)
             .drawBehind {
                 val thick = (if (focused) 6.dp else 4.dp).toPx()
-                val top = (size.height - thick) / 2
+                // 帯は下の端の `LINE_HEIGHT` の真ん中 (シークバーなら、上は位置の字を置く所)
+                val middle = size.height - LINE_HEIGHT.toPx() / 2
+                val top = middle - thick / 2
                 val radius = CornerRadius(thick / 2)
                 drawRoundRect(Color(0x66FFFFFF), Offset(0f, top), Size(size.width, thick), radius)
                 if (duration > 0) {
@@ -325,8 +384,29 @@ fun ProgressLine(
                         drawRect(Color(0xCCFFB300), Offset(x(cm.startMs), top), Size(x(cm.endMs) - x(cm.startMs), thick))
                     }
                     drawRoundRect(accent, Offset(0f, top), Size(x(position), thick), radius)
-                    if (focused) drawCircle(Color.White, size.height / 2, Offset(x(position), size.height / 2))
+                    if (focused) {
+                        val at = Offset(x(position), middle)
+                        val knob = KNOB_RADIUS.toPx()
+                        drawCircle(Palette.AccentBright, knob, at)
+                        drawCircle(Color.White, knob - KNOB_RING.toPx(), at)
+                        // 丸の上に位置。端では帯の幅に収める
+                        val label = measurer.measure(clockLabel(position), labelStyle)
+                        val left = (at.x - label.size.width / 2f).coerceIn(0f, (size.width - label.size.width).coerceAtLeast(0f))
+                        drawText(label, topLeft = Offset(left, middle - knob - KNOB_GAP.toPx() - label.size.height))
+                    }
                 }
             },
     )
 }
+
+/** 位置の字 (`position`。`ProgressLine` の引数と名前が重なるので分けておく) */
+private fun clockLabel(ms: Long): String = position(ms)
+
+/** 進みの帯の行の高さと、シークバーの上に空けておく位置の字の高さ */
+private val LINE_HEIGHT = 16.dp
+private val SEEK_LABEL_HEIGHT = 26.dp
+
+/** 合っているシークバーの丸 (半径)、その明るい azure の縁の太さ、丸と位置の字の間 */
+private val KNOB_RADIUS = 10.dp
+private val KNOB_RING = 3.dp
+private val KNOB_GAP = 2.dp

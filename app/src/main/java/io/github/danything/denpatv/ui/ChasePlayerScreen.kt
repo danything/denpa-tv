@@ -48,7 +48,8 @@ import kotlinx.coroutines.launch
  * - **切れたら (エラー・録り終える前に流れが閉じた・10 秒進まない) 居た場所から頼み直す** (`Recovery`。ライブと同じ決まり)
  * - H.264 / AV1 を denpa が焼けないと (ffmpeg が降りた・録画を読めない)、空の 200 が返る。映る前に終わった・空だったらそう出す
  *
- * キーは録画の再生と同じ (左右で 10 秒、決定で止める・動かす、下でシークバー、上・Menu で操作の列、決定の長押しで詳しく)
+ * キーは録画の再生と同じ (左右で 10 秒、決定で止める・動かす、下でシークバー、上・Menu で操作の列、決定の長押しと情報キーで詳しく)。
+ * 止めたまま帯が閉じたら、録画の再生と同じく「一時停止」と位置の帯を出す
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -79,7 +80,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
             attempt++
         },
     )
-    val (overlay, flash) = rememberFlash()
+    val flasher = rememberFlash()
+    val (overlay, flash) = flasher
     val scope = rememberCoroutineScope()
     /** 焼くのを断られた。頼み直すまで、ふつうのエラーの代わりにそう出す */
     var refused by remember { mutableStateOf(false) }
@@ -308,13 +310,17 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         onDispose { player.removeListener(listener) }
     }
 
+    /**
+     * 10 秒ずつ戻す・送る (左右とシークバー)。**位置を知らせるのは何も出していないときの左右だけ** — 帯 (シークバー・止めている間の帯)
+     * を出している間は、帯の題とシークバーに位置が出ている
+     */
     fun step(direction: Int) {
         val target = Chase.clamp(position() + direction * SEEK_STEP_MS, recorded())
         // もう最新 (か頭) で動けない。頼み直すと途切れるだけなので何もしない
         if (kotlin.math.abs(target - position()) < 1_000) return flash(if (direction > 0) "最新です" else "頭です")
         pending = target
         at = target
-        flash("${position(target)} / ${position(recorded())}")
+        if (bar == null && playing) flash("${position(target)} / ${position(recorded())}")
     }
     fun toEdge() {
         pending = null
@@ -329,6 +335,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
             pausedAt = System.nanoTime()
             at = position()
             length = recorded()
+            flasher.clear()
             bar = Bar.Actions
         } else {
             // 長く止めていたら繋がりが切れているかもしれないので、止めた位置から頼み直す
@@ -341,19 +348,35 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         }
         playing = player.playWhenReady
     }
+    /** 帯を開く。開く前の知らせ (開いてすぐの番組名など) は消す (録画の再生と同じ) */
     fun open(which: Bar) {
         at = position()
         length = recorded()
         playing = player.playWhenReady
+        flasher.clear()
         bar = which
     }
     val seekFocus = remember { FocusRequester() }
 
-    PlayerFrame(player, overlay, if (refused) REFUSED else error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, above = {
+    // 帯 (終わり・止めている間・操作の列) を出している間は、知らせを帯の題に添える (録画の再生と同じ)
+    val covered = ended || bar != null || !playing
+    PlayerFrame(player, overlay, if (refused) REFUSED else error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, covered = covered, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました (録り終えました)",
-                listOf("" to listOf(Control("一覧に戻る", on = true, icon = R.drawable.ic_back) { ui.leave() })),
+                listOf("" to listOf(Control(BACK_TO_LIST, icon = R.drawable.ic_back, initial = true) { ui.leave() })),
+            )
+        } else if (bar == null && !playing) {
+            // 止めている間の位置の帯 (録画の再生と同じ)。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳しく)
+            ControlBar(
+                buildAnnotatedString {
+                    append("一時停止  ")
+                    appendBroadcast(recording.title)
+                    append("\n${position(at)} / ${position(length)} (録れたところまで)  ・決定で再生  $SEEK_HINT")
+                },
+                emptyList(),
+                header = { ProgressLine(at, length) },
+                focusActions = false,
             )
         } else bar?.let { which ->
             LaunchedEffect(which) { if (which == Bar.SeekBar) runCatching { seekFocus.requestFocus() } }
@@ -361,7 +384,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                 buildAnnotatedString {
                     append("録画中  ")
                     appendBroadcast(recording.title)
-                    append("\n${position(at)} / ${position(length)} (録れたところまで)  ${codec.heading}")
+                    append("\n${position(at)} / ${position(length)} (録れたところまで)  ${codec.label}")
                 },
                 listOf(
                     "" to listOfNotNull(
@@ -395,6 +418,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
             RecordingCommand.NextSpeed -> { flash(scope.stepSpeed(repo, speed)); true }
             // 追っかけの流れにはチャプターが無い
             RecordingCommand.NextChapter, RecordingCommand.PreviousChapter -> { flash("チャプターがありません"); true }
+            RecordingCommand.Details -> { ui.details = true; true }
             null -> false
         }
     }, onCenter = { press -> ui.center(press) { togglePause() } })

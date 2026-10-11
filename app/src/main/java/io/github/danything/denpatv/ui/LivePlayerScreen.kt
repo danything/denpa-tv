@@ -31,9 +31,11 @@ import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.audioQuery
 import io.github.danything.denpatv.data.liveCenter
+import io.github.danything.denpatv.data.liveChannelKey
 import io.github.danything.denpatv.data.liveCommand
 import io.github.danything.denpatv.data.neighbor
 import io.github.danything.denpatv.data.number
+import io.github.danything.denpatv.data.remoteKeyService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
@@ -46,6 +48,7 @@ import kotlinx.coroutines.launch
  * - **左右** (チャンネル送りも) で前・次の局 (同じものを流しているサブチャンネルは飛ばす)。押している間は行き先の局・番組を
  *   下に出すだけで、**キーを離して少し (`ZAP_SETTLE_MS`) たってから、最後の局だけを頼む** (押し続けて局を送っても、途中の局ごとに
  *   denpa にチューナーを替えさせない)。替えたら局・番組・番組の進みを数秒だけ下に出す (キーの割り当ては data/Remote.kt)
+ * - **数字キーで、そのリモコン番号の局へすぐ替える** (テレビのリモコンと同じワンタッチ選局。同じ番号の局が地上波と BS にあれば、いま観ている帯のほう)
  * - **下・決定・Menu でメニュー** (YouTube・Prime Video・ABEMA などのテレビのアプリと同じく下で開く)。
  *   下の端に、ブラウザの denpa のライブの操作列にあたる**操作の列** (画質・字幕・音声・録画) と、その下に**局の列**
  *   (地上波 / BS / CS / SKY ごとの列。ブラウザのタブにあたる) が覗く。下キーで局の列に入り、左右で選んで決定で替える。
@@ -111,7 +114,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         clock,
         ReconnectPlan("live 局 ${playing?.id}", stream = true, endedIsLost = true) { returns++ },
     )
-    val (overlay, flash) = rememberFlash()
+    val flasher = rememberFlash()
+    val (overlay, flash) = flasher
     // 生の TS の字幕は denpa が解いた文字の配置を別の口で受け取る (焼いたライブには字幕が載らない)
     val captions = rememberRawCaptions(
         repo,
@@ -293,10 +297,23 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         stepping = null
         held = false
     }
+    /** メニューを開く。開く前の知らせ (局と番組・キーの手引き) は消す (メニューの題と同じことを言うだけなので、題に持ち込まない) */
     fun openMenu(start: MenuStart) {
         settle()
         touched = System.nanoTime()
+        flasher.clear()
         menu = start
+    }
+    /**
+     * 数字キーで、そのリモコン番号の局へすぐ替える (`remoteKeyService`。同じ番号が何局かあれば、いまの帯の局)。
+     * 局送りの途中なら、その行き先は捨てる
+     */
+    fun tune(key: Int) {
+        val target = remoteKeyService(services, key, current.type) ?: return flash("リモコン番号 $key の局がありません")
+        stepping = null
+        held = false
+        // いまの局なら局と番組を出し直すだけ
+        if (target.id == current.id) flash(describe(current, codec.label)) else playing = target
     }
     /**
      * いまの番組を録る (ブラウザのライブの録画ボタンと同じ口)。結果は1行で知らせ (メニューからは下の知らせ、詳しくからは札の下)、
@@ -338,12 +355,17 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     val currentCard = remember { FocusRequester() }
     PlayerFrame(
         player,
-        // メニューを開いている間は1行の知らせを出さない (メニューの帯の下から透けて重なる)
-        overlay.takeUnless { menu != null || detail },
+        // 詳しくを開いている間は知らせを出さない。メニューを開いている間はメニューの題に添える (`covered`)
+        overlay.takeUnless { detail },
         error,
         active = menu == null && !detail && !leaving,
         // `::run` (関数の参照) にしない。Compose が参照を覚えたままにして、前の局から送ってしまう
-        onKey = { event -> liveCommand(event.nativeKeyEvent.keyCode)?.let { run(it) } != null },
+        onKey = { event ->
+            val code = event.nativeKeyEvent.keyCode
+            // 数字キーは押し続けた繰り返しを捨てる (1回押したのと同じ。局を何度も頼み直さない)
+            liveCommand(code)?.let { run(it) } != null ||
+                liveChannelKey(code)?.let { if (event.nativeKeyEvent.repeatCount == 0) tune(it) } != null
+        },
         onKeyUp = { held = false },
         // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳しく)
         onCenter = { press -> run(liveCenter(press)) },
@@ -352,14 +374,15 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         captions = captions,
         busyLabel = "選局しています",
         recovery = recovery,
+        covered = menu != null,
     ) {
         menu?.let { start ->
             val now = current.now
             ControlBar(
-                describe(current, codec.heading),
+                describe(current, codec.label),
                 groups = listOf(
                     "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
-                        // 選んだらすぐ入れる (映るまでは見出しが「… に切り替え中」)
+                        // 選んだらすぐ入れる (映るまでは題が「… に切り替え中」)
                         Control(choice.label, on = choice == codec.chosen, icon = if (choice == codec.chosen) R.drawable.ic_quality else null) {
                             codec.choose(choice)
                         }
