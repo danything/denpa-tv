@@ -426,9 +426,8 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
         if (description.isNotEmpty()) {
             Text(
                 description,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.broadcast(),
                 color = Palette.TextMuted,
-                fontFamily = BroadcastFont,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = HERO_TEXT_WIDTH),
