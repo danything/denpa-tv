@@ -121,6 +121,23 @@ class SpeedTest {
     }
 
     @org.junit.Test
+    fun 速さの札は等速なら印だけ_速めている間は数字だけ() {
+        val normal = io.github.danything.denpatv.ui.speedControl(1f) {}
+        assertEquals("", normal.label)
+        assertEquals(io.github.danything.denpatv.R.drawable.ic_speed, normal.icon)
+        assertEquals(false, normal.on)
+        assertEquals("再生の速さ", normal.description)
+        val fast = io.github.danything.denpatv.ui.speedControl(1.25f) {}
+        // × は付けない (札の外の知らせ・題は `speedLabel` で「×1.25」)
+        assertEquals("1.25", fast.label)
+        assertNull(fast.icon)
+        assertEquals(true, fast.on)
+        assertEquals("再生の速さ 1.25倍", fast.description)
+        assertEquals("2", io.github.danything.denpatv.ui.speedControl(2f) {}.label)
+        assertEquals("再生の速さ 2倍", io.github.danything.denpatv.data.speedDescription(2f))
+    }
+
+    @org.junit.Test
     fun 流れている最中に速さを変えたときだけ飛び直す() {
         assertEquals(true, io.github.danything.denpatv.data.resyncAfterSpeedChange(1f, 1.25f, playing = true))
         // 始まる前 (開いたときに覚えていた速さを入れる) は飛ばない
