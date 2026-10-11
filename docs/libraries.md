@@ -183,7 +183,7 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 
 ### 字幕と放送の字: 丸ゴシックを APK に入れる ([danything/denpa-font](https://github.com/danything/denpa-font)、SIL OFL 1.1)
 
-字幕の文字の配置は、ブラウザの denpa と同じ字 (Denpa Font。v3.2 は BIZ UDゴシックを丸めたもの。等幅で ARIB の外字を持つ)
+字幕の文字の配置は、ブラウザの denpa と同じ字 (Denpa Font。BIZ UDゴシックを丸めたもの。等幅で ARIB の外字を持つ)
 で描かないと、ブラウザと字の幅や形が揃わない。**放送から来た字 (番組名・説明・局名・いまの番組) も同じ字で出す**
 (番組表の記号 = 外字がテレビと同じく白黒で出る)。アプリの札・見出し・設定は端末の字のまま。
 
@@ -191,7 +191,7 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
   放送の字を `TextStyle.broadcast()` で当てる。太さは1つだけで、Typeface から作った字体は `fontWeight` を見ないので、
   太い番組名 (カード) は端末が太らせた字 (`Typeface.create(…, BOLD)`) にする。こちらの字と混ざる1行 (帯の「局名 画質」「番組名 あと12分」・「局 ・ 日時」の行) は、
   放送の字に `appendBroadcast` で印を付けて、描くときに字体を当てる (`TitleLines`)
-- 放送の字 (画面のほう) は OpenType の `palt` を入れて組む (`BROADCAST_FEATURES`。v3.1 から)。詰まるのは全角の英数字・記号 (U+FF01–FF5E) だけで、
+- 放送の字 (画面のほう) は OpenType の `palt` を入れて組む (`BROADCAST_FEATURES`)。詰まるのは全角の英数字・記号 (U+FF01–FF5E) だけで、
   「ＮＨＫ総合１」「（再）」が間延びしない。字 (全角のまま) は替えない。**字幕には当てない** (ARIB が字の間と表示区画を決めている。
   字幕は `typeface` を Paint に渡して描き、`palt` を入れない)。読めずに端末の字で描くときも入れない (かなまで詰まる)
 
