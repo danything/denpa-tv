@@ -39,7 +39,7 @@ sealed interface DeepLink {
 
         private const val SCHEME = "denpa://"
 
-        /** % を解く。`+` はそのまま (局の名前に入りうる)。崩れていれば渡されたまま */
+        /** % をデコードする。`+` はそのまま (局の名前に入りうる)。崩れていれば渡されたまま */
         private fun decode(s: String): String =
             runCatching { URLDecoder.decode(s.replace("+", "%2B"), "UTF-8") }.getOrDefault(s)
     }

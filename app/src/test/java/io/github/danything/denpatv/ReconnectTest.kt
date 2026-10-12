@@ -40,7 +40,7 @@ class ReconnectTest {
         assertEquals(Verdict.Retry, Reconnect.verdict(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT, null))
         assertEquals(Verdict.Retry, Reconnect.verdict(PlaybackException.ERROR_CODE_IO_UNSPECIFIED, null))
         assertEquals(Verdict.Retry, Reconnect.verdict(PlaybackException.ERROR_CODE_TIMEOUT, null))
-        // 中身が読めない (途中で切れた fMP4 もここ)・解けないは何度か
+        // 中身が読めない (途中で切れた fMP4 もここ)・デコードできないは何度か
         assertEquals(Verdict.RetryFew, Reconnect.verdict(PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, null))
         assertEquals(Verdict.RetryFew, Reconnect.verdict(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, null))
         assertEquals(Verdict.RetryFew, Reconnect.verdict(PlaybackException.ERROR_CODE_UNSPECIFIED, null))
@@ -118,12 +118,12 @@ class ReconnectTest {
     @Test
     fun 追っかけで映る前に繋がらないのは断られたのではない() {
         val parse = PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
-        // 焼くのを断られた空の 200 は、形が分からないと言われる
+        // エンコードを断られた空の 200 は、形が分からないと言われる
         assertTrue(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = parse))
         // denpa の入れ替えの最中 (繋ぎ直しの途中) に繋がらない・読めないのは、繋ぎ直しに任せる
         assertFalse(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED))
         assertFalse(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = PlaybackException.ERROR_CODE_IO_UNSPECIFIED))
-        // HTTP の番号があるもの・映したあと・生の TS は断られたのではない
+        // HTTP の番号があるもの・映したあと・元の TS は断られたのではない
         assertFalse(Chase.refused(started = false, baked = true, httpStatus = 503, errorCode = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
         assertFalse(Chase.refused(started = true, baked = true, httpStatus = null, errorCode = parse))
         assertFalse(Chase.refused(started = false, baked = false, httpStatus = null, errorCode = parse))

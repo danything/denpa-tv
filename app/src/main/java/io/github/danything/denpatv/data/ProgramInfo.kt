@@ -13,7 +13,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * 番組表の番組の中身 (`GET api/programs/<id>`。ライブの詳しく)。denpa の `ProgramDetail` そのままで、鍵は snake_case。
+ * 番組表の番組の中身 (`GET api/programs/<id>`。ライブの詳細)。denpa の `ProgramDetail` そのままで、鍵は snake_case。
  * 番組表から消えた番組は 404 (呼ぶ側は `now` のぶんだけを出す)
  */
 data class ProgramInfo(
@@ -27,7 +27,7 @@ data class ProgramInfo(
     val videoResolution: String? = null,
     val isFree: Boolean = true,
 ) {
-    /** 札 (ジャンル・映像・音声・有料)。ブラウザの denpa の詳細 (`ProgramFacts`) と同じ並び。同じ札は1つにまとめる */
+    /** ラベル (ジャンル・映像・音声・有料)。ブラウザの denpa の詳細 (`ProgramFacts`) と同じ並び。同じラベルは1つにまとめる */
     val chips: List<String>
         get() = (
             genres.map(::genreLabel) +
@@ -169,7 +169,7 @@ fun videoLabel(resolution: String?, type: String?): String =
     listOfNotNull(resolution, type?.let { VIDEO_TYPE[it] ?: it }).filter { it.isNotEmpty() }.joinToString(" ")
 
 /**
- * 詳しくの1行目の下に出す「局 ・ 10/6(火) 21:00〜21:54 (54分)」。ブラウザの denpa の詳細と同じ並び。
+ * 詳細の1行目の下に出す「局 ・ 10/6(火) 21:00〜21:54 (54分)」。ブラウザの denpa の詳細と同じ並び。
  * 終わりが分からなければ始まりだけ、局が分からなければ日時から
  */
 fun programMeta(serviceName: String?, startAt: Long, endAt: Long?, zone: TimeZone = TimeZone.getDefault()): String {

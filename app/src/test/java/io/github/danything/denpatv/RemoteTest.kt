@@ -22,7 +22,7 @@ import org.junit.Test
 class RemoteTest {
     /**
      * ライブ: 左右とチャンネル送りで前・次の局。下と Menu はメニュー (操作の列と局の列)、上は局の列に合わせて開くメニュー。
-     * 決定は PlayerFrame が短押し・長押しに分け、短押しはメニュー、長押しは情報キーと同じ (番組の詳しく)
+     * 決定は PlayerFrame が短押し・長押しに分け、短押しはメニュー、長押しは情報キーと同じ (番組の詳細)
      */
     @Test
     fun ライブのキー() {
@@ -57,7 +57,7 @@ class RemoteTest {
         (KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9).forEach { assertNull(liveCommand(it)) }
     }
 
-    /** 同じリモコン番号の局が何局かあれば、いまの帯 (地上波 / BS) を先に、次に放送している局 (サブチャンネルより本放送) */
+    /** 同じリモコン番号の局が何局かあれば、いまの種別 (地上波 / BS) を先に、次に放送している局 (サブチャンネルより本放送) */
     @Test
     fun 数字キーで選ぶ局() {
         fun service(id: Long, type: String, key: Int?, title: String = "番組") =
@@ -73,7 +73,7 @@ class RemoteTest {
         assertEquals(1L, remoteKeyService(services, 1, "GR")?.id)
         assertEquals(101L, remoteKeyService(services, 1, "BS")?.id)
         assertEquals(141L, remoteKeyService(services, 4, "BS")?.id)
-        // いまの帯に無ければほかの帯の局
+        // いまの種別に無ければほかの種別の局
         assertEquals(3L, remoteKeyService(services.filter { it.type == "GR" }, 4, "BS")?.id)
         // サブチャンネルが前に並んでいても本放送
         assertEquals(1L, remoteKeyService(services.reversed(), 1, "GR")?.id)
@@ -89,7 +89,7 @@ class RemoteTest {
         assertEquals(RecordingCommand.Actions, recordingCommand(KeyEvent.KEYCODE_MENU))
         assertEquals(RecordingCommand.NextChapter, recordingCommand(KeyEvent.KEYCODE_MEDIA_NEXT))
         assertEquals(RecordingCommand.PlayPause, recordingCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-        // 情報キーは決定の長押しと同じ (番組の詳しく)
+        // 情報キーは決定の長押しと同じ (番組の詳細)
         assertEquals(RecordingCommand.Details, recordingCommand(KeyEvent.KEYCODE_INFO))
         // 数字キーはライブだけ
         assertNull(recordingCommand(KeyEvent.KEYCODE_1))
@@ -142,7 +142,7 @@ class RemoteTest {
         assertEquals(UpKey.Pass, up.up(300))
     }
 
-    /** 上キーのほかは受けない (左右・下・決定・戻るは札・帯がそのまま受ける) */
+    /** 上キーのほかは受けない (左右・下・決定・戻るはボタン・操作バーがそのまま受ける) */
     @Test
     fun 上キーのほかは素通し() {
         val up = UpToClose()

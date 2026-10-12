@@ -31,8 +31,8 @@ import androidx.tv.material3.darkColorScheme
  * アプリの色。**ブラウザの denpa (Pico の azure・ダーク) と同じ段から取る** (denpa の src/app.css)。
  * 色はここにだけ書き、画面ごとに色を書かない。
  *
- * - 地は slate-950、面 (カード・札) は slate-850 / 800、線は slate-700
- * - 主の色は azure ひとつ。**塗る (主の札・入っている札・選んだ行き先)** のは濃い #0172AD (白い字が読める)、
+ * - 地は slate-950、面 (カード・ボタン) は slate-850 / 800、線は slate-700
+ * - 主の色は azure ひとつ。**塗る (主のボタン・オンのボタン・選んだ行き先)** のは濃い #0172AD (白い字が読める)、
  *   **光る (合わせた縁・進み・見出し)** のは明るい #01AAFF (暗い地で目に入る)
  * - 状態の色は録画中の赤と予約の琥珀だけ (ブラウザと同じく、塗るのは「いま動いているもの」だけ)
  */
@@ -50,7 +50,7 @@ object Palette {
     val Reserved = Color(0xFFFECC63)
 }
 
-/** tv-material の色に当てる。部品の既定 (Surface の地・本文の色・進みの帯・見出し) がこれで揃う */
+/** tv-material の色に当てる。部品の既定 (Surface の地・本文の色・進行バー・見出し) がこれで揃う */
 private val Colors = darkColorScheme(
     primary = Palette.AccentBright,
     onPrimary = Palette.Background,
@@ -71,8 +71,8 @@ private val Colors = darkColorScheme(
 )
 
 /**
- * 字の大きさ。**離れて (2〜3 m) 読むので、tv-material の既定より小さいほうの段を上げる** (帯の題 14→16sp・2行目 12→14sp、
- * 札 12→14sp、組の名前・局の札の印 11→13sp)。大きいほう (見出し・本文) は既定のまま
+ * 字の大きさ。**離れて (2〜3 m) 読むので、tv-material の既定より小さいほうの段を上げる** (操作バーのタイトル 14→16sp・2行目 12→14sp、
+ * ボタン 12→14sp、組の名前・局のカードの印 11→13sp)。大きいほう (見出し・本文) は既定のまま
  */
 private val Type = Typography().let { base ->
     base.copy(
@@ -92,8 +92,8 @@ fun DenpaTheme(broadcastFonts: BroadcastFonts?, content: @Composable () -> Unit)
     CompositionLocalProvider(LocalBroadcastFont provides broadcastFonts) { MaterialTheme(colorScheme = Colors, typography = Type, content = content) }
 
 /**
- * **合わせたものの見せ方 (アプリ全体で同じ)。** Google TV と同じく、合わせたものは少し膨らみ (カードは 1.05、札は 1.1。
- * tv-material の既定の幅)、**azure の縁と淡い光** を付ける。札は白く塗って字を地の色にする (離れても、どれに合っているか分かる)
+ * **合わせたものの見せ方 (アプリ全体で同じ)。** Google TV と同じく、合わせたものは少し膨らみ (カードは 1.05、ボタンは 1.1。
+ * tv-material の既定の幅)、**azure の縁と淡い光** を付ける。ボタンは白く塗って字を地の色にする (離れても、どれに合っているか分かる)
  */
 object Focus {
     /** カード (録画・局) の膨らみ。格子で隣と重ならない程度 */
@@ -107,15 +107,15 @@ object Focus {
 
 /**
  * 形。Android TV のデザインの指針 ([ボタン](https://developer.android.com/design/ui/tv/guides/components/buttons)) どおり、
- * **文字・印の札は丸い札 (両端が半円)**、**幅いっぱいの札 (設定の行) と絵のカードは角 12dp の四角**。
- * 押せない札 (ジャンル・形・音声などの情報) は角の小さな四角にして、押せる札と見分ける (`TagShape`)
+ * **文字・印のボタンは丸いボタン (両端が半円)**、**幅いっぱいのボタン (設定の行) と絵のカードは角 12dp の四角**。
+ * 押せないラベル (ジャンル・形・音声などの情報) は角の小さな四角にして、押せるボタンと見分ける (`TagShape`)
  */
 val PillShape = RoundedCornerShape(percent = 50)
 val CardShape = RoundedCornerShape(12.dp)
 val TagShape = RoundedCornerShape(4.dp)
 
 /**
- * 札。`primary` は主な操作・決める操作 (azure で塗る。「続きから再生」「録画」)、そうでなければ枠だけ
+ * ボタン。`primary` は主な操作・決める操作 (azure で塗る。「続きから再生」「録画」)、そうでなければ枠だけ
  * (並べる二の次の操作。「最初から」「閉じる」、戻せない「削除」も塗らない)。**合わせると白く塗り、azure の縁と光** (`Focus`)。
  * 入れ替えても合いが外れないよう、どちらも同じ部品 (OutlinedButton) の色だけ変える
  */
@@ -154,8 +154,8 @@ fun DenpaButton(
 }
 
 /**
- * 幅いっぱいの札 (設定の行)。角 12dp の四角に、見出しと、その下に小さく今の様子 (`supporting`)。
- * 合わせ方は札と同じ (白く塗り、azure の縁と光)。幅が広いので膨らみは小さく
+ * 幅いっぱいのボタン (設定の行)。角 12dp の四角に、見出しと、その下に小さく今の様子 (`supporting`)。
+ * 合わせ方はボタンと同じ (白く塗り、azure の縁と光)。幅が広いので膨らみは小さく
  */
 @Composable
 fun WideButton(
@@ -188,5 +188,5 @@ fun WideButton(
     }
 }
 
-/** 幅いっぱいの札の膨らみ (幅が広いので、小さくても目に付く) */
+/** 幅いっぱいのボタンの膨らみ (幅が広いので、小さくても目に付く) */
 private const val WIDE_SCALE = 1.02f

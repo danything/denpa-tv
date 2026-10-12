@@ -55,14 +55,14 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     }
 
     /**
-     * 一覧が古くなった (追っかけで観た録画が録り終えた・焼き上がったかもしれない、denpa から `recordings` が来た)。
+     * 一覧が古くなった (追っかけで観た録画が録り終えた・エンコードが終わったかもしれない、denpa から `recordings` が来た)。
      * 一覧に戻ったら読み直す
      */
     @Volatile
     var recordingsStale = false
 
     /**
-     * 観た位置を預けた (閉じた・裏に回った・観終えた)。一覧の観た割合の帯と未視聴の点を直すため、読み直してもらう。
+     * 観た位置を預けた (閉じた・裏に回った・観終えた)。一覧の観た割合のバーと未視聴の点を直すため、読み直してもらう。
      * denpa は観終えたときしか知らせない (途中で止めた位置では来ない) ので、手元から知らせる。
      * 一覧が出ていればすぐ (知らせ)、まだなら戻ったときに (`recordingsStale`)
      */
@@ -120,7 +120,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     /** denpa の変化の知らせ。開いている画面が受けて読み直す (`listen` が繋いでいる間だけ流れる) */
     val events: SharedFlow<DenpaEvent> get() = incoming
 
-    /** 焼いている録画の進み (録画の id → 0..1)。カードに出す。しばらく届かなければ消す (失敗・取り消し) */
+    /** エンコード中の録画の進み (録画の id → 0..1)。カードに出す。しばらく届かなければ消す (失敗・取り消し) */
     val encoding = mutableStateMapOf<Long, Float>()
     private val encodingExpiry = mutableMapOf<Long, Job>()
 
@@ -161,7 +161,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
             is DenpaEvent.Encode -> {
                 encodingExpiry.remove(event.recordingId)?.cancel()
                 if (event.percent >= 1f) {
-                    // 焼き上がった。続く `recordings` で一覧が読み直される
+                    // エンコードが終わった。続く `recordings` で一覧が読み直される
                     encoding.remove(event.recordingId)
                 } else {
                     encoding[event.recordingId] = event.percent
@@ -178,7 +178,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     }
 }
 
-/** 焼いている間、denpa は 2 秒おきに進みを送る。これだけ来なければ止まったと見なす */
+/** エンコードしている間、denpa は 2 秒おきに進みを送る。これだけ来なければ止まったと見なす */
 private const val ENCODING_EXPIRY_MS = 15_000L
 
 private const val TAG = "DenpaEvents"

@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 
 /**
  * 設定。**繋ぐ先と、アプリの版だけ** (下に繋いだ denpa の版)。 ライブの画質・録画の速さ・CM 飛ばしは、ブラウザの denpa と同じく
- * 再生の画面の操作の帯 (メニュー) で変える (観ながら変えて、端末ごとに覚えるもの)
+ * 再生の画面の操作バー (メニュー) で変える (観ながら変えて、端末ごとに覚えるもの)
  */
 @Composable
 fun SettingsScreen(repo: Repository) {
@@ -43,7 +43,7 @@ fun SettingsScreen(repo: Repository) {
     ) {
         Text("設定", style = MaterialTheme.typography.headlineMedium)
 
-        // Android TV の設定と同じく、幅いっぱいの札を縦に並べる。押すと右の様子どおりのことをする
+        // Android TV の設定と同じく、幅いっぱいのボタンを縦に並べる。押すと右の様子どおりのことをする
         Column(Modifier.widthIn(max = PANEL_WIDTH), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // 登録してあれば denpa からも外す (トークンを無効にする)。家の LAN の繋ぎ方なら忘れるだけ
             WideButton(

@@ -13,8 +13,8 @@ import kotlin.io.encoding.Base64
 
 /**
  * **字幕の文字の配置** (denpa の docs/api.md「字幕の文字の配置」、`src/lib/caption-text.ts` と同じ形)。
- * denpa が放送の字幕 (ARIB STD-B24) を解いて置き場所・大きさ・色まで決めたもの。こちらは言われたとおりに塗るだけ
- * (`ui/TextCaptions.kt`)。ライブ・追っかけ・生TSの録画は字幕の口の 0x22、焼いた録画は `captions.json` で届く。
+ * denpa が放送の字幕 (ARIB STD-B24) をデコードして置き場所・大きさ・色まで決めたもの。こちらは言われたとおりに塗るだけ
+ * (`ui/TextCaptions.kt`)。ライブ・追っかけ・元のTSの録画は字幕の口の 0x22、エンコード済みの録画は `captions.json` で届く。
  *
  * 座標はすべて**字幕の面の単位** (`planeWidth` × `planeHeight`。ふつう 960x540)。映像の枠に合わせて縦横それぞれ伸ばす
  */
@@ -203,7 +203,7 @@ private fun JsonObject.bool(key: String) = primitive(key)?.booleanOrNull == true
 private fun JsonObject.string(key: String) = primitive(key)?.takeIf { it.isString }?.content
 
 /**
- * 焼いた録画の字幕まるごと (`GET api/recordings/<id>/captions.json`)。`atMs` は動画の頭からのミリ秒で、並びは時刻の順
+ * エンコード済みの録画の字幕まるごと (`GET api/recordings/<id>/captions.json`)。`atMs` は動画の頭からのミリ秒で、並びは時刻の順
  */
 class CaptionPages(private val atMs: LongArray, private val pages: List<CaptionPage>) {
     val size: Int get() = pages.size

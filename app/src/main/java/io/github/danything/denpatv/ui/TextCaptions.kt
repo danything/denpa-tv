@@ -35,7 +35,7 @@ import kotlin.math.round
 
 /**
  * **字幕の文字の配置を描く** (`CaptionPage`)。denpa のブラウザの描き方 (`src/lib/components/player/caption-draw.ts`) に揃えてある。
- * あちらは絵にしていた頃の libaribcaption に揃えてあるので、焼いていた字幕と同じ所・同じ形に出る:
+ * あちらは絵にしていた頃の libaribcaption に揃えてあるので、映像に焼き込んでいた字幕と同じ所・同じ形に出る:
  *
  * - 背景は区画 (`w`x`h`) ごとに塗る。空白も塗る
  * - 字は字の枠の左端をペンの位置にして、**縦は「永」の墨の上下を枠の真ん中に置く**。横は `scaleX` で縮める
@@ -62,7 +62,7 @@ internal fun TextCaptionLayer(page: CaptionPage, font: DenpaFont, inset: () -> F
     }
     val modifier = Modifier
         .fillMaxSize()
-        // 下に重ねたもの (帯・メニュー) があれば、字のある行がその上に来るまで持ち上げる
+        // 下に重ねたもの (操作バー・メニュー) があれば、字のある行がその上に来るまで持ち上げる
         .liftCaptions(inset) { height -> page.top * height / page.planeHeight to page.bottom * height / page.planeHeight }
         // 読み上げ (と smoke が出たかを見るの) に、字幕の文
         .semantics { contentDescription = page.text }

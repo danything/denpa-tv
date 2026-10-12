@@ -15,7 +15,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** denpa が焼くときに書くチャプター (cm.ts の chapterMetadata): 本編と CM が交互に並ぶ */
+/** denpa がエンコードするときに書くチャプター (cm.ts の chapterMetadata): 本編と CM が交互に並ぶ */
 class ChaptersTest {
     private val chapters = listOf(
         ChapterMark(0, 60_000, "本編"),
@@ -145,7 +145,7 @@ class SpeedTest {
         assertEquals(false, normal.on)
         assertEquals("再生の速さ", normal.description)
         val fast = io.github.danything.denpatv.ui.speedControl(1.25f) {}
-        // × は付けない (札の外の知らせ・題は `speedLabel` で「×1.25」)
+        // × は付けない (ボタンの外の知らせ・題は `speedLabel` で「×1.25」)
         assertEquals("1.25", fast.label)
         assertNull(fast.icon)
         assertEquals(true, fast.on)

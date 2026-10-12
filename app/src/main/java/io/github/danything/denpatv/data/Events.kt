@@ -22,7 +22,7 @@ sealed interface DenpaEvent {
 
     data class Changed(val name: String) : DenpaEvent
 
-    /** 焼いている録画の進み (`percent` は 0..1) */
+    /** エンコード中の録画の進み (`percent` は 0..1) */
     data class Encode(val recordingId: Long, val percent: Float) : DenpaEvent
 
     /** 局 `serviceId` のライブが、チューナーを録画 `recording` に譲った (`YieldPlan`) */

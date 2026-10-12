@@ -20,7 +20,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 import java.util.TimeZone
 
-/** 番組の中身 (`GET api/programs/<id>`、ライブの詳しく)。denpa の `ProgramDetail` そのままの snake_case */
+/** 番組の中身 (`GET api/programs/<id>`、ライブの詳細)。denpa の `ProgramDetail` そのままの snake_case */
 class ProgramInfoTest {
     private val denpa = FakeDenpa()
     private val warnings = mutableListOf<String>()
@@ -41,7 +41,7 @@ class ProgramInfoTest {
         val info = (api.program(base, 32740010640) as ProgramLookup.Found).info
         assertEquals("/denpa/api/programs/32740010640", denpa.requests.take().target)
         assertEquals(listOf("番組内容" to "内容", "出演者" to "誰か"), info.extended)
-        // ブラウザの denpa の札と同じ並び。同じジャンルは1つに
+        // ブラウザの denpa のラベルと同じ並び。同じジャンルは1つに
         assertEquals(
             listOf("ドラマ > 国内ドラマ", "拡張", "1080i MPEG-2", "ステレオ (日本語)", "解説ステレオ (日本語)", "有料"),
             info.chips,

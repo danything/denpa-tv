@@ -21,12 +21,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * **放送の字** (denpa が字幕を焼いていたのと同じ丸ゴシック。Denpa Font。ARIB の外字を全部持つ)。APK の assets に入れてある
- * (焼くときに取ってくる。app/build.gradle.kts の `fetchCaptionFont`)。字幕の文字の配置 (`typeface`) と、
+ * **放送の字** (denpa が字幕を映像に焼き込んでいたときと同じ丸ゴシック。Denpa Font。ARIB の外字を全部持つ)。APK の assets に入れてある
+ * (ビルドのときに取ってくる。app/build.gradle.kts の `fetchCaptionFont`)。字幕の文字の配置 (`typeface`) と、
  * 放送から来た字 (番組名・説明・局名。`fonts` → `BroadcastFont`) の両方に使う。
  * 読むのはアプリを開いたときに1度だけ (`DenpaApp`。4.2MB あるので画面の糸では読まない)。読めなければ・読み終えるまでは端末の字。
  * APK には縮めずに入れてあり (app/build.gradle.kts の `noCompress`)、`createFromAsset` は APK の中をそのまま mmap する
- * (どの API でも。解いた写しをメモリに持たない)。太い字 (`Typeface.create(…, BOLD)`) も同じ字の中身を使う
+ * (どの API でも。展開した写しをメモリに持たない)。太い字 (`Typeface.create(…, BOLD)`) も同じ字の中身を使う
  */
 class DenpaFont(private val assets: AssetManager) {
     /** 読めた字。まだ・読めなければ null (端末の字で描く) */
@@ -80,7 +80,7 @@ internal const val BROADCAST_FEATURES = "palt"
 /**
  * **放送から来た字 (番組名・説明・局名・番組表の名前) を組む `style`。** テレビと同じ Denpa Font で、外字 (EPG の記号) も白黒で出る。
  * 全角の英数字・記号は詰める (`BROADCAST_FEATURES`)。太くする字 (SemiBold 以上) は太らせた字 (`broadcastFont`)。
- * アプリの札・見出し・設定 (こちらで書いた字) には使わない。読めていなければ `style` のまま (端末の字で、詰めない)
+ * アプリのボタン・見出し・設定 (こちらで書いた字) には使わない。読めていなければ `style` のまま (端末の字で、詰めない)
  */
 @Composable
 @ReadOnlyComposable

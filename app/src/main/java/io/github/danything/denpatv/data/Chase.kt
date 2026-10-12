@@ -22,20 +22,20 @@ object Chase {
     fun atEdge(positionMs: Long, recordedMs: Long): Boolean = recordedMs - positionMs < 20_000
 
     /**
-     * 映る前のエラーが、焼くのを断られた (空の 200) ものか。空の返事は `EmptyStreamException` (`ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED`。HTTP の番号が無い) になる。
-     * 生の TS (`baked` でない) は断られない。**繋がらない・読めない (`Reconnect.Verdict.Retry`。denpa の入れ替えの最中) は
+     * 映る前のエラーが、エンコードを断られた (空の 200) ものか。空の返事は `EmptyStreamException` (`ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED`。HTTP の番号が無い) になる。
+     * 元の TS (`baked` でない) は断られない。**繋がらない・読めない (`Reconnect.Verdict.Retry`。denpa の入れ替えの最中) は
      * 断られたのではない** ので、繋ぎ直しに任せる
      */
     fun refused(started: Boolean, baked: Boolean, httpStatus: Int?, errorCode: Int): Boolean =
         !started && baked && httpStatus == null && Reconnect.verdict(errorCode, null) != Reconnect.Verdict.Retry
 
-    /** `audio` は焼くときに頼む音声 (`bakedAudio`)。生では渡さない */
+    /** `audio` はエンコードするときに頼む音声 (`bakedAudio`)。元の TS では渡さない */
     fun url(chase: String, codec: String, fromMs: Long, audio: DenpaAudio? = null): String =
         "$chase?codec=$codec&from=${fromMs / 1000}${audioQuery(audio)}"
 }
 
 /**
- * 観はじめに CM 飛ばしを入れるか。**ブラウザの denpa (`skipCmAtStart`) と同じ:** 覚えている設定に従うが、
+ * 観はじめに CM 飛ばしをオンにするか。**ブラウザの denpa (`skipCmAtStart`) と同じ:** 覚えている設定に従うが、
  * ロゴでの判定に失敗した録画 (`cmReliable` が false。無音だけで当てていて外れやすい) は切って始める。
  * 入れたければ操作の列で入れる
  */

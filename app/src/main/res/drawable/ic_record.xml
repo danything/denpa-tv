@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 再生の操作の札の印 (Material Icons の fiber_manual_record、Apache License 2.0) -->
+<!-- 再生の操作ボタンのアイコン (Material Icons の fiber_manual_record、Apache License 2.0) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"

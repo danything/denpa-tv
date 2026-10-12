@@ -48,7 +48,7 @@ object Images {
     }
 
     /**
-     * **ぼかした絵** (一覧の上の段・詳しくの後ろに敷く)。ごく小さく (`BLUR_WIDTH`×`BLUR_HEIGHT`) 読んで、さらに箱でぼかす。
+     * **ぼかした絵** (一覧の上の段・詳細の後ろに敷く)。ごく小さく (`BLUR_WIDTH`×`BLUR_HEIGHT`) 読んで、さらに箱でぼかす。
      * 描く側は引き伸ばすだけで、絵がぼけて見える (描くたびにぼかす RenderEffect が要らず、Android 12 より前でも同じ見た目)
      */
     fun loadBlurred(url: String, token: String? = null): Bitmap? {

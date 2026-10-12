@@ -53,13 +53,13 @@ import kotlinx.coroutines.launch
  * - **左右** (チャンネル送りも) で前・次の局 (同じものを流しているサブチャンネルは飛ばす)。押している間は行き先の局・番組を
  *   下に出すだけで、**キーを離して少し (`ZAP_SETTLE_MS`) たってから、最後の局だけを頼む** (押し続けて局を送っても、途中の局ごとに
  *   denpa にチューナーを替えさせない)。替えたら局・番組・番組の進みを数秒だけ下に出す (キーの割り当ては data/Remote.kt)
- * - **数字キーで、そのリモコン番号の局へすぐ替える** (テレビのリモコンと同じワンタッチ選局。同じ番号の局が地上波と BS にあれば、いま観ている帯のほう)
+ * - **数字キーで、そのリモコン番号の局へすぐ替える** (テレビのリモコンと同じワンタッチ選局。同じ番号の局が地上波と BS にあれば、いま観ている種別のほう)
  * - **下・決定・Menu でメニュー** (YouTube・Prime Video・ABEMA などのテレビのアプリと同じく下で開く)。
  *   下の端に、ブラウザの denpa のライブの操作列にあたる**操作の列** (画質・字幕・音声・録画) と、その下に**局の列**
  *   (地上波 / BS / CS / SKY ごとの列。ブラウザのタブにあたる) が覗く。下キーで局の列に入り、左右で選んで決定で替える。
  *   **上で開くと、はじめから局の列のいま映している局に合う** (一覧から局を選ぶ近道)。
  *   **操作の列 (いちばん上) でもう一度上を押すと閉じて映像に戻る** (`UpToClose`)。
- *   画質は選んだらすぐ頼み直してこの端末で覚える (既定は端末がハードで MPEG-2 を解ければ生の TS)。映るまでは前の絵のまま
+ *   画質は選んだらすぐ頼み直してこの端末で覚える (既定は端末がハードで MPEG-2 をデコードできれば元の TS)。映るまでは前の絵のまま
  *   「AV1 に切り替え中」、映ったら「AV1 にしました」。映せなければ元の画質に戻して理由を出す (`rememberCodecSwitching`)。**戻るで閉じる** (もう一度でメニューの画面へ)。
  *   8 秒触らなければ閉じる
  * - **録画** はいま観ている番組を denpa に予約する (ブラウザのライブの録画ボタンと同じ。何度押しても二重には録らない)
@@ -69,7 +69,7 @@ import kotlinx.coroutines.launch
  * - **録画にチューナーを譲ったら** (denpa の知らせ `yielded`)、同じ局を頼み直し、映らなかったときだけ譲った録画の追っかけに切り替えて
  *   知らせを出しっぱなしにする。メニューは「ライブに戻る」(頼み直しを試し、だめなら追っかけに戻る) と局の列だけ (`YieldPlan`)
  * - アプリが裏に回ったら (ホーム・別のアプリ) 止めて denpa から降りる (チューナーを空ける)。戻ったら同じ局を映し直す
- * - **決定の長押しと情報キーで、いま放送中の番組の詳しく** (`LiveDetailDialog`。録画の詳しくと同じもの)。そこからも録画できる
+ * - **決定の長押しと情報キーで、いま放送中の番組の詳細** (`LiveDetailDialog`。録画の詳細と同じもの)。そこからも録画できる
  * - 何も開いていないときの戻るは、メニューの画面へ (「ライブ」に合う)
  */
 @Composable
@@ -96,11 +96,11 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         delay(MENU_IDLE_MS)
         menu = null
     }
-    /** 番組の詳しくを開いているか (決定の長押し・情報キー) */
+    /** 番組の詳細を開いているか (決定の長押し・情報キー) */
     var detail by remember { mutableStateOf(false) }
-    /** 詳しくの「録画」を押した結果 (詳しくの札の下に出す) */
+    /** 詳細の「録画」を押した結果 (詳細のボタンの下に出す) */
     var recordNote by remember { mutableStateOf<String?>(null) }
-    /** 詳しくの「録画」を押した回数。続けて押したときに、前の押しの答えで最後の答えを上書きしない */
+    /** 詳細の「録画」を押した回数。続けて押したときに、前の押しの答えで最後の答えを上書きしない */
     var recordPresses by remember { mutableIntStateOf(0) }
     /** キーの手引きを出したか (開いて最初の1回だけ) */
     var hinted by remember { mutableStateOf(false) }
@@ -161,7 +161,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     )
     val flasher = rememberFlash()
     val (overlay, flash) = flasher
-    // 生の TS の字幕は denpa が解いた文字の配置を別の口で受け取る (焼いたライブには字幕が載らない)
+    // 元の TS の字幕は denpa がデコードした文字の配置を別の口で受け取る (変換したライブには字幕が載らない)
     val captions = rememberRawCaptions(
         repo,
         player,
@@ -176,7 +176,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         fromMs = chasing?.let { { YieldPlan.EDGE_MS } },
         onUnauthorized = onUnauthorized,
     )
-    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いたライブは denpa が選んだ1つだけを焼く。下の `baked`)。追っかけの音声は分からないので並べない
+    // デュアルモノの主・副は、元の TS のときだけ配り直す (変換したライブは denpa が選んだ1つだけをエンコードする。下の `baked`)。追っかけの音声は分からないので並べない
     val tracks = rememberTracks(
         repo,
         player,
@@ -186,9 +186,9 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         denpaAudios = playing?.takeIf { quality == LiveQuality.Raw && chasing == null }?.now?.audios.orEmpty(),
     )
     /*
-     * 焼いたライブの音声は denpa に頼んで選ぶ (`?audio=<id>`)。変われば頼み直す。
-     * **番組が替わって音声の並びが変わったときも頼み直す** (二カ国語の映画が終わってステレオに戻るなど)。denpa は焼きはじめに
-     * 選んだ音声のまま焼き続けるので、頼み直さないと、ステレオの番組の片側だけを両耳に配ったままになる。並びが同じなら頼み直さない
+     * 変換したライブの音声は denpa に頼んで選ぶ (`?audio=<id>`)。変われば頼み直す。
+     * **番組が替わって音声の並びが変わったときも頼み直す** (二カ国語の映画が終わってステレオに戻るなど)。denpa はエンコードの始めに
+     * 選んだ音声のままエンコードし続けるので、頼み直さないと、ステレオの番組の片側だけを両耳に配ったままになる。並びが同じなら頼み直さない
      */
     val baked = rememberBakedAudio(
         repo,
@@ -223,7 +223,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         if (background) return@LaunchedEffect
         // 選んだ画質が覚えている画質に届くまでは頼まない (届いたら頼む。選び直しが1こまにまとまって画質が変わらなくても、ここで頼み直す)
         if (codec.chosen != quality) return@LaunchedEffect
-        // 録画に譲っている間は、その追っかけ (録れているところの少し手前から。音声は denpa が主音声を焼く)
+        // 録画に譲っている間は、その追っかけ (録れているところの少し手前から。音声は denpa が主音声をエンコードする)
         if (chasing != null) {
             val url = repo.url(YieldPlan.chaseUrl(chasing.recording.id, quality.codec)) ?: return@LaunchedEffect
             trying = false
@@ -255,7 +255,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     }
     /*
      * **裏に回ったら止めて、denpa から降りる** (流れを閉じる。ほかに観ている人がいなければ denpa がチューナーを空ける)。
-     * 流しっぱなしにすると、ホームに戻っても音が鳴り続け、チューナーも掴んだままになる。戻ったら同じ局を頼み直す
+     * 流しっぱなしにすると、ホームに戻っても音が鳴り続け、チューナーも使ったままになる。戻ったら同じ局を頼み直す
      */
     OnBackground(
         onStop = {
@@ -405,7 +405,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         // 行き先を出す (映ったら同じものを出し直して、数秒残す)
         flash(describe(next, codec.label))
     }
-    /** 送っている途中なら、待たずにそこへ替える (メニューの局の列・詳しくの番組と、映しているものを揃える) */
+    /** 送っている途中なら、待たずにそこへ替える (メニューの局の列・詳細の番組と、映しているものを揃える) */
     fun settle() {
         stepping?.let { playing = it }
         stepping = null
@@ -419,7 +419,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         menu = start
     }
     /**
-     * 数字キーで、そのリモコン番号の局へすぐ替える (`remoteKeyService`。同じ番号が何局かあれば、いまの帯の局)。
+     * 数字キーで、そのリモコン番号の局へすぐ替える (`remoteKeyService`。同じ番号が何局かあれば、いまの種別の局)。
      * 局送りの途中なら、その行き先は捨てる
      */
     fun tune(key: Int) {
@@ -430,7 +430,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         if (target.id == current.id) flash(describe(current, codec.label)) else playing = target
     }
     /**
-     * いまの番組を録る (ブラウザのライブの録画ボタンと同じ口)。結果は1行で知らせ (メニューからは下の知らせ、詳しくからは札の下)、
+     * いまの番組を録る (ブラウザのライブの録画ボタンと同じ口)。結果は1行で知らせ (メニューからは下の知らせ、詳細からはボタンの下)、
      * 局を取り直して印を合わせる
      */
     fun record(fromDetail: Boolean) {
@@ -475,7 +475,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     PlayerFrame(
         player,
         /*
-         * 詳しくを開いている間は知らせを出さない。メニューを開いている間はメニューの題に添える (`covered`)。
+         * 詳細を開いている間は知らせを出さない。メニューを開いている間はメニューの題に添える (`covered`)。
          * 録画に譲っている間は、その知らせを出しっぱなしにする (ほかの知らせが出ている間はそちら)
          */
         (overlay ?: chasing?.let(::yieldNotice)).takeUnless { detail },
@@ -489,7 +489,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 liveChannelKey(code)?.let { if (event.nativeKeyEvent.repeatCount == 0) tune(it) } != null
         },
         onKeyUp = { held = false },
-        // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳しく)
+        // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳細)
         onCenter = { press -> run(liveCenter(press)) },
         // 送っている途中は行き先の番組の進み (知らせの文と揃える)。録画に譲っている間は出さない (映しているのはその局の番組ではない)
         progress = (stepping ?: current.takeIf { chasing == null })?.now
@@ -556,7 +556,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             )
             LaunchedEffect(Unit) {
                 if (start != MenuStart.Channels) return@LaunchedEffect
-                // 局の札は局の列を並べたあとに出来るので、合うまで何こまか試す (合わなければ帯が操作の列に合わせる)
+                // 局のカードは局の列を並べたあとに出来るので、合うまで何こまか試す (合わなければ操作バーが操作の列に合わせる)
                 for (attempt in 0 until CARD_FOCUS_TRIES) {
                     withFrameNanos { }
                     if (runCatching { currentCard.requestFocus() }.getOrDefault(false)) break
@@ -597,7 +597,7 @@ private const val YIELD_HINT = "決定でメニュー → 「${YieldPlan.BACK_TO
 /** メニューを開いたときにどこに合わせるか。下・決定・Menu は操作の列、上は局の列のいま映している局 */
 private enum class MenuStart { Controls, Channels }
 
-/** 録画の札。録っている・録る予定ならそう出す (押しても二重には録らない。denpa が番組ごとに1本にまとめる) */
+/** 録画のボタン。録っている・録る予定ならそう出す (押しても二重には録らない。denpa が番組ごとに1本にまとめる) */
 private fun recordControl(now: NowProgram?, onClick: () -> Unit): Control =
     Control(recordLabel(now), on = now?.recording == true || now?.reserved == true, icon = R.drawable.ic_record, onClick = onClick)
 
@@ -616,7 +616,7 @@ private fun describe(service: Service, quality: String): AnnotatedString = build
     append("あと${now.remainingMinutes(System.currentTimeMillis())}分")
 }
 
-private const val LIVE_HINT = "左右で局送り・決定か下でメニュー・上で局の列・決定の長押しで番組"
+private const val LIVE_HINT = "左右で局を切り替え・決定か下でメニュー・上で局の列・決定の長押しで番組"
 
 /**
  * 局送りでキーを離してから映すまで (ミリ秒)。続けて押す間 (キーの繰り返しや、手で続けて押す間) より長く、
@@ -627,10 +627,10 @@ private const val ZAP_SETTLE_MS = 500L
 /** 押したまま離したのが届かないときに、最後に押してから映すまで (ミリ秒)。押し続けている間はキーの繰り返しが数十ミリ秒ごとに来る */
 private const val ZAP_HELD_MS = 2_000L
 
-/** 上で開いたメニューで、いま映している局の札に合わせるのを試すこま数 */
+/** 上で開いたメニューで、いま映している局のカードに合わせるのを試すこま数 */
 private const val CARD_FOCUS_TRIES = 10
 
-/** メニューを閉じるまで (ミリ秒)。局の列で番組名を読むので、録画の帯 (5 秒) より長く */
+/** メニューを閉じるまで (ミリ秒)。局の列で番組名を読むので、録画の操作バー (5 秒) より長く */
 private const val MENU_IDLE_MS = 8_000L
 
 /** 覚えているライブの画質 (追っかけも同じものを使う)。この端末で選べなければ選び直す。読み終えるまでは null */

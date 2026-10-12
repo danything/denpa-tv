@@ -11,7 +11,7 @@
 | Gradle | 9.8.1 | 2026-10 時点の最新 ([services.gradle.org](https://services.gradle.org/versions/current)) |
 | Kotlin (Compose / serialization のコンパイラプラグイン) | 2.4.21 | Maven Central の最新の安定版 |
 | Compose BOM | 2026.09.00 | |
-| Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンの帯) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューの3つのアイコンは Material Symbols、再生の操作の札の印は Material Icons (どちらも Apache License 2.0) を vector drawable として置いた (アイコンのライブラリは入れない) |
+| Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンだけの列) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューの3つのアイコンは Material Symbols、再生の操作ボタンのアイコンは Material Icons (どちらも Apache License 2.0) を vector drawable として置いた (アイコンのライブラリは入れない) |
 | `androidx.tv:tv-foundation` | **使わない** | TV 用の Lazy レイアウトは alpha11 で非推奨、alpha12 で削除済み。普通の Compose の `LazyRow` / `LazyColumn` で足りる (同ノート) |
 | Navigation 3 (`androidx.navigation3`) | 1.2.0 | 戻る履歴をただのリストとして持つ Compose 向けの新しい Navigation。行き先は `@Serializable` のクラス。**minSdk 24 を求める** ので、アプリの minSdk もこれに合わせた |
 | DataStore Preferences | 1.2.1 | 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・アップデートを確かめた時刻を覚える。SharedPreferences の後継 |
@@ -26,11 +26,11 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 
 - **fragmented MP4 (H.264 / AV1)** — denpa のライブ (`api/services/<id>/live`) と追っかけ (`api/recordings/<id>/chase`)。ExoPlayer の
   `FragmentedMp4Extractor` が読む。流しっぱなし (長さ不明) でもそのまま再生できる
-- **Matroska (.mkv)** — denpa の焼いた録画。`MatroskaExtractor` が読む。字幕 (`S_ARIBSUB`、放送の字幕のまま) は読まないので、
+- **Matroska (.mkv)** — denpa のエンコード済みの録画。`MatroskaExtractor` が読む。字幕 (`S_ARIBSUB`、放送の字幕のまま) は読まないので、
   denpa の `captions.json` (下の文字の配置) で出す
-- **MPEG-TS (MPEG-2)** — 焼く前の録画と、ライブ・追っかけの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
-- **ARIB の字幕は Media3 では解かない。** Media3 に ARIB の字幕の読み手は無く、libaribcaption を NDK で抱えるのは重い。
-  denpa が解いて置き場所まで決めた**文字の配置** (放送の PTS 付き) を受け取り、android の Canvas で描いて重ねる
+- **MPEG-TS (MPEG-2)** — エンコード前の録画と、ライブ・追っかけの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
+- **ARIB の字幕は Media3 ではデコードしない。** Media3 に ARIB の字幕の読み手は無く、libaribcaption を NDK で抱えるのは重い。
+  denpa がデコードして置き場所まで決めた**文字の配置** (放送の PTS 付き) を受け取り、android の Canvas で描いて重ねる
   (`ui/RawCaptions.kt`・`ui/TextCaptions.kt`。描き方は denpa のブラウザの `caption-draw.ts` に揃える。字は丸ゴシックを APK に入れて
   `Typeface.createFromAsset` で読む。下の「字幕と放送の字」)。
   時計は **TsExtractor に自分の `TimestampAdjuster` を渡して**控え、寄せ幅 (`getTimestampOffsetUs`) で再生位置を放送の
@@ -41,12 +41,12 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
   [リリースノート](https://github.com/androidx/media/blob/release/RELEASENOTES.md))。CM 飛ばしはこれを読むので、
   自前の EBML 読みも denpa の API も要らない
 - **AV1 のソフトデコードは入れない。** Media3 1.9 から dav1d ベースの `decoder_av1` があるが、
-  **Maven には出ておらず、NDK でソースから焼く決まり** ([decoder_av1 の README](https://github.com/androidx/media/tree/release/libraries/decoder_av1)、
+  **Maven には出ておらず、NDK でソースからビルドする決まり** ([decoder_av1 の README](https://github.com/androidx/media/tree/release/libraries/decoder_av1)、
   [Media3 1.9.0 の紹介](https://android-developers.googleblog.com/2025/12/media3-190-whats-new.html))。
-  AV1 は**端末がハードで解けるときだけ**選び (MediaCodecList で調べる)、解けなければ H.264 を頼む。
+  AV1 は**端末がハードでデコードできるときだけ**選び (MediaCodecList で調べる)、デコードできなければ H.264 を頼む。
   denpa はどちらも出せるので、ソフトデコードを抱える理由が無い
 - **二か国語 (デュアルモノ) の片側を両耳へ配るのは、音の出口の手前に挟む自前の `AudioProcessor`** (`ui/DualMono.kt`。
-  混ぜ方は Media3 の `ChannelMixingMatrix` / `AudioMixingUtil`)。生の TS だけで、焼いたライブ・追っかけは denpa に頼み直す (`?audio=<id>`)
+  混ぜ方は Media3 の `ChannelMixingMatrix` / `AudioMixingUtil`)。元の TS だけで、変換したライブ・追っかけは denpa に頼み直す (`?audio=<id>`)
 
 ## AndroidX 以外に入れたもの
 
@@ -72,7 +72,7 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
 読み 30 秒と書いてある)。叩くのは局と録画の一覧・番組の中身 (`detail`・`api/programs/<id>`)・観た位置・いまの番組の録画・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
-生の TS の字幕 (`api/…/captions`、長さ付きのこまが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。焼いた録画の字幕 (`captions.json`) も同じ。
+元の TS の字幕 (`api/…/captions`、長さ付きのこまが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。エンコード済みの録画の字幕 (`captions.json`) も同じ。
 
 → **アプリの中のアップデート (GitHub のリリースを引く・APK を取る) も HttpURLConnection** (`data/Update.kt`)。入れるのは OS の
 `PackageInstaller` のセッション (`Updater.kt`)。アップデートのライブラリは入れない。
@@ -109,7 +109,7 @@ OkHttp (と Retrofit / Ktor) を採らない理由:
 やり方 (`inSampleSize` で 2 の冪に縮める) と `LruCache` で 60 行ほどに収まる (`data/Images.kt`、
 `ui/RemoteImage.kt`)。Coil 3.6.3 / Glide 5 の持つディスクキャッシュ・変換・GIF などは使わない。
 
-録画の一覧の上に敷く大きな絵 (合わせている録画のポスター) と、詳しくの後ろのうすい絵も同じもので出す。
+録画の一覧の上に敷く大きな絵 (合わせている録画のポスター) と、詳細の後ろのうすい絵も同じもので出す。
 どちらもぼかして暗くするので、**読むときに 64×36 まで縮めて箱でぼかし、描くときは引き伸ばすだけ** (`Images.loadBlurred`)。
 描くたびにぼかす RenderEffect (`Modifier.blur`、Android 12 から) は使わない — 軽く、Android の版で見た目も変わらない。
 ほかに、**出す大きさちょうどに読む** (2 の冪で縮めたあと BitmapFactory の拡大率で)、**ポスターは RGB_565**
@@ -185,21 +185,21 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 
 字幕の文字の配置は、ブラウザの denpa と同じ字 (Denpa Font。BIZ UDゴシックを丸めたもの。等幅で ARIB の外字を持つ)
 で描かないと、ブラウザと字の幅や形が揃わない。**放送から来た字 (番組名・説明・局名・いまの番組) も同じ字で出す**
-(番組表の記号 = 外字がテレビと同じく白黒で出る)。アプリの札・見出し・設定は端末の字のまま。
+(番組表の記号 = 外字がテレビと同じく白黒で出る)。アプリのボタン・見出し・設定は端末の字のまま。
 
 - 字は `ui/DenpaFont.kt` の1つだけ (`DenpaApp.denpaFont`)。字幕は `typeface` を、画面は `DenpaTheme` が渡す
   放送の字を `TextStyle.broadcast()` で当てる。太さは1つだけで、Typeface から作った字体は `fontWeight` を見ないので、
-  太い番組名 (カード) は端末が太らせた字 (`Typeface.create(…, BOLD)`) にする。こちらの字と混ざる1行 (帯の「局名 画質」「番組名 あと12分」・「局 ・ 日時」の行) は、
+  太い番組名 (カード) は端末が太らせた字 (`Typeface.create(…, BOLD)`) にする。こちらの字と混ざる1行 (操作バーの「局名 画質」「番組名 あと12分」・「局 ・ 日時」の行) は、
   放送の字に `appendBroadcast` で印を付けて、描くときに字体を当てる (`TitleLines`)
 - 放送の字 (画面のほう) は OpenType の `palt` を入れて組む (`BROADCAST_FEATURES`)。詰まるのは全角の英数字・記号 (U+FF01–FF5E) だけで、
   「ＮＨＫ総合１」「（再）」が間延びしない。字 (全角のまま) は替えない。**字幕には当てない** (ARIB が字の間と表示区画を決めている。
   字幕は `typeface` を Paint に渡して描き、`palt` を入れない)。読めずに端末の字で描くときも入れない (かなまで詰まる)
 
-- **焼くときに取ってきて assets に入れる** (`app/build.gradle.kts` の `fetchCaptionFont`)。ttf は 4.2MB あるのでリポジトリには置かない。
+- **ビルドのときに取ってきて assets に入れる** (`app/build.gradle.kts` の `fetchCaptionFont`)。ttf は 4.2MB あるのでリポジトリには置かない。
   リリースの ttf を版 (タグ) で留めて取り、同じリリースの SHA256SUMS で照らす。版は denpa の Dockerfile の `DENPA_FONT_VERSION` と揃え、
   Renovate が新しいリリースのタグを上げる (`renovate.json` の customManagers)
-- APK には縮めずに入れる (`noCompress += "ttf"`)。`Typeface.createFromAsset` が APK の中をそのまま mmap し、解いた写しをメモリに持たない。
-  読むのはアプリを開いたときに1度だけ、画面の糸の外で。読み終えるまで・読めなければ (取ってこずに焼いた版) 端末の字で描く
+- APK には縮めずに入れる (`noCompress += "ttf"`)。`Typeface.createFromAsset` が APK の中をそのまま mmap し、展開した写しをメモリに持たない。
+  読むのはアプリを開いたときに1度だけ、画面の糸の外で。読み終えるまで・読めなければ (取ってこずにビルドした版) 端末の字で描く
 - denpa の `api/font/denpa-font.woff2` からは取らない (配っているのはブラウザ向けの woff2 で、Android の Typeface は読めない)
 - 許諾は SIL OFL 1.1 (元の BIZ UDゴシック (モリサワ) と同じ。原文は denpa-font の README)。
   字幕・データ放送・番組表で使う字 (denpa の字の表から作る) に絞ってある
@@ -228,7 +228,7 @@ debug の APK の単体テストでは見つからない。そこで release と
 | **アプリのクラスには触らない** | 縮めると名前が変わり、使わないものは消える。触るのは Android の口だけ: 起動とリンク (`denpa://…`) は Intent、見るのは画面の文字 (アクセシビリティの木) と画面の絵 (`UiAutomation.takeScreenshot`)、キーは `UiAutomation`。繋ぐ先も DataStore に直に書けない (別のプロセスで、アプリは debuggable でない) ので、繋ぐ画面の欄に URL を入れて「繋ぐ」を押す |
 | **映像が出たかは画面の絵の色で見る** | 偽の映像は地を1色にしてあり (`scripts/smoke-media.sh`)、画面を撮ってその色の点が 3 割を超えたら出ている。Player の状態は外から読めない |
 | **偽の denpa はテストのプロセスで 127.0.0.1 に立てる** (`java.net.ServerSocket` で HTTP/1.1 を数十行) | Android には `com.sun.net.httpserver` が無い。MockWebServer (OkHttp) は Range・SSE を出し分けるのに Dispatcher を書くことになり、手で書くのと手間が変わらないので足さない |
-| **映像は H.264 だけ** (fragmented MP4 と Matroska、合わせて約 100 KB をリポジトリに置く) | Android TV のエミュレータは MPEG-2 のデコーダを有効にしていない (`c2.android.mpeg2.decoder` は `domain="tv"` で、エミュレータでは使えない)。生の TS (MPEG-2) の再生は確かめられない |
+| **映像は H.264 だけ** (fragmented MP4 と Matroska、合わせて約 100 KB をリポジトリに置く) | Android TV のエミュレータは MPEG-2 のデコーダを有効にしていない (`c2.android.mpeg2.decoder` は `domain="tv"` で、エミュレータでは使えない)。元の TS (MPEG-2) の再生は確かめられない |
 
 入れたもの (テストの APK だけ。アプリには入らない):
 

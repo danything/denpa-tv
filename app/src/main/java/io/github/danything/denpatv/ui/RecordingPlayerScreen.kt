@@ -56,16 +56,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * 録画を観る。解ける中でいちばん軽いファイルを開き (AV1 → H.264 → 生の TS)、
+ * 録画を観る。デコードできる中でいちばん軽いファイルを開き (AV1 → H.264 → 元の TS)、
  * **続きの位置があればそこから** (denpa の `resumeMs`)。
  *
  * - 左右で 10 秒戻す・送る、決定で止める・動かす (キーの割り当ては data/Remote.kt と docs/controls.md)
  * - **下でシークバー** (左右で 10 秒ずつ。CM は色を変えて出す)、下でその下の操作の列へ
- * - **上 (か Menu) で操作の列**。**決定の長押し (と情報キー) で番組の詳しいところ** (一覧のカードの長押しと同じ。削除もそこから)。帯の中は上下で操作の列とシークバーを行き来し、**シークバー (いちばん上) から上で閉じる**。操作の列: 再生 / 一時停止、前へ・次へ (チャプター)、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
- *   **CM 飛ばし** (既定で入。ロゴで CM を判定できなかった録画は切で始まる)、**字幕**・**音声** (あれば)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
+ * - **上 (か Menu) で操作の列**。**決定の長押し (と情報キー) で番組の詳しいところ** (一覧のカードの長押しと同じ。削除もそこから)。操作バーの中は上下で操作の列とシークバーを行き来し、**シークバー (いちばん上) から上で閉じる**。操作の列: 再生 / 一時停止、前へ・次へ (チャプター)、**速さ** (押すたびに 1 / 1.25 / 1.5 / 2 倍)、
+ *   **CM 飛ばし** (既定でオン。ロゴで CM を判定できなかった録画はオフで始まる)、**字幕**・**音声** (あれば)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
  *   5 秒触らなければ閉じる (止めている間も)。戻るでも閉じる。緑のボタンは速さを1段送る
  * - リモコンの次へ・前へでチャプター送り
- * - CM 飛ばしが入っていれば CM の頭の少し手前で終わりまで飛ぶ (CM のコマは映さない)。区切りは動画に入っているチャプター (`CM` / `本編`)
+ * - CM 飛ばしがオンなら CM の頭の少し手前で終わりまで飛ぶ (CM のコマは映さない)。区切りは動画に入っているチャプター (`CM` / `本編`)
  *
  * 観た位置は denpa に預ける (15 秒ごとと、閉じるとき)。ブラウザで続きから観られる
  */
@@ -80,7 +80,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     val clock = remember { TsClock() }
     /*
      * 録画のファイルは、回線が切れたときだけいまの位置から読み直す (`prepare` し直すと、Media3 は止まった位置から続ける)。
-     * Media3 が中で読み直したうえでの失敗なので、何度か (`Reconnect.FEW`) まで。中身が読めない・解けないのは繋ぎ直しても同じなので出して止める
+     * Media3 が中で読み直したうえでの失敗なので、何度か (`Reconnect.FEW`) まで。中身が読めない・デコードできないのは繋ぎ直しても同じなので出して止める
      */
     val (player, error, dualMono, recovery) = rememberPlayer(
         repo,
@@ -92,7 +92,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     val flasher = rememberFlash()
     val (overlay, flash) = flasher
     val scope = rememberCoroutineScope()
-    /** 飛んだ回数。生の TS の字幕を、飛んだ先から頼み直す */
+    /** 飛んだ回数。元の TS の字幕を、飛んだ先から頼み直す */
     var seeks by remember { mutableIntStateOf(0) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -103,7 +103,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
     }
-    // 字幕は denpa から受け取る。生の TS は字幕の口、焼いた録画は文字の配置まるごと (`captions.json`)。ファイルは開いている間替わらない
+    // 字幕は denpa から受け取る。元の TS は字幕の口、エンコード済みの録画は文字の配置まるごと (`captions.json`)。ファイルは開いている間替わらない
     val captions = if (file.source == "ts") {
         rememberRawCaptions(
             repo,
@@ -117,7 +117,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     } else {
         rememberCaptionPages(repo, player, CaptionPaths.recordingText(recording.id), onUnauthorized)
     }
-    // デュアルモノの主・副は、生の TS のときだけ配り直す (焼いた録画は denpa が主・副の2本に割ってある)
+    // デュアルモノの主・副は、元の TS のときだけ配り直す (エンコード済みの録画は denpa が主・副の2本に割ってある)
     val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { file.source == "ts" }.orEmpty())
     /**
      * CM 飛ばし。観はじめはブラウザと同じく、覚えている設定に従うが、ロゴで CM を判定できなかった録画は切って始める
@@ -128,15 +128,15 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     fun toggleCm() {
         skipCm = !skipCm
         if (recording.cmReliable) scope.launch { repo.app.settings.setSkipCm(skipCm) }
-        flash(if (skipCm) "CM 飛ばし 入" else "CM 飛ばし 切")
+        flash(if (skipCm) "CM 飛ばし オン" else "CM 飛ばし オフ")
     }
-    /** 帯に出す位置と、止まっているか (帯を開いている間だけ取り直す) */
+    /** 操作バーに出す位置と、止まっているか (操作バーを開いている間だけ取り直す) */
     var at by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(true) }
     val ui = rememberPlayerBar(onLeave, playing)
     var bar by ui::bar
     var details by ui::details
-    // 帯を開いている間と止めている間 (止めると位置の帯を出す) は、位置を取り直す
+    // 操作バーを開いている間と止めている間 (止めると位置のバーを出す) は、位置を取り直す
     LaunchedEffect(bar, playing) {
         while (bar != null || !playing) {
             at = player.currentPosition
@@ -153,7 +153,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         while (player.playbackState != Player.STATE_READY) delay(250)
         started = true
     }
-    /** 最後まで観た (終わりの帯を出す)。勝手に一覧へは戻らない */
+    /** 最後まで観た (終わりの操作バーを出す)。勝手に一覧へは戻らない */
     var ended by remember { mutableStateOf(false) }
     /** 消した (閉じるときに観た位置を預けない) */
     var deleted by remember { mutableStateOf(false) }
@@ -300,7 +300,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; ui.leave() }
     /**
      * 止める・動かす。**止めたら操作の列を開いて「再生」に合わせる** (決定でそのまま動かせる)。
-     * 動かしたら帯を閉じて何も出さない (映像を観たいだけなので)。帯を閉じて止めたままなら位置の帯を出す
+     * 動かしたら操作バーを閉じて何も出さない (映像を観たいだけなので)。操作バーを閉じて止めたままなら位置のバーを出す
      */
     fun togglePause() {
         player.playWhenReady = !player.playWhenReady
@@ -332,7 +332,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
             player.seekTo(previous.startMs); at = previous.startMs; flash("${previous.title}  ${position(previous.startMs)}")
         }
     }
-    /** 帯を開く。開く前の知らせ (開いてすぐの番組名など) は消す (帯の題と同じことを言うだけなので、帯の題に持ち込まない) */
+    /** 操作バーを開く。開く前の知らせ (開いてすぐの番組名など) は消す (操作バーのタイトルと同じことを言うだけなので、操作バーのタイトルに持ち込まない) */
     fun open(which: Bar) {
         at = player.currentPosition
         playing = player.playWhenReady
@@ -342,7 +342,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     val deleteControl = Control(deleteLabel(delete.armed), icon = R.drawable.ic_delete) { if (delete.press()) deleteNow() }
     val seekFocus = remember { FocusRequester() }
 
-    // 帯 (終わり・止めている間・操作の列) を出している間は、知らせを帯の題に添える (`covered`)
+    // 操作バー (終わり・止めている間・操作の列) を出している間は、知らせを操作バーのタイトルに添える (`covered`)
     val covered = ended || bar != null || !playing
     PlayerFrame(player, overlay, error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, covered = covered, above = {
         if (ended) {
@@ -352,7 +352,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
                 listOf("" to listOf(Control(BACK_TO_LIST, icon = R.drawable.ic_back) { ui.leave() }, deleteControl.copy(initial = true))),
             )
         } else if (bar == null && !playing) {
-            // 止めている間の位置の帯。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳しく)
+            // 止めている間の位置のバー。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳細)
             val total = player.duration.takeIf { it != C.TIME_UNSET }
             ControlBar(
                 buildAnnotatedString {
@@ -375,7 +375,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
                 listOf(
                     "" to listOf(
                         playControl(playing) { togglePause() },
-                        // 札は短く (リモコンの「前へ」「次へ」と同じ名前)。帯が1行に収まるように
+                        // ボタンは短く (リモコンの「前へ」「次へ」と同じ名前)。操作バーが1行に収まるように
                         Control("前へ", icon = R.drawable.ic_previous, description = "前のチャプター") { previousChapterNow() },
                         Control("次へ", icon = R.drawable.ic_next, description = "次のチャプター") { nextChapterNow() },
                     ),
@@ -383,7 +383,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
                         speedControl(speed) { scope.stepSpeed(repo, speed) },
                     ),
                     "" to listOf(
-                        Control(if (skipCm) "CM 飛ばし 入" else "CM 飛ばし 切", on = skipCm, icon = R.drawable.ic_skip_cm) {
+                        Control(if (skipCm) "CM 飛ばし オン" else "CM 飛ばし オフ", on = skipCm, icon = R.drawable.ic_skip_cm) {
                             toggleCm()
                         },
                     ),
@@ -391,7 +391,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
                     "" to listOf(deleteControl),
                 ),
                 header = { actions ->
-                    // シークバーが帯のいちばん上の列。そこで上キーを押すと閉じて映像に戻る (ライブのメニューの操作の列と同じ)
+                    // シークバーが操作バーのいちばん上の列。そこで上キーを押すと閉じて映像に戻る (ライブのメニューの操作の列と同じ)
                     ProgressLine(at, total ?: 0, chapters, seekFocus, down = actions, onUp = { bar = null }) { direction -> step(direction) }
                 },
                 focusActions = which == Bar.Actions,
@@ -400,7 +400,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         }
     }, onKey = { event ->
         when (recordingCommand(event.nativeKeyEvent.keyCode)) {
-            // 止めている間は位置の帯に出るので、知らせは出さない
+            // 止めている間は位置のバーに出るので、知らせは出さない
             RecordingCommand.Back -> { step(-1).let { if (playing) flash(position(it)) }; true }
             RecordingCommand.Forward -> { step(1).let { if (playing) flash(position(it)) }; true }
             RecordingCommand.SeekBar -> { open(Bar.SeekBar); true }
@@ -417,18 +417,18 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }
 
-/** 録画・追っかけの帯をどこに合わせて開いたか。下キーならシークバー、上キー・Menu なら操作の列 */
+/** 録画・追っかけの操作バーをどこに合わせて開いたか。下キーならシークバー、上キー・Menu なら操作の列 */
 internal enum class Bar { SeekBar, Actions }
 
 /**
- * 録画・追っかけの帯と戻る (`rememberPlayerBar`)。帯は 5 秒触らなければ閉じる (止めている間も)。
- * 戻るは1つで受け、帯が開いていれば閉じ、無ければ一覧へ (ライブと同じ理由)。続けて押しても1つだけ戻る
+ * 録画・追っかけの操作バーと戻る (`rememberPlayerBar`)。操作バーは 5 秒触らなければ閉じる (止めている間も)。
+ * 戻るは1つで受け、操作バーが開いていれば閉じ、無ければ一覧へ (ライブと同じ理由)。続けて押しても1つだけ戻る
  */
 @Stable
 internal class PlayerBar(private val onLeave: () -> Unit) {
-    /** 開いている帯 (null なら何も出していない) */
+    /** 開いている操作バー (null なら何も出していない) */
     var bar by mutableStateOf<Bar?>(null)
-    /** 帯で最後にキーを押したとき */
+    /** 操作バーで最後にキーを押したとき */
     var touched by mutableLongStateOf(0L)
     /** 番組の詳しいところを開いているか (決定の長押し) */
     var details by mutableStateOf(false)
@@ -442,7 +442,7 @@ internal class PlayerBar(private val onLeave: () -> Unit) {
         onLeave()
     }
 
-    /** 決定の短押しで止める・動かす、長押しで詳しく */
+    /** 決定の短押しで止める・動かす、長押しで詳細 */
     fun center(press: CenterPress.Action, togglePause: () -> Unit) = when (recordingCenter(press)) {
         RecordingCenter.PlayPause -> togglePause()
         RecordingCenter.Details -> details = true
@@ -463,20 +463,20 @@ internal fun rememberPlayerBar(onLeave: () -> Unit, playing: Boolean): PlayerBar
 }
 
 /**
- * 止める・動かすの札 (録画・追っかけ)。**塗らない** (塗るのは入り切りの札で入っているものだけ。「一時停止」が入っているように見える)。
- * 帯を開いたときはここに合わせる (`initial`。止めて開いた帯は決定でそのまま動かせる)
+ * 止める・動かすのボタン (録画・追っかけ)。**塗らない** (塗るのはオン・オフのボタンでオンのものだけ。「一時停止」がオンのように見える)。
+ * 操作バーを開いたときはここに合わせる (`initial`。止めて開いた操作バーは決定でそのまま動かせる)
  */
 internal fun playControl(playing: Boolean, onClick: () -> Unit) =
     Control(if (playing) "一時停止" else "再生", icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, initial = true, onClick = onClick)
 
-/** 終わりの帯の、一覧へ戻る札 (ブラウザの denpa と同じ言い方) */
+/** 終わりの操作バーの、一覧へ戻るボタン (ブラウザの denpa と同じ言い方) */
 internal const val BACK_TO_LIST = "一覧へ戻る"
 
 /**
- * 速さの札 (録画・追っかけ)。1つの札で送る (`stepSpeed`)。列を短くして、押す回数も少なく。
+ * 速さのボタン (録画・追っかけ)。1つのボタンで送る (`stepSpeed`)。列を短くして、押す回数も少なく。
  * **等速ならメーターの印だけの丸、速めている間は数字だけ (「1.25」)** — ブラウザの denpa の速さの口と同じ。
- * ふだん (等速) は札に数字が居座らず、速めているときは数字そのものが「速めている」の印になる (塗るのも同じとき)。
- * 札の上では × を付けない (速さの札だと分かっている)。読み上げは速さも読む (`speedDescription`)
+ * ふだん (等速) はボタンに数字が居座らず、速めているときは数字そのものが「速めている」の印になる (塗るのも同じとき)。
+ * ボタンの上では × を付けない (速さのボタンだと分かっている)。読み上げは速さも読む (`speedDescription`)
  */
 internal fun speedControl(speed: Float, onClick: () -> Unit) =
     if (speed == 1f) {

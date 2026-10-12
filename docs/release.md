@@ -1,6 +1,6 @@
 # リリースの出し方 (管理者向け)
 
-`v0.2.0` のようなタグを押すと、`.github/workflows/release.yml` が APK を焼いて GitHub Release に付けます。
+`v0.2.0` のようなタグを押すと、`.github/workflows/release.yml` が APK をビルドして GitHub Release に付けます。
 版 (`versionName`) はタグから、`versionCode` は版の数字から作ります (0.2.13 → 213)。版は上げる一方にします
 (下げると上書きで入れられない)。
 
@@ -28,8 +28,8 @@ base64 -w0 denpa-tv-release.jks > denpa-tv-release.jks.b64
 ## アプリの中のアップデートを確かめる
 
 アプリの中で上げる流れ ([updates.md](updates.md)) は、手元のエミュレータで偽のリリースから確かめられます。
-**debug だけ**、焼くときに `DENPA_TV_UPDATE_API` で GitHub のリリースの API の代わりを指せます (release・minified は
-いつも GitHub)。同じ debug の鍵で、古い版と新しい版を焼きます。
+**debug だけ**、ビルドのときに `DENPA_TV_UPDATE_API` で GitHub のリリースの API の代わりを指せます (release・minified は
+いつも GitHub)。同じ debug の鍵で、古い版と新しい版をビルドします。
 
 ```sh
 export DENPA_TV_UPDATE_API=http://10.0.2.2:8732/repos/danything/denpa-tv   # エミュレータからホストの 8732
@@ -40,4 +40,4 @@ DENPA_TV_VERSION=0.7.0 DENPA_TV_VERSION_CODE=700 ./gradlew :app:assembleDebug   
 
 偽のリリースは `<API>/releases` に GitHub と同じ形の JSON (`tag_name` と、`denpa-tv-0.7.0.apk`・`SHA256SUMS` の
 `browser_download_url`) を返し、APK と `sha256sum` の出力を置けば足ります。`adb install old.apk` してから、
-設定の「バージョン」の札を押して確認 → 同じ札に出た「アップデート (…)」を押す → 許可の画面で許可して戻る、と進めます。
+設定の「バージョン」のボタンを押して確認 → 同じボタンに出た「アップデート (…)」を押す → 許可の画面で許可して戻る、と進めます。

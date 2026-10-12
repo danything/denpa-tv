@@ -4,11 +4,11 @@
 # (smoke/src/main/assets/。合わせて約 670 KB) ので、ふだんは走らせなくてよい。要るのは ffmpeg (libx264 入り) だけ。
 #
 #   live.mp4       ライブ (fragmented MP4、H.264 / AAC)。地は緑
-#   recording.mkv  焼いた録画 (Matroska、H.264 / AAC)。地は赤紫
-#   showcase-live-{1,2,3}.mp4  画面の絵 (Screenshots) のライブ・追っかけ。ぼかした色の帯がゆっくり動く (120 秒。局ごとに色を替える)
+#   recording.mkv  エンコード済みの録画 (Matroska、H.264 / AAC)。地は赤紫
+#   showcase-live-{1,2,3}.mp4  画面の絵 (Screenshots) のライブ・追っかけ。ぼかした色の縞がゆっくり動く (120 秒。局ごとに色を替える)
 #   showcase.mkv   画面の絵の録画 (30 秒。最後まで観たときの絵も撮るので短く)
 #
-# 焼く前の録画・ライブの生の TS (MPEG-2) は無い。Android TV のエミュレータは MPEG-2 のデコーダを有効にしていない
+# エンコード前の録画・ライブの元の TS (MPEG-2) は無い。Android TV のエミュレータは MPEG-2 のデコーダを有効にしていない
 # (c2.android.mpeg2.decoder は domain="tv" で、エミュレータでは使えない) ので、映せるかを確かめようがない。
 #
 # live・recording は 320x180・15 fps・10 秒で、白い四角が横へ動く。SmokeTest は画面を撮って地の色の点を数え、映像が出たかを見る

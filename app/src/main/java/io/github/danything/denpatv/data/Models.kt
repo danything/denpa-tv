@@ -53,7 +53,7 @@ fun neighbor(services: List<Service>, currentId: Long, step: Int): Service? {
 }
 
 /**
- * 数字キー (`liveChannelKey`) で選ぶ局。リモコン番号 (`remoteControlKey`) が `key` の局のうち、**いまの帯 (地上波 / BS など。`currentType`)
+ * 数字キー (`liveChannelKey`) で選ぶ局。リモコン番号 (`remoteControlKey`) が `key` の局のうち、**いまの種別 (地上波 / BS など。`currentType`)
  * を先に** (地上波の 1 と BS の 1 があれば、地上波を観ているなら地上波の 1)、次に放送している局 (同じものを流しているサブチャンネルより
  * 本放送)、あとは一覧の並び。無ければ null
  */
@@ -72,14 +72,14 @@ data class NowProgram(
     val title: String,
     val startAt: Long,
     val endAt: Long,
-    /** 選べる音声 (デュアルモノの主・副を見分ける・焼くものを選ぶ。`DenpaAudio`)。番組表に無ければ空 */
+    /** 選べる音声 (デュアルモノの主・副を見分ける・エンコードする音声を選ぶ。`DenpaAudio`)。番組表に無ければ空 */
     val audios: List<DenpaAudio> = emptyList(),
     /**
-     * 録る予定か (予約済みか録画中。競合で弾かれた・録り終えたものは false) と、いま録っている最中か。ライブの「録画」の札の印
+     * 録る予定か (予約済みか録画中。競合で弾かれた・録り終えたものは false) と、いま録っている最中か。ライブの「録画」のボタンの印
      */
     val reserved: Boolean = false,
     val recording: Boolean = false,
-    /** 番組 ID (`GET api/programs/<id>` で中身を引く。ライブの詳しく)。無ければ詳しくは `now` のぶんだけ */
+    /** 番組 ID (`GET api/programs/<id>` で中身を引く。ライブの詳細)。無ければ詳細は `now` のぶんだけ */
     val id: Long? = null,
 ) {
     /** 残り (分。切り上げ) */
@@ -105,13 +105,13 @@ data class Recording(
     val watchedAt: JsonElement = JsonNull,
     /** 予定の終わり (UNIX ミリ秒)。追っかけで観た位置を預けるときの尺に使う */
     val endAt: Long? = null,
-    /** いま録っている。`files` は伸びている生TSだけなので、`chase` で観る */
+    /** いま録っている。`files` は伸びている元のTSだけなので、`chase` で観る */
     val recording: Boolean = false,
-    /** 追っかけ再生の口 (`api/recordings/<id>/chase`)。生TSがある間だけ */
+    /** 追っかけ再生の口 (`api/recordings/<id>/chase`)。元のTSがある間だけ */
     val chase: String? = null,
     /** CM 飛ばしを観はじめに入れてよいか (ロゴでの判定に失敗した録画は false)。無ければ入れてよい */
     val cmReliable: Boolean = true,
-    /** 選べる音声 (デュアルモノの主・副を見分ける・焼くものを選ぶ。`DenpaAudio`)。番組表に無かった録画は空 */
+    /** 選べる音声 (デュアルモノの主・副を見分ける・エンコードする音声を選ぶ。`DenpaAudio`)。番組表に無かった録画は空 */
     val audios: List<DenpaAudio> = emptyList(),
 )
 
@@ -127,11 +127,11 @@ val Recording.watched: Float?
     }
 
 /**
- * まだ観ていない (番組名の頭の点。ブラウザの denpa と同じ: 観終えた時刻も続きの位置も無い。途中まで観たものは観た割合の帯で分かる)
+ * まだ観ていない (番組名の頭の点。ブラウザの denpa と同じ: 観終えた時刻も続きの位置も無い。途中まで観たものは観た割合のバーで分かる)
  */
 val Recording.unwatched: Boolean get() = watchedAt == JsonNull && resumeMs == null
 
-/** 札にする形の名前 (AV1 / H.264 / 生TS)。並びは軽いものから */
+/** ラベルにする形式の名前 (AV1 / H.264 / 元のTS)。並びは軽いものから */
 val Recording.codecLabels: List<String>
     get() = listOf("av1" to "AV1", "h264" to "H.264", "mpeg2" to "元のTS")
         .filter { (codec, _) -> files.any { it.codec == codec } }

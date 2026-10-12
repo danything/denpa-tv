@@ -151,13 +151,13 @@ fun SetupScreen(app: DenpaApp) {
                     }
                     if (serverUrl != null) {
                         Text("1. スマホをテレビと同じ Wi-Fi に繋ぎ、左の QR を読む", style = MaterialTheme.typography.bodyLarge)
-                        Text("2. 開いたページに、ブラウザで denpa を開いている URL を入れる", style = MaterialTheme.typography.bodyLarge)
+                        Text("2. 開いたページに、ブラウザで denpa を開いている URL を入力する", style = MaterialTheme.typography.bodyLarge)
                         Text("3. 家の外の denpa なら、スマホが denpa の画面に移るのでログインする", style = MaterialTheme.typography.bodyLarge)
                         Text("4. テレビが自動で次に進む", style = MaterialTheme.typography.bodyLarge)
                     } else {
                         Text("ネットワークに繋がっていないため、QR を出せません", style = MaterialTheme.typography.bodyLarge)
                     }
-                    Text("リモコンで入れるときはここに", style = MaterialTheme.typography.titleSmall)
+                    Text("リモコンで入力する場合はこちら", style = MaterialTheme.typography.titleSmall)
                     BasicTextField(
                         value = text,
                         onValueChange = { text = it },

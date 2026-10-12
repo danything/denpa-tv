@@ -29,7 +29,7 @@ class ChaseTest {
         assertEquals("api/recordings/9/chase?codec=raw&from=754", Chase.url("api/recordings/9/chase", "raw", 754_900))
     }
 
-    /** 録画中は追っかけ。録り終えて生TSだけ残っているものは、ふつうのファイルで観る */
+    /** 録画中は追っかけ。録り終えて元のTSだけ残っているものは、ふつうのファイルで観る */
     @Test
     fun 録画中だけ追っかけで観る() {
         val json = Json { ignoreUnknownKeys = true }

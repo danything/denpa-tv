@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 画面の絵を撮るときの、作り物の録画・局・番組 (`Screenshots`)。実際の放送にありそうな長い題・局・観た割合・録画中・エンコード中を並べる。
- * **番組名・人名・説明はどれも作り物** (実在の番組は使わない)。局名だけは実在の名前で、局ロゴは番号を書いただけの札をその場で描く。
+ * **番組名・人名・説明はどれも作り物** (実在の番組は使わない)。局名だけは実在の名前で、局ロゴは番号を書いただけの画像をその場で描く。
  * ポスターもその場で描く (空と日と影)。録画の日は今日から何日前かで組む (エミュレータの時計がずれていても、録っている最中の録画
  * (今) が一覧の頭に来るように)。ライブの番組の時刻も今に合わせる
  */
@@ -35,11 +35,11 @@ internal object Showcase {
         /** 録っている最中 (追っかけで観る) */
         val recording: Boolean = false,
         val description: String = "",
-        /** 放送の詳細 (見出し → 本文)。詳しくに出る */
+        /** 放送の詳細 (見出し → 本文)。詳細に出る */
         val extended: List<Pair<String, String>> = emptyList(),
     )
 
-    /** 焼いている最中 (知らせで進みを送る) の録画と、その進み */
+    /** エンコード中 (知らせで進みを送る) の録画と、その進み */
     const val ENCODING_ID = 102L
     const val ENCODING_PERCENT = 0.42
 
@@ -49,7 +49,7 @@ internal object Showcase {
     /** 字幕を撮る録画 (続きが無いので頭から流れる。最後まで観たときの絵もこれで撮る) */
     const val CAPTION_ID = 104L
 
-    /** 詳しくを撮る録画 (続きがあり、放送の詳細が揃っている) */
+    /** 詳細を撮る録画 (続きがあり、放送の詳細が揃っている) */
     const val DETAIL_ID = 105L
 
     /** 長い題 (撮るときに合わせる) */
@@ -124,7 +124,7 @@ internal object Showcase {
         val title: String,
         val since: Int,
         val left: Int,
-        /** 局ロゴの札の色 */
+        /** 局ロゴの画像の色 */
         val color: Int,
         val reserved: Boolean = false,
         val recording: Boolean = false,
@@ -189,7 +189,7 @@ internal object Showcase {
 
     private val logos = ConcurrentHashMap<Long, ByteArray>()
 
-    /** 局ロゴ (PNG、128×72)。放送のロゴは使わず、局の番号を書いただけの札 */
+    /** 局ロゴ (PNG、128×72)。放送のロゴは使わず、局の番号を書いただけの画像 */
     fun logo(id: Long): ByteArray? {
         val s = stations.firstOrNull { it.id == id } ?: return null
         return logos.getOrPut(id) {
@@ -264,7 +264,7 @@ internal object Showcase {
 
     private fun obj(pairs: List<Pair<String, String>>): String = pairs.joinToString(",", "{", "}") { (k, v) -> "${q(k)}:${q(v)}" }
 
-    /** 録画中で、詳しくに放送の詳細まで揃えた番組 (ライブの詳しくを撮る) */
+    /** 録画中で、詳細に放送の詳細まで揃えた番組 (ライブの詳細を撮る) */
     private const val DRAMA_TITLE = "ドラマ「月曜九時」第3話"
 
     private const val LOGO_WIDTH = 128

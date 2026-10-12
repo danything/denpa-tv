@@ -9,11 +9,11 @@ import android.view.KeyEvent
  * ライブ: **左右で前・次の局** (チャンネル送りも同じで、CH+ が次・CH- が前。Fire TV のリモコンにはチャンネル送りが無いので十字キーだけで替えられる)。
  * **下・決定・Menu でメニュー** (操作の列と局の列。YouTube・Prime Video・ABEMA などのテレビのアプリと同じく、下でメニューが出る)。
  * **上は同じメニューを、局の列のいま映している局に合わせて開く** (局を一覧から選ぶ近道)。
- * **決定の長押しは情報キーと同じく、いま放送中の番組の詳しくを開く** (`liveCenter`。録画の詳しくと同じもの)。
+ * **決定の長押しは情報キーと同じく、いま放送中の番組の詳細を開く** (`liveCenter`。録画の詳細と同じもの)。
  * **数字キーでワンタッチ選局** (`liveChannelKey`。テレビのリモコンの 1〜12 と同じく、局のリモコン番号で選ぶ)。
  * 録画: 左右で 10 秒戻す・送る、決定で止める・動かす、下でシークバーと操作の列、上・Menu で操作の列。
  * **決定の長押しと情報キーは番組の詳しいところ** (`recordingCenter`。ライブの長押し・情報キー、録画の一覧のカードの長押しと揃える)。
- * 開いたメニュー・帯は、いちばん上の段 (ライブは操作の列、録画はシークバー) で上を押すと閉じる (`UpToClose`)。
+ * 開いたメニュー・操作バーは、いちばん上の段 (ライブは操作の列、録画はシークバー) で上を押すと閉じる (`UpToClose`)。
  * 決定の短押し・長押しは PlayerFrame が分ける (CenterPress)
  */
 enum class LiveCommand { PreviousChannel, NextChannel, Menu, Channels, Details }
@@ -41,7 +41,7 @@ fun liveChannelKey(keyCode: Int): Int? = when (keyCode) {
     else -> null
 }
 
-/** ライブの決定。短押しはメニュー、長押しは情報キーと同じ (いま放送中の番組の詳しく)。長押しのあとの離しは CenterPress が捨てる */
+/** ライブの決定。短押しはメニュー、長押しは情報キーと同じ (いま放送中の番組の詳細)。長押しのあとの離しは CenterPress が捨てる */
 fun liveCenter(press: CenterPress.Action): LiveCommand = when (press) {
     CenterPress.Action.Short -> LiveCommand.Menu
     CenterPress.Action.Long -> LiveCommand.Details
@@ -80,13 +80,13 @@ fun recordingCenter(press: CenterPress.Action): RecordingCenter = when (press) {
 const val SEEK_STEP_MS = 10_000L
 
 /**
- * 開いているもの (ライブのメニュー・録画と追っかけの帯) の**いちばん上の列で上キーを押したら閉じて映像に戻る** (戻ると同じ)。
+ * 開いているもの (ライブのメニュー・録画と追っかけの操作バー) の**いちばん上の列で上キーを押したら閉じて映像に戻る** (戻ると同じ)。
  * いちばん上の列 (ライブは操作の列、録画・追っかけはシークバー) に付ける。
  *
  * **閉じるのは、その列に合っている間に押しはじめた上キーを離したとき** (DOWN の repeat 0 を見た押しの UP。押しの区別は downTime)。
  * 下の列 (局の列・操作の列) から上キーを押し続けて上がってきたときは、繰り返し (repeat 1〜) と離しがこの列に届くが、
  * 押しはじめを見ていないので閉じない。DOWN で閉じないのは、押し続けた繰り返しが閉じたあとの映像に届いて、
- * メニュー・帯を開き直してしまうため (映像の上キーはメニュー・帯を開く)
+ * メニュー・操作バーを開き直してしまうため (映像の上キーはメニュー・操作バーを開く)
  */
 class UpToClose {
     /** この列に合っている間に押しはじめた上キーの downTime (無ければ null) */
