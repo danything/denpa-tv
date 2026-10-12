@@ -57,7 +57,7 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope,
             if (!value) cancel()
         }
 
-    /** 続けて失敗した回数・そのうち直らないかもしれないもの (`Reconnect.Verdict.RetryFew`) の回数 */
+    /** 続けて失敗した回数・そのうち直らないかもしれないもの (`Reconnect.Verdict.RetryFew`・`Busy`) の回数 */
     private var attempts = 0
     private var few = 0
     private var job: Job? = null
@@ -127,7 +127,7 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope,
         }
         val wait = Reconnect.delayMs(attempts)
         attempts++
-        if (verdict == Reconnect.Verdict.RetryFew) few++
+        if (verdict == Reconnect.Verdict.RetryFew || verdict == Reconnect.Verdict.Busy) few++
         if (!active) {
             active = true
             since = SystemClock.uptimeMillis()

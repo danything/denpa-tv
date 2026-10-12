@@ -2,11 +2,17 @@ package io.github.danything.denpatv
 
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
+import io.github.danything.denpatv.data.BUSY_MESSAGE
+import io.github.danything.denpatv.data.Decoders
 import io.github.danything.denpatv.data.EmptyWatch
+import io.github.danything.denpatv.data.LiveQuality
+import io.github.danything.denpatv.data.isBusyAnswer
 import io.github.danything.denpatv.data.isMediaContentType
 import io.github.danything.denpatv.data.playbackMessage
+import io.github.danything.denpatv.data.withBusyAdvice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -105,5 +111,38 @@ class StreamErrorsTest {
         assertEquals("この端末では再生できない形式です (ERROR_CODE_DECODER_INIT_FAILED)", message(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED))
         // 当てはまらないものは番号の名前だけ
         assertEquals("ERROR_CODE_UNSPECIFIED", message(PlaybackException.ERROR_CODE_UNSPECIFIED))
+    }
+
+    /** 変換の枠が埋まって断った 503 は、本文の言い分で見分ける (denpa の入れ替えの最中に前段が返す 503 は別) */
+    @Test
+    fun 混んでいて断られたのを見分ける() {
+        val busy = """{"message":"サーバが混んでいます"}""".toByteArray()
+        assertTrue(isBusyAnswer(503, busy))
+        // 知らない鍵が足されても読む
+        assertTrue(isBusyAnswer(503, """{"message":"サーバが混んでいます","retry":1}""".toByteArray()))
+        // 前段の 503 (HTML・文字)・別の言い分・本文が無い
+        assertFalse(isBusyAnswer(503, "<html>Service Unavailable</html>".toByteArray()))
+        assertFalse(isBusyAnswer(503, "restarting".toByteArray()))
+        assertFalse(isBusyAnswer(503, """{"message":"Service Unavailable"}""".toByteArray()))
+        assertFalse(isBusyAnswer(503, ByteArray(0)))
+        assertFalse(isBusyAnswer(503, null))
+        // 503 でなければ言い分が同じでも違う
+        assertFalse(isBusyAnswer(500, busy))
+        assertFalse(isBusyAnswer(null, busy))
+    }
+
+    /** 混んでいたら、変換を頼んでいて MPEG-2 をハードでデコードできるときだけ MPEG-2 を勧める */
+    @Test
+    fun 混んでいたら_MPEG_2_を勧める() {
+        val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
+        val noMpeg2 = Decoders(av1 = false, h264 = true, mpeg2 = true, mpeg2Hardware = false)
+        assertEquals("サーバが混んでいます。画質を MPEG-2 にしてください", withBusyAdvice(BUSY_MESSAGE, LiveQuality.H264, tv))
+        assertEquals("サーバが混んでいます。画質を MPEG-2 にしてください", withBusyAdvice(BUSY_MESSAGE, LiveQuality.Av1, tv))
+        // MPEG-2 をハードでデコードできない・もう MPEG-2 なら勧めない
+        assertEquals(BUSY_MESSAGE, withBusyAdvice(BUSY_MESSAGE, LiveQuality.H264, noMpeg2))
+        assertEquals(BUSY_MESSAGE, withBusyAdvice(BUSY_MESSAGE, LiveQuality.Raw, tv))
+        // ほかのエラー・エラーが無いはそのまま
+        assertEquals("再生できません: x", withBusyAdvice("再生できません: x", LiveQuality.H264, tv))
+        assertNull(withBusyAdvice(null, LiveQuality.H264, tv))
     }
 }

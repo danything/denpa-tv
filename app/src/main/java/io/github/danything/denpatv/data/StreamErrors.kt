@@ -8,7 +8,13 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * **denpa が 200 を返したのに何も送らずに閉じた。** ライブ・追っかけの口 (`live` / `chase`) は、流しはじめてから
@@ -112,3 +118,40 @@ fun playbackMessage(errorCode: Int, codeName: String, httpStatus: Int?, contentT
 /** denpa が映像を送らずに閉じた (`EmptyStreamException`・映る前に流れが終わった) ときに出す文 */
 const val EMPTY_STREAM_MESSAGE =
     "denpa が映像を送らずに閉じました (チューナーの空きが無い・放送休止・変換できなかったなど)。少し待つか、局か画質を替えてください"
+
+/** denpa が「その場で変換する本数の枠が埋まっている」と断ったときの言い分 (503 の `message`。denpa の docs/api.md「その場で変換する本数」) */
+const val BUSY_MESSAGE = "サーバが混んでいます"
+
+/**
+ * denpa が**変換の枠が埋まって断った** 503 か。denpa の入れ替えの最中に前段 (リバースプロキシなど) が返す 503 とは、
+ * 本文の言い分 (`{"message":"サーバが混んでいます"}`) で見分ける (ブラウザの denpa の `busyAnswer` と同じ)
+ */
+fun isBusyAnswer(httpStatus: Int?, body: ByteArray?): Boolean {
+    if (httpStatus != 503 || body == null || body.isEmpty()) return false
+    val json = runCatching { lenientJson.parseToJsonElement(body.decodeToString()).jsonObject }.getOrNull() ?: return false
+    return runCatching { json["message"]?.jsonPrimitive?.contentOrNull }.getOrNull() == BUSY_MESSAGE
+}
+
+/**
+ * **変換の枠が埋まって断られた 503 は、Media3 の中で読み直さない** (`isBusyAnswer`)。Media3 は 503 を何度か (1・2・3 秒待って) 読み直してから
+ * エラーにするが、枠はすぐには空かない。繋ぎ直しは `Recovery` が `Reconnect.Verdict.Busy` として何度かだけ決める。ほかは Media3 の既定のまま
+ */
+@OptIn(UnstableApi::class)
+class BusyLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
+    override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+        val http = loadErrorInfo.exception as? HttpDataSource.InvalidResponseCodeException
+        if (http != null && isBusyAnswer(http.responseCode, http.responseBody)) return C.TIME_UNSET
+        return super.getRetryDelayMsFor(loadErrorInfo)
+    }
+}
+
+/**
+ * 画面に出すエラー。混んでいて断られた (`BUSY_MESSAGE`) なら、変換の要らない MPEG-2 を勧める — いま変換を頼んでいて (MPEG-2 でない)、
+ * この端末が MPEG-2 をハードでデコードできる (`LiveQuality.available` に入る) ときだけ。ほかはそのまま
+ */
+fun withBusyAdvice(error: String?, quality: LiveQuality, decoders: Decoders): String? =
+    if (error == BUSY_MESSAGE && quality != LiveQuality.Raw && LiveQuality.Raw in LiveQuality.available(decoders)) {
+        "$BUSY_MESSAGE。画質を MPEG-2 にしてください"
+    } else {
+        error
+    }

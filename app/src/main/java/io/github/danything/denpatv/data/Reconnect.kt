@@ -19,7 +19,8 @@ object Reconnect {
     const val RETRY_MOST_MS = 10_000L
 
     /**
-     * 直らないかもしれない失敗 (`Verdict.RetryFew`。中身が読めない・デコードできない、映る前に流れが終わった) を続けて繋ぎ直す回数。
+     * 直らないかもしれない失敗 (`Verdict.RetryFew`。中身が読めない・デコードできない、映る前に流れが終わった) と、
+     * 変換の枠が埋まって断られた (`Verdict.Busy`) を続けて繋ぎ直す回数。
      * 録画のファイルは、回線の失敗もこの回数まで (Media3 が中で読み直したうえでの失敗なので)
      */
     const val FEW = 3
@@ -51,14 +52,23 @@ object Reconnect {
 
         /** 直らないかもしれない (中身が読めない・デコードできない)。`FEW` 回まで */
         RetryFew,
+
+        /**
+         * denpa の変換の枠が埋まって断られた (503 と `BUSY_MESSAGE`。`isBusyAnswer`)。ほかの人が観終えれば空くが、いつかは分からない。
+         * 何度でも頼み直すと denpa を叩き続けるだけなので、`RetryFew` と同じく `FEW` 回まで (待ちは倍々で 1・2・4 秒)。
+         * 諦めたら「サーバが混んでいます」と出す
+         */
+        Busy,
     }
 
     /**
      * Media3 のエラー (`PlaybackException.errorCode`) と、HTTP の応答の番号 (あれば) から決める。
-     * 番号は Media3 の `PlaybackException.ERROR_CODE_*` (1xxx その他・2xxx 読み・3xxx 中身・4xxx デコード・5xxx 音・6xxx DRM)
+     * 番号は Media3 の `PlaybackException.ERROR_CODE_*` (1xxx その他・2xxx 読み・3xxx 中身・4xxx デコード・5xxx 音・6xxx DRM)。
+     * `busy` は変換の枠が埋まって断られたか (`isBusyAnswer`。ほかの 503 は denpa の入れ替えなので、待てば通る)
      */
-    fun verdict(errorCode: Int, httpStatus: Int?): Verdict = when {
+    fun verdict(errorCode: Int, httpStatus: Int?, busy: Boolean = false): Verdict = when {
         httpStatus == 401 -> Verdict.Unauthorized
+        busy -> Verdict.Busy
         // 408 (待ちきれない) と 429 (混んでいる) は待てば通る
         httpStatus == 408 || httpStatus == 429 -> Verdict.Retry
         httpStatus != null && httpStatus in 400..499 -> Verdict.GiveUp
@@ -87,12 +97,14 @@ object Reconnect {
 
     /**
      * 繋ぎ直すか。`stream` はライブ・追っかけ (流しっぱなしの1本)、そうでなければ録画のファイル。
-     * `attempts` は続けて失敗した回数、`few` はそのうち `RetryFew` だった回数 (どちらも次の絵が出たら 0 に戻す)
+     * `attempts` は続けて失敗した回数、`few` はそのうち `RetryFew` か `Busy` だった回数 (どちらも次の絵が出たら 0 に戻す)
      */
     fun shouldRetry(verdict: Verdict, stream: Boolean, attempts: Int, few: Int): Boolean = when (verdict) {
         Verdict.Unauthorized, Verdict.GiveUp -> false
         Verdict.Retry -> stream || attempts < FEW
         Verdict.RetryFew -> stream && few < FEW
+        // 流しっぱなしのものも録画も同じ (録画も、変換して流す口は断られうる)
+        Verdict.Busy -> few < FEW
     }
 }
 

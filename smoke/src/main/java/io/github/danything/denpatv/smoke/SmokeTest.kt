@@ -244,6 +244,56 @@ class SmokeTest {
     }
 
     /**
+     * **denpa の変換の枠が埋まって断られたら** (503 `{"message":"サーバが混んでいます"}`)、何度かだけ頼み直して「サーバが混んでいます」と言い、
+     * それ以上は頼まない (denpa を叩き続けない)。入れ替えの最中の 503 (`liveReconnect`) とは違って「繋ぎ直しています」のまま回り続けない
+     */
+    @Test
+    fun chaseBusy() = watching {
+        shell("logcat -c")
+        val chase = "GET /api/recordings/${FakeDenpa.CHASE_ID}/chase"
+        denpa.busyChase.set(true)
+        try {
+            val before = denpa.requests.count { it == chase }
+            open("denpa://recording/${FakeDenpa.CHASE_ID}")
+            awaitText { it.startsWith("サーバが混んでいます") }
+            assertTrue("混んでいたのが logcat にありません: ${appLog()}", "変換の枠が埋まっている" in appLog())
+            // 何度かで諦め、諦めたら頼まない (Media3 の中でも読み直さない)
+            val asked = denpa.requests.count { it == chase } - before
+            assertTrue("混んでいるのに $asked 回頼みました", asked in 1..BUSY_MOST_REQUESTS)
+            SystemClock.sleep(BUSY_QUIET_MS)
+            assertEquals("諦めたあとも頼み直しています", asked, denpa.requests.count { it == chase } - before)
+        } finally {
+            denpa.busyChase.set(false)
+        }
+        press(KeyEvent.KEYCODE_BACK)
+        awaitText { it == FakeDenpa.RECORDING_TITLE }
+    }
+
+    /**
+     * **追っかけの途中でエンコードが終わったら** (denpa が `recordings` を知らせ、録画の状態が録り終えた `available` で、一覧にエンコード済みのファイルが載る)、ファイルの再生へ移る
+     * (エンコード済みのファイルを頼み、録画の映像が出る)。戻ったら録画中に戻して、一覧を読み直させる (あとのテストが追っかけを開けるように)
+     */
+    @Test
+    fun chaseEncoded() = watching {
+        open("denpa://recording/${FakeDenpa.CHASE_ID}")
+        awaitVideo(LIVE_COLOR)
+        val listed = denpa.requests.count { it == "GET /api/recordings" }
+        try {
+            denpa.encodeChase(true)
+            assertTrue("エンコードが終わってもファイルを頼みません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { "GET /api/recordings/${FakeDenpa.CHASE_ID}/file" in denpa.requests })
+            assertRequested("GET /api/recordings/${FakeDenpa.CHASE_ID}")
+            assertTrue("録画の一覧を読み直していません", denpa.requests.count { it == "GET /api/recordings" } > listed)
+            awaitVideo(RECORDING_COLOR)
+        } finally {
+            denpa.encodeChase(false)
+        }
+        val back = denpa.requests.count { it == "GET /api/recordings" }
+        press(KeyEvent.KEYCODE_BACK)
+        awaitText { it == FakeDenpa.RECORDING_TITLE }
+        assertTrue("一覧を読み直しません", poll(TEXT_TIMEOUT_MS) { denpa.requests.count { it == "GET /api/recordings" } > back })
+    }
+
+    /**
      * 追っかけも、録り終える前に流れが閉じたら (denpa の入れ替え) 居た場所から頼み直す。録り終えたのかは denpa に聞いて決めるので、
      * 録画の一覧を読み直してから頼み直す。「最後まで観ました」にはしない
      */
@@ -708,6 +758,9 @@ class SmokeTest {
         // CI のエミュレータ (KVM はあるが GPU は無い) は遅いので長めに待つ
         private const val VIDEO_TIMEOUT_MS = 60_000L
         private const val TEXT_TIMEOUT_MS = 30_000L
+        /** 混んでいて断られたとき、頼んでよい数 (1回目と頼み直しの `Reconnect.FEW` 回。開いてすぐ頼み直すことがあるので、その倍まで) と、諦めたあと頼まないのを見る長さ (頼み直しの待ちの上限 10 秒より長く) */
+        private const val BUSY_MOST_REQUESTS = 8
+        private const val BUSY_QUIET_MS = 12_000L
         /** 頼んだ映像が映るまで待つ長さ (偽の denpa はすぐ全部送るので、これで足りる) */
         private const val PICTURE_WAIT_MS = 3_000L
         private const val SETTLE_MS = 3_000L

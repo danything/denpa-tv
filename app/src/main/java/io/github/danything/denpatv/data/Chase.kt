@@ -29,6 +29,23 @@ object Chase {
     fun refused(started: Boolean, baked: Boolean, httpStatus: Int?, errorCode: Int): Boolean =
         !started && baked && httpStatus == null && Reconnect.verdict(errorCode, null) != Reconnect.Verdict.Retry
 
+    /**
+     * 追っかけの口が 404 を返したときに出す文。denpa の追っかけの 404 は**録画が無い (消された) か、まだ何も録れていない** (録りはじめた直後)。
+     * エンコードが終わったのとは関係ない (終わればファイルの再生へ移る)
+     */
+    const val NOT_FOUND = "再生できません: 録画が無いか、まだ何も録れていません。少し待ってから開き直してください"
+
+    /**
+     * 録り終えた録画をファイルの再生へ渡すか (`fresh` は読み直した一覧の1件)。**エンコードが終わったときだけ** — 追っかけでなく、
+     * 録画の再生が開くファイル (`pickFile`) がエンコード済みのもの (元の TS でない) のとき。
+     * 「エンコードしない」設定の録画 (元の TS だけ) は渡さない (追っかけのまま最後まで観る)。一覧がまだ追いついていなければ、次の知らせを待つ
+     */
+    fun handOff(fresh: Recording?, decoders: Decoders): Boolean {
+        if (fresh == null || fresh.chasing) return false
+        val file = pickFile(fresh.files, decoders) ?: return false
+        return file.source != "ts"
+    }
+
     /** `audio` はエンコードするときに頼む音声 (`bakedAudio`)。元の TS では渡さない */
     fun url(chase: String, codec: String, fromMs: Long, audio: DenpaAudio? = null): String =
         "$chase?codec=$codec&from=${fromMs / 1000}${audioQuery(audio)}"

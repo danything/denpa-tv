@@ -29,6 +29,15 @@ sealed interface DenpaEvent {
     data class Yielded(val serviceId: Long, val recording: YieldedRecording) : DenpaEvent
 }
 
+/**
+ * 知らせ `name` で局の一覧 (`api/services`) が古くなるか。局・番組表のほか、**予約と録画も** — 局の `now` の
+ * 録る予定 (`reserved`)・録画中 (`recording`) はライブの「録画」のボタンと局の列の印に出る。古いとみなしても、取り直すのは
+ * ライブを開いたときの1回だけ (開いている間は、ライブの画面が知らせを受けて自分で取り直す)
+ */
+fun staleServices(name: String): Boolean = name in SERVICE_EVENTS
+
+private val SERVICE_EVENTS = setOf("services", "programs", "reservations", "recordings")
+
 /** `yielded` の中身 (denpa の docs/api.md) */
 @Serializable
 private data class YieldedBody(val serviceId: Long, val recording: YieldedRecording)

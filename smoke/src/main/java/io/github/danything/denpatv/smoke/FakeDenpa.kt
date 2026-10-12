@@ -13,6 +13,7 @@ import java.net.SocketException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
@@ -47,6 +48,18 @@ class FakeDenpa(
      * Media3 は「形が分からない」と言うので、アプリがそれを見分けて言い換えるかを見る)
      */
     val emptyLive = AtomicInteger(0)
+
+    /**
+     * true の間、追っかけの要求に 503 `{"message":"サーバが混んでいます"}` を返す (denpa の変換の枠が埋まっているつもり。
+     * アプリが何度かだけ頼み直して「サーバが混んでいます」と言うかを見る)
+     */
+    val busyChase = AtomicBoolean(false)
+
+    /**
+     * true なら、追っかけの録画 [CHASE_ID] のエンコードが終わっている: 録画の一覧で録り終えてエンコード済みのファイル (録画の映像) を持ち、
+     * 録画の状態 (`api/recordings/<id>`) も録り終えた `available`。`encodeChase` で入れる
+     */
+    private val chaseEncoded = AtomicBoolean(false)
 
     /** 画面の絵のライブで、選局にかかったつもりで待つ長さ (`Screenshots` が選局の間を撮るときだけ延ばす) */
     @Volatile
@@ -123,7 +136,17 @@ class FakeDenpa(
             // エンコード済みの録画の字幕 (文字の配置)
             path == "/api/recordings/$RECORDING_ID/captions.json" -> json(out, FakeCaptions.smoke)
             // 追っかけはライブと同じエンコード方式の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリは居た場所から頼み直す)
-            path == "/api/recordings/$CHASE_ID/chase" -> media(out, "live.mp4", "video/mp4", range)
+            path == "/api/recordings/$CHASE_ID/chase" ->
+                if (busyChase.get()) {
+                    respond(out, 503, "application/json", """{"message":"サーバが混んでいます"}""".toByteArray())
+                } else {
+                    media(out, "live.mp4", "video/mp4", range)
+                }
+            // 録画の状態 (追っかけの画面がエンコードが終わったかを聞く)
+            path == "/api/recordings/$CHASE_ID" ->
+                json(out, if (chaseEncoded.get()) """{"id":$CHASE_ID,"encoded":true,"state":"available"}""" else """{"id":$CHASE_ID,"encoded":false,"state":"recording"}""")
+            // エンコードが終わったあとのファイル (録画と同じ映像。色で移ったのが分かる)。録画中に戻したあとの読み足しでも映せるよう、いつでも返す
+            path == "/api/recordings/$CHASE_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
             else -> respond(out, 404, "text/plain", "not found".toByteArray())
         }
     }
@@ -175,14 +198,27 @@ class FakeDenpa(
         return "[${service(SERVICE_ID, SERVICE_NAME, 1, PROGRAM_TITLE)},${service(NEXT_SERVICE_ID, NEXT_SERVICE_NAME, 2, NEXT_PROGRAM_TITLE)}]"
     }
 
-    /** 録り終えた録画と、録っている最中の録画 (追っかけ。1時間後まで録る) */
+    /** 録り終えた録画と、録っている最中の録画 (追っかけ。1時間後まで録る)。後者はエンコードが終わっていれば (`encodeChase`)、ファイルを持つ録り終えた録画 */
     private fun recordings(): String {
         val now = System.currentTimeMillis()
         val start = now - 86_400_000
+        val chase = if (chaseEncoded.get()) {
+            """"recording":false,"chase":null,"files":[{"source":"encoded","codec":"h264","url":"api/recordings/$CHASE_ID/file"}]"""
+        } else {
+            """"recording":true,"chase":"api/recordings/$CHASE_ID/chase","files":[]"""
+        }
         return """[{"id":$RECORDING_ID,"title":"$RECORDING_TITLE","serviceName":"$SERVICE_NAME","startAt":$start,"durationMs":10000,"watchedAt":null,
             "files":[{"source":"encoded","codec":"h264","url":"api/recordings/$RECORDING_ID/file"}]},
-            {"id":$CHASE_ID,"title":"$CHASE_TITLE","serviceName":"$SERVICE_NAME","startAt":${now - 120_000},"endAt":${now + 3_600_000},
-            "recording":true,"chase":"api/recordings/$CHASE_ID/chase","files":[]}]"""
+            {"id":$CHASE_ID,"title":"$CHASE_TITLE","serviceName":"$SERVICE_NAME","startAt":${now - 120_000},"endAt":${now + 3_600_000},$chase}]"""
+    }
+
+    /**
+     * 追っかけの録画のエンコードが終わった (`done`) か、録画中に戻す。どちらも denpa と同じく `recordings` を知らせる
+     * (アプリは知らせのたびに録画の状態を聞き、一覧を読み直す)
+     */
+    fun encodeChase(done: Boolean) {
+        chaseEncoded.set(done)
+        pendingEvents += "event: recordings\ndata: 1\n\n"
     }
 
     /** 次の知らせで送るもの (`yieldLive`)。知らせに繋いでいる流れが拾って送る */

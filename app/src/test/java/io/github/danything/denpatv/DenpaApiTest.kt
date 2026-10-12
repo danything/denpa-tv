@@ -3,6 +3,7 @@ package io.github.danything.denpatv
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.RecordResult
+import io.github.danything.denpatv.data.parseFinished
 import io.github.danything.denpatv.data.unwatched
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -160,5 +161,35 @@ class DenpaApiTest {
         assertEquals("/api/recordings/12/detail", denpa.requests.take().target)
         denpa.enqueue("", code = 404)
         assertEquals(null, api.recordingDetail(base, 13))
+    }
+
+    /** 録画の状態 (`GET api/recordings/<id>`)。録り終えたら true。録画中・無い (404) は false */
+    @Test
+    fun 録り終えたかを聞く() = runTest {
+        val base = BaseUrl.normalize(denpa.url())!!
+        denpa.enqueue("""{"id":12,"encoded":true,"state":"available"}""")
+        assertTrue(api.recordingFinished(base, 12))
+        assertEquals("/api/recordings/12", denpa.requests.take().target)
+        denpa.enqueue("""{"id":12,"encoded":false,"state":"recording"}""")
+        assertFalse(api.recordingFinished(base, 12))
+        denpa.enqueue("", code = 404)
+        assertFalse(api.recordingFinished(base, 12))
+    }
+
+    @Test
+    fun 録画の状態を読む() {
+        val warnings = mutableListOf<String>()
+        assertTrue(parseFinished("""{"id":12,"encoded":true,"state":"available"}""", warnings::add))
+        // 録り終えてエンコードを待っている
+        assertTrue(parseFinished("""{"id":12,"encoded":false,"state":"recorded"}""", warnings::add))
+        assertFalse(parseFinished("""{"id":12,"encoded":false,"state":"recording"}""", warnings::add))
+        assertFalse(parseFinished("""{"id":12,"encoded":false,"state":"failed"}""", warnings::add))
+        // encoded は見ない (「エンコードしない」設定の録画でも true になる)
+        assertFalse(parseFinished("""{"id":12,"encoded":true,"state":"recording"}""", warnings::add))
+        assertTrue(warnings.isEmpty())
+        // 形が違う (版のずれ): 言うだけで、終わっていないとみなす
+        assertFalse(parseFinished("""{"encoded":true}""", warnings::add))
+        assertFalse(parseFinished("<html></html>", warnings::add))
+        assertEquals(2, warnings.size)
     }
 }

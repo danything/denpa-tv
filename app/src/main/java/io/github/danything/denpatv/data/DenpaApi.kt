@@ -87,6 +87,15 @@ class DenpaApi(
         parseProgramInfo(res.text(), warn)?.let { ProgramLookup.Found(it) } ?: ProgramLookup.Missing
     }
 
+    /**
+     * 録り終えたか (`GET api/recordings/<id>` の `state`。denpa の docs/api.md「録画の状態」)。追っかけの画面が、ファイルの再生へ移れるかを聞く入口。
+     * 録画中・録画が無い (404)・届かない・読めないは false (移らずに追っかけを続ける)。エンコード済みのファイルがあるかは、呼ぶ側が一覧の `files` で見る
+     */
+    suspend fun recordingFinished(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
+        val res = call(base, "api/recordings/$id")?.takeIf { it.ok } ?: return@withContext false
+        parseFinished(res.text(), warn)
+    }
+
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。もう無い (404) のも消せたとみなして true。録画中 (409) などは false */
     suspend fun deleteRecording(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
         val res = call(base, "api/recordings/$id", "DELETE") ?: return@withContext false
@@ -195,6 +204,21 @@ sealed interface TokenResult {
     data class Granted(val token: String) : TokenResult
     /** `authorization_pending` / `slow_down` / `expired_token` / `invalid_grant` など */
     data class Error(val error: String) : TokenResult
+}
+
+/**
+ * `api/recordings/<id>` の答え (`{"id":12,"encoded":false,"state":"recording"}`) から、録り終えたかを読む。
+ * `state` が `recorded` (録り終えた) か `available` (ファイルが揃った) なら終わった。`recording`・`failed` は終わっていない扱い。
+ *
+ * **`encoded` は見ない。** denpa は「エンコードしない」設定の録画でも、元の TS をライブラリに置くので `encoded` が true になる
+ * (`available` も同じ)。エンコードが終わったかは、読み直した一覧にエンコード済みのファイルがあるかで決める (`Chase.handOff`)。
+ * `state` が読めなければ版のずれとして `warn` に書き、終わっていないとみなす
+ */
+fun parseFinished(body: String, warn: (String) -> Unit = {}): Boolean {
+    val json = runCatching { lenientJson.parseToJsonElement(body).jsonObject }.getOrNull()
+    val state = json?.get("state")?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }
+    if (state == null) warn("録画の状態の形が違います (denpa の版が違う?): ${body.take(200)}")
+    return state == "recorded" || state == "available"
 }
 
 /** `api/health` の答え。`version` はリリースのタグ (`v1.44.0`。手元・develop は `dev`)、版を返さないとても古い denpa では null */
