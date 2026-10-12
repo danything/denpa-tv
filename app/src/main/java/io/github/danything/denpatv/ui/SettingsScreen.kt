@@ -45,7 +45,7 @@ fun SettingsScreen(repo: Repository) {
 
         // Android TV の設定と同じく、幅いっぱいのボタンを縦に並べる。押すと右の様子どおりのことをする
         Column(Modifier.widthIn(max = PANEL_WIDTH), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // 登録してあれば denpa からも外す (トークンを無効にする)。家の LAN の繋ぎ方なら忘れるだけ
+            // 登録してあれば denpa からも外す (アクセストークンを無効にする)。家の LAN の繋ぎ方なら忘れるだけ
             WideButton(
                 "接続先: ${repo.base}" + if (repo.token != null) " (このテレビを登録済み)" else "",
                 if (repo.token != null) "押すと登録を解除" else "押すと接続先を変更",

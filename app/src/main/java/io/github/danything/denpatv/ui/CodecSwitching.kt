@@ -20,7 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * ライブ・追っかけの画質の切り替え (`CodecSwitch`)。選んだら「AV1 に切り替え中」、新しい流れの最初のフレームで「AV1 にしました」、
+ * ライブ・追っかけの画質の切り替え (`CodecSwitch`)。選んだら「AV1 に切り替え中」、新しいストリームの最初のフレームで「AV1 にしました」、
  * 映せなければ元の画質に戻して理由を1行。**前の映像は残したまま** (回るものは `PlayerFrame` がいつもどおり 1.5 秒たってから)
  */
 @Stable
@@ -32,7 +32,7 @@ class CodecSwitching internal constructor(
     private val switching: () -> (LiveQuality) -> Unit,
 ) {
     /**
-     * 局の知らせ・メニューと操作バーのタイトルに添える画質 (切り替え中ならそう言う)。済んだ・切り替えられなかったは知らせ (`flash`) で言う —
+     * 局の通知・メニューと操作バーのタイトルに添える画質 (切り替え中ならそう言う)。済んだ・切り替えられなかったは通知 (`flash`) で言う —
      * メニュー・操作バーを開いている間は、そのタイトルの2行目に出る (`LocalBarNotice`)
      */
     val label: String get() = state.value.label
@@ -54,14 +54,14 @@ class CodecSwitching internal constructor(
         scope.launch { repo.app.settings.setLiveQuality(next) }
     }
 
-    /** 流れをリクエストした (`load` のたびに) */
+    /** ストリームをリクエストした (`load` のたびに) */
     fun requested(quality: LiveQuality) {
         state.value = state.value.requested(quality)
     }
 }
 
 /**
- * `failure` は画面に出しているエラー (出ていなければ null)。**新しい画質の流れをリクエストしたあとにエラーが出たら、切り替えられなかったことにして
+ * `failure` は画面に出しているエラー (出ていなければ null)。**新しい画質のストリームをリクエストしたあとにエラーが出たら、切り替えられなかったことにして
  * 元の画質に戻す。** 選んでから `SWITCH_GIVE_UP_MS` たっても映らないときも同じ (denpa の入れ替えが続く 503 などは、繋ぎ直しが
  * 諦めずに続くので、前の映像が暗くなって回り続けるだけになる)。繋ぎ直しの1回目 (空の返事・一瞬の切れ) では諦めない
  */
@@ -92,7 +92,7 @@ fun rememberCodecSwitching(
         }
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() = pictured()
-            // 映像の無い局 (ラジオ) では最初のフレームの知らせが来ないので、流れはじめたことで済ませる。映像のある流れでは、音だけでは済ませない
+            // 映像の無い局 (ラジオ) では最初のフレームの通知が来ないので、流れはじめたことで済ませる。映像のあるストリームでは、音だけでは済ませない
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying && !player.currentTracks.containsType(C.TRACK_TYPE_VIDEO)) pictured()
             }

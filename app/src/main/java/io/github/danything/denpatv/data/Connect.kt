@@ -11,7 +11,7 @@ import java.net.URI
 
 /** denpa の URL を入れてもらったあとの行き先 */
 sealed interface ConnectStep {
-    /** 家の LAN (TRUSTED_NETWORKS) から入れた。トークンは要らない */
+    /** 家の LAN (TRUSTED_NETWORKS) から入れた。アクセストークンは要らない */
     data class Open(val base: URI) : ConnectStep
     /** 家の外の denpa。登録 (ログイン) が要る。`verificationUrl` は登録の画面の絶対の URL */
     data class NeedsLogin(val base: URI, val code: DeviceCode, val verificationUrl: String) : ConnectStep
@@ -22,7 +22,7 @@ sealed interface ConnectStep {
  * 入れてもらった URL で繋げるか確かめる。
  *
  * 1. `api/health` が通るか (denpa か、URL は正しいか)。ポートを書いていなければ 80 のあと 3000 も
- * 2. トークン無しで局の一覧が取れるか — 取れれば家の LAN。そのまま使う
+ * 2. アクセストークン無しで局の一覧が取れるか — 取れれば家の LAN。そのまま使う
  * 3. 断られたら (401 / 403) テレビを denpa に登録しはじめる (`api/device/code`)。
  *    スマホを denpa の登録の画面へ送り、ログインが済めば denpa が登録を通す
  */

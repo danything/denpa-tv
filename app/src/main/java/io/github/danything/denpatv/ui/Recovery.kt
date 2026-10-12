@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
  *
  * - `label` … logcat に出す名前 (`live 局 <id>` など)
  * - `stream` … 流しっぱなしの1本 (ライブ・追っかけ)。回線の失敗は何度でも繋ぎ直し、止まったのも見張る。録画のファイルは `Reconnect.FEW` 回まで
- * - `endedIsLost` … 流れが終わったら切れたとみなす (ライブ。追っかけは録り終えたのかを画面が確かめてから `Recovery.retry` を呼ぶ)
+ * - `endedIsLost` … ストリームが終わったら切れたとみなす (ライブ。追っかけは録り終えたのかを画面が確かめてから `Recovery.retry` を呼ぶ)
  * - `reload` … 同じものをリクエストし直す (ライブは同じ局、追っかけはいまの位置から、録画は `prepare` し直す)
  */
 class ReconnectPlan(
@@ -34,7 +34,7 @@ class ReconnectPlan(
 /**
  * **繋ぎ直しの最中の様子と、待っているタイマー。** ブラウザの denpa の `reconnect` にあたる (data/Reconnect.kt)。
  *
- * - 見つけたら (エラー・流れが終わった・止まった) `Reconnect.delayMs` だけ待って `ReconnectPlan.reload`。待っている間も前の映像は残る
+ * - 見つけたら (エラー・ストリームが終わった・止まった) `Reconnect.delayMs` だけ待って `ReconnectPlan.reload`。待っている間も前の映像は残る
  *   (Media3 は面を消さない)。`active` の間は幕が「繋ぎ直しています」を出す (`LoadingVeil`。1.5 秒待ってから)
  * - 次の映像が出たら (`pictured`) 数え直す。局を替えた・画面がリクエストし直した (`requested`) ら、待っている繋ぎ直しは捨てる
  * - **裏に回っている間は繋ぎ直さない** (`started`。戻れば画面がリクエストし直す)。止めている (一時停止) 間は、動かしたときに繋ぎ直す
@@ -85,7 +85,7 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope,
 
     /**
      * 次の映像が出た・流れはじめた。数え直す。映像が出たこと (`onRenderedFirstFrame`) と流れはじめたこと (`onIsPlayingChanged`) の
-     * どちらでも呼ぶ — `prepare` し直しただけ (録画のファイル) や映像の無い局 (ラジオ) では、映像の知らせが来ないことがある
+     * どちらでも呼ぶ — `prepare` し直しただけ (録画のファイル) や映像の無い局 (ラジオ) では、映像の通知が来ないことがある
      */
     fun onPictured() {
         if (!pictured) picturedAt = SystemClock.uptimeMillis()

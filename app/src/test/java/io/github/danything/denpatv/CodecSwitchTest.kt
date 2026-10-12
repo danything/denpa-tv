@@ -11,7 +11,7 @@ class CodecSwitchTest {
     fun 選んだらすぐ切り替え中_最初のフレームで済む() {
         val chosen = CodecSwitch(LiveQuality.H264).choose(LiveQuality.Av1)!!
         assertEquals("AV1 に切り替え中", chosen.label)
-        // リクエストする前のフレーム (前の流れ) では済ませない
+        // リクエストする前のフレーム (前のストリーム) では済ませない
         val (early, none) = chosen.pictured()
         assertNull(none)
         assertEquals(chosen, early)

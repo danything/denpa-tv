@@ -64,7 +64,7 @@ private sealed interface SetupState {
  * 1. スマホがテレビの中のページ (`SetupServer`) を開き、denpa の URL を送る
  * 2. テレビが確かめる。家の LAN から入れればそれで終わり
  * 3. 家の外の denpa なら、テレビを denpa に登録する。スマホは denpa の画面に移ってログインし、
- *    済めばテレビが受け取ったトークンを覚えて終わる (RFC 8628 の device authorization)
+ *    済めばテレビが受け取ったアクセストークンを覚えて終わる (RFC 8628 の device authorization)
  */
 @Composable
 fun SetupScreen(app: DenpaApp) {

@@ -28,7 +28,7 @@ import java.net.URI
 
 /**
  * 画面が使う denpa の窓口。一覧は画面をまたいで使うので (ライブの局の切り替え・録画を開く) ここに控える。
- * トークンがあれば API・画像・映像のどれにも付ける
+ * アクセストークンがあれば API・画像・映像のどれにも付ける
  */
 class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     val api = DenpaApi { token }
@@ -65,7 +65,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     /**
      * 観た位置を預けた (閉じた・裏に回った・観終えた)。一覧の観た割合のバーと未視聴の点を直すため、読み直してもらう。
      * denpa は観終えたときしか知らせない (途中で止めた位置では来ない) ので、手元から知らせる。
-     * 一覧が出ていればすぐ (知らせ)、まだなら戻ったときに (`recordingsStale`)
+     * 一覧が出ていればすぐ (通知)、まだなら戻ったときに (`recordingsStale`)
      */
     fun positionSaved() {
         recordingsStale = true
@@ -99,7 +99,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
         private set
 
     /**
-     * 繋いだ denpa の版を確かめる。知らせ (`api/events`) に繋がるたび (denpa を上げて立ち上げ直したときも) に1度。
+     * 繋いだ denpa の版を確かめる。通知 (`api/events`) に繋がるたび (denpa を上げて立ち上げ直したときも) に1度。
      * 届かなければ前のまま
      */
     private suspend fun checkVersion() {
@@ -118,7 +118,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     private val incoming = MutableSharedFlow<DenpaEvent>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-    /** denpa の変化の知らせ。開いている画面が受けて読み直す (`listen` が繋いでいる間だけ流れる) */
+    /** denpa の変化の通知。開いている画面が受けて読み直す (`listen` が繋いでいる間だけ流れる) */
     val events: SharedFlow<DenpaEvent> get() = incoming
 
     /** エンコード中の録画の進み (録画の id → 0..1)。カードに出す。しばらく届かなければ消す (失敗・取り消し) */
@@ -126,13 +126,13 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     private val encodingExpiry = mutableMapOf<Long, Job>()
 
     /**
-     * denpa の知らせ (`api/events`) に繋ぎっぱなしにする。**アプリが前に出ている間だけ** 呼ぶ (DenpaTv.kt)。
-     * トークンが効かなければ `onUnauthorized` (繋ぐ画面へ) を呼んで戻る。止めるまで戻らない
+     * denpa の通知 (`api/events`) に繋ぎっぱなしにする。**アプリが前に出ている間だけ** 呼ぶ (DenpaTv.kt)。
+     * アクセストークンが効かなければ `onUnauthorized` (繋ぐ画面へ) を呼んで戻る。止めるまで戻らない
      */
     suspend fun listen(onUnauthorized: () -> Unit) {
         val url = BaseUrl.resolve(base, "api/events") ?: return
         coroutineScope {
-            // 受けた知らせはここ (呼ぶ側のスレッド = メイン) で仕分ける
+            // 受けた通知はここ (呼ぶ側のスレッド = メイン) で仕分ける
             val sorter = launch { incoming.collect { sort(it) } }
             try {
                 followEvents(url, token, onEvent = { incoming.tryEmit(it) }, warn = { Log.w(TAG, it) })
@@ -149,7 +149,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     private fun CoroutineScope.sort(event: DenpaEvent) {
         when (event) {
-            // 切れていた間の知らせは来ないので、どちらも古いかもしれない。denpa が上がったかもしれない
+            // 切れていた間の通知は来ないので、どちらも古いかもしれない。denpa が上がったかもしれない
             DenpaEvent.Opened -> {
                 recordingsStale = true
                 servicesStale = true

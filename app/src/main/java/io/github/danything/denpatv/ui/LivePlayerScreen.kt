@@ -65,10 +65,10 @@ import kotlinx.coroutines.launch
  *   8 秒触らなければ閉じる
  * - **録画** はいま観ている番組を denpa に予約する (ブラウザのライブの録画ボタンと同じ。何度押しても二重には録らない)
  * - 局を替えている間は前の局の映像を残し、長くかかったら (1.5 秒) 回るものと「選局しています」→「映像を待っています」を出す (PlayerFrame)
- * - **切れたら (エラー・denpa が流れを閉じた・10 秒進まない) 同じ局をリクエストし直す** (`Recovery`)。前の映像を残し、1.5 秒たったら
+ * - **切れたら (エラー・denpa がストリームを閉じた・10 秒進まない) 同じ局をリクエストし直す** (`Recovery`)。前の映像を残し、1.5 秒たったら
  *   回るものと「繋ぎ直しています」。待ちは 1 秒から倍々で 10 秒まで、回数の上限は無い。局が無い (404) などは理由を出して止める
- * - **録画にチューナーを譲ったら** (denpa の知らせ `yielded`)、同じ局をリクエストし直し、映らなかったときだけ譲った録画の追っかけに切り替えて
- *   知らせを出しっぱなしにする。メニューは「ライブに戻る」(再リクエストを試し、だめなら追っかけに戻る) と画質と局の列だけ (`YieldPlan`)。
+ * - **録画にチューナーを譲ったら** (denpa の通知 `yielded`)、同じ局をリクエストし直し、映らなかったときだけ譲った録画の追っかけに切り替えて
+ *   通知を出しっぱなしにする。メニューは「ライブに戻る」(再リクエストを試し、だめなら追っかけに戻る) と画質と局の列だけ (`YieldPlan`)。
  *   追っかけは denpa の変換の枠を使うので、埋まっていれば断られる。何度かだけリクエストし直し、諦めたら「サーバが混んでいます」(MPEG-2 を勧める)
  * - アプリが裏に回ったら (ホーム・別のアプリ) 止めて denpa から降りる (チューナーを空ける)。戻ったら同じ局を映し直す
  * - **決定の長押しと情報キーで、いま放送中の番組の詳細** (`LiveDetailDialog`。録画の詳細と同じもの)。そこからも録画できる
@@ -82,7 +82,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     var services by remember { mutableStateOf(repo.services) }
     /**
      * 映している局。**番号ではなく局で持つ** — 1 分ごとの取り直しで一覧の並びや顔ぶれが変わると、
-     * 番号だと隣の局を指してしまう。一覧から消えても、映しているものは止めない (知らせだけ出す)
+     * 番号だと隣の局を指してしまう。一覧から消えても、映しているものは止めない (通知だけ出す)
      */
     var playing by remember { mutableStateOf<Service?>(null) }
     /** 局の一覧を読み終えたか (「読み込み中」と「局が無い」を分ける) */
@@ -115,25 +115,25 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     /*
      * ---- 録画に譲ったとき (denpa の docs/stream.md「録画に譲る」。ブラウザのライブと同じ動き) ----
      *
-     * denpa のライブは録画にだけ譲る。蹴られると denpa は流れを閉じ、どの録画に譲ったかを知らせ (`yielded`) で流す。
+     * denpa のライブは録画にだけ譲る。チューナーを取り上げられると denpa はストリームを閉じ、どの録画に譲ったかを通知 (`yielded`) で流す。
      * 閉じたらいつもどおり同じ局をリクエストし直し (使ってよい台が空いていればそこに入り、見ているものは変わらない)、
      * **リクエストし直しても映らなかったときだけ**、その録画の追っかけに切り替える (`YieldPlan`)。メニューの「ライブに戻る」は
      * 再リクエストを試し、映らなければ追っかけに戻って「録画が終わるまでライブは見られません」
      */
-    /** 知らせで来た、譲った録画 (局と録画)。映している局のものだけ使う */
+    /** 通知で来た、譲った録画 (局と録画)。映している局のものだけ使う */
     var kicked by remember { mutableStateOf<DenpaEvent.Yielded?>(null) }
     /** 録画に譲って、その追っかけを観ている (局 `serviceId` のライブの代わりに) */
     var yielded by remember { mutableStateOf<Yielded?>(null) }
     /** 「ライブに戻る」を試している */
     var returning by remember { mutableStateOf(false) }
-    /** いまのリクエストは、蹴られたあと・「ライブに戻る」の再リクエストで、まだ映っていない (映らずに終わったら追っかけへ) */
+    /** いまのリクエストは、取り上げられたあと・「ライブに戻る」の再リクエストで、まだ映っていない (映らずに終わったら追っかけへ) */
     var trying by remember { mutableStateOf(false) }
     /** 追っかけをリクエストし直す (切れた・止まった) たびに増やす */
     var chaseLoads by remember { mutableIntStateOf(0) }
     /** いま追っかけを観ているなら、その譲り。局を替えたら (別の局を映すなら) 観ない */
     val chasing = yielded?.takeIf { it.serviceId == playing?.id && !returning }
     /**
-     * 再リクエストが映らずに終わった。蹴られたあと・「ライブに戻る」の再リクエストなら、譲った録画の追っかけへ切り替えて true。
+     * 再リクエストが映らずに終わった。取り上げられたあと・「ライブに戻る」の再リクエストなら、譲った録画の追っかけへ切り替えて true。
      * そうでなければ false (いつもどおりリクエストし直す)。繋ぎ直しの番 (`Recovery`) と、繋ぎ直さずに止まったとき (404 など) の両方から
      */
     fun giveWay(): Boolean {
@@ -147,8 +147,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     }
     /*
      * **切れた・終わった・止まったら、同じ局をリクエストし直す** (`Recovery`。ブラウザのライブの `reconnect` と同じく何度でも、待ちを倍々に)。
-     * リクエストし直すのは裏から戻ったときと同じ経路 (`returns`)。再リクエストが映らずに終わったのが蹴られたあと・「ライブに戻る」なら、
-     * リクエストし直さずに譲った録画の追っかけへ。追っかけを観ている間は、切れたら追っかけをリクエストし直す (流れが終わったのは録り終えたのでリクエストしない)
+     * リクエストし直すのは裏から戻ったときと同じ経路 (`returns`)。再リクエストが映らずに終わったのが取り上げられたあと・「ライブに戻る」なら、
+     * リクエストし直さずに譲った録画の追っかけへ。追っかけを観ている間は、切れたら追っかけをリクエストし直す (ストリームが終わったのは録り終えたのでリクエストしない)
      */
     val (player, error, dualMono, recovery) = rememberPlayer(
         repo,
@@ -168,7 +168,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         repo,
         player,
         clock,
-        // 裏に回っている間は字幕の流れも閉じる。追っかけを観ている間は録画の字幕 (映像と同じく、録れているところの少し手前から)
+        // 裏に回っている間は字幕のストリームも閉じる。追っかけを観ている間は録画の字幕 (映像と同じく、録れているところの少し手前から)
         path = when {
             quality != LiveQuality.Raw || background -> null
             chasing != null -> CaptionPaths.recording(chasing.recording.id)
@@ -216,7 +216,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         ready = true
     }
     /**
-     * 局を最後に出したもの。音声だけを替えてリクエストし直したときは出し直さない (「音声 …」の知らせを消さない)。
+     * 局を最後に出したもの。音声だけを替えてリクエストし直したときは出し直さない (「音声 …」の通知を消さない)。
      * 画質だけを替えたときも出さない (切り替え中・切り替えたは `codec` が言う)
      */
     var shown by remember { mutableStateOf<Long?>(null) }
@@ -237,7 +237,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         }
         if (!baked.ready) return@LaunchedEffect
         val url = repo.url("${service.live}?codec=${quality.codec}${audioQuery(baked.audio)}") ?: return@LaunchedEffect
-        // 蹴られたあと・「ライブに戻る」の再リクエスト。映らずに終わったら追っかけへ (`rememberPlayer` に渡した決まり)
+        // 取り上げられたあと・「ライブに戻る」の再リクエスト。映らずに終わったら追っかけへ (`rememberPlayer` に渡した決まり)
         trying = returning || kicked?.serviceId == service.id
         recovery.requested()
         player.load(url, quality.mime)
@@ -254,7 +254,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         repo.app.settings.setLastService(service.id)
     }
     /*
-     * **裏に回ったら止めて、denpa から降りる** (流れを閉じる。ほかに観ている人がいなければ denpa がチューナーを空ける)。
+     * **裏に回ったら止めて、denpa から降りる** (ストリームを閉じる。ほかに観ている人がいなければ denpa がチューナーを空ける)。
      * 流しっぱなしにすると、ホームに戻っても音が鳴り続け、チューナーも使ったままになる。戻ったら同じ局をリクエストし直す
      */
     OnBackground(
@@ -268,8 +268,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         },
     )
     /*
-     * **リクエストし直したライブが映ったら、入れた。** 譲った録画のことは忘れる。「ライブに戻る」で戻れたなら知らせを消し、局と番組を出す。
-     * 映像の無い局 (ラジオ) では最初のフレームの知らせが来ないので、流れはじめたことでも済ませる
+     * **リクエストし直したライブが映ったら、入れた。** 譲った録画のことは忘れる。「ライブに戻る」で戻れたなら通知を消し、局と番組を出す。
+     * 映像の無い局 (ラジオ) では最初のフレームの通知が来ないので、流れはじめたことでも済ませる
      */
     val codecLabel by rememberUpdatedState(codec.label)
     DisposableEffect(player) {
@@ -291,7 +291,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
     }
-    // 譲った録画の知らせ (`yielded`)。映している局のものだけ。もう追っかけを観ていれば要らない
+    // 譲った録画の通知 (`yielded`)。映している局のものだけ。もう追っかけを観ていれば要らない
     LaunchedEffect(Unit) {
         repo.events.collect { event ->
             if (event is DenpaEvent.Yielded && event.serviceId == playing?.id && yielded?.serviceId != event.serviceId) kicked = event
@@ -302,7 +302,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         if (error != null) giveWay()
     }
     /*
-     * 知らせは、閉じた流れの再リクエストが映ったあとに届くこともある (そのときは使わない)。残しておくと、ずっと後の別の再リクエストで
+     * 通知は、閉じたストリームの再リクエストが映ったあとに届くこともある (そのときは使わない)。残しておくと、ずっと後の別の再リクエストで
      * 古い録画へ切り替えかねないので、しばらくしたら忘れる
      */
     LaunchedEffect(kicked) {
@@ -326,7 +326,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             val fresh = services.firstOrNull { it.id == current.id }
             when {
                 fresh != null -> { playing = fresh; gone = false }
-                // 知らせは消えたときに1度だけ (取り直しのたびに出さない)
+                // 通知は消えたときに1度だけ (取り直しのたびに出さない)
                 !gone -> {
                     gone = true
                     flash(broadcastPrefix("${current.name} は局の一覧から無くなりました (スキャンし直した?)。左右で別の局へ", current.name))
@@ -347,7 +347,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         delay((end - System.currentTimeMillis()).coerceAtLeast(0) + PROGRAM_END_GRACE_MS)
         if (ready) refresh()
     }
-    // denpa の知らせ (局・番組表が変わった、繋ぎ直した) でも取り直す。番組表は1局集めるたびに来るので、まとめて1回 (1 秒待つ)
+    // denpa の通知 (局・番組表が変わった、繋ぎ直した) でも取り直す。番組表は1局集めるたびに来るので、まとめて1回 (1 秒待つ)
     LaunchedEffect(Unit) {
         // 予約・録画が変わったときも (メニューの「録画」と局の列の印を合わせる)
         val changed = setOf(
@@ -411,7 +411,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         stepping = null
         held = false
     }
-    /** メニューを開く。開く前の知らせ (局と番組・キーの手引き) は消す (メニューのタイトルと同じことを言うだけなので、タイトルに持ち込まない) */
+    /** メニューを開く。開く前の通知 (局と番組・キーの手引き) は消す (メニューのタイトルと同じことを言うだけなので、タイトルに持ち込まない) */
     fun openMenu(start: MenuStart) {
         settle()
         touched = System.nanoTime()
@@ -430,7 +430,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         if (target.id == current.id) flash(describe(current, codec.label)) else playing = target
     }
     /**
-     * いまの番組を録る (ブラウザのライブの録画ボタンと同じエンドポイント)。結果は1行で知らせ (メニューからは下の知らせ、詳細からはボタンの下)、
+     * いまの番組を録る (ブラウザのライブの録画ボタンと同じエンドポイント)。結果は1行で知らせ (メニューからは下の通知、詳細からはボタンの下)、
      * 局を取り直して印を合わせる
      */
     fun record(fromDetail: Boolean) {
@@ -475,8 +475,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     PlayerFrame(
         player,
         /*
-         * 詳細を開いている間は知らせを出さない。メニューを開いている間はメニューのタイトルに添える (`covered`)。
-         * 録画に譲っている間は、その知らせを出しっぱなしにする (ほかの知らせが出ている間はそちら)
+         * 詳細を開いている間は通知を出さない。メニューを開いている間はメニューのタイトルに添える (`covered`)。
+         * 録画に譲っている間は、その通知を出しっぱなしにする (ほかの通知が出ている間はそちら)
          */
         (overlay ?: chasing?.let(::yieldNotice)).takeUnless { detail },
         // 譲った録画の追っかけは変換の枠を使う。埋まって断られたら MPEG-2 を勧める (ライブそのものは断られない)
@@ -492,7 +492,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         onKeyUp = { held = false },
         // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳細)
         onCenter = { press -> run(liveCenter(press)) },
-        // 送っている途中は行き先の番組の進み (知らせの文と揃える)。録画に譲っている間は出さない (映しているのはその局の番組ではない)
+        // 送っている途中は行き先の番組の進み (通知の文と揃える)。録画に譲っている間は出さない (映しているのはその局の番組ではない)
         progress = (stepping ?: current.takeIf { chasing == null })?.now
             ?.let { System.currentTimeMillis() - it.startAt to it.endAt - it.startAt },
         captions = captions,
@@ -518,7 +518,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             /*
              * 録画に譲っている間のメニューは「ライブに戻る」(開いたらそこにフォーカス) と画質だけ。画質は、追っかけが変換の枠が埋まって
              * 断られたときに MPEG-2 へ替えるため。下の局の列から別の局も選べる。
-             * タイトルは観ている録画の局。何を観ているかは知らせ (タイトルの2行目に添わる) が言う
+             * タイトルは観ている録画の局。何を観ているかは通知 (タイトルの2行目に添わる) が言う
              */
             if (chasing != null) {
                 ControlBar(
@@ -582,7 +582,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
 /** 録画に譲って観ている追っかけ。局 `serviceId` のライブの代わり。`refused` は「ライブに戻る」を試して入れなかった */
 private data class Yielded(val serviceId: Long, val recording: YieldedRecording, val refused: Boolean)
 
-/** 録画に譲っている間の知らせ (ブラウザのライブと同じ言い方)。2行目は戻り方か、戻れなかったわけ。番組名は放送の字 */
+/** 録画に譲っている間の通知 (ブラウザのライブと同じ言い方)。2行目は戻り方か、戻れなかったわけ。番組名は放送の字 */
 private fun yieldNotice(yielded: Yielded): AnnotatedString = buildAnnotatedString {
     append(YieldPlan.SWITCHED_HEAD)
     appendBroadcast(yielded.recording.title)
@@ -591,10 +591,10 @@ private fun yieldNotice(yielded: Yielded): AnnotatedString = buildAnnotatedStrin
     append(if (yielded.refused) YieldPlan.refused(yielded.recording.endAt) else YIELD_HINT)
 }
 
-/** 譲った録画の知らせを、再リクエストに使うまで覚えておく長さ (ミリ秒)。蹴られてから再リクエストが映らずに終わるまで (数秒〜十数秒) より十分長く */
+/** 譲った録画の通知を、再リクエストに使うまで覚えておく長さ (ミリ秒)。チューナーを取り上げられてから再リクエストが映らずに終わるまで (数秒〜十数秒) より十分長く */
 private const val KICKED_FOR_MS = 60_000L
 
-/** 譲っている間の知らせの2行目。メニューを開くと「ライブに戻る」にフォーカスする */
+/** 譲っている間の通知の2行目。メニューを開くと「ライブに戻る」にフォーカスする */
 private const val YIELD_HINT = "決定でメニュー → 「${YieldPlan.BACK_TO_LIVE}」"
 
 /** メニューを開いたときにどこにフォーカスするか。下・決定・Menu は操作の列、上は局の列のいま映している局 */

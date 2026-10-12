@@ -180,10 +180,10 @@ class UpdateTest {
         // 手元にあれば (SHA256SUMS の有無や失敗の数にかかわらず) それを使う
         assertEquals(Prefetch.Reuse, prefetchPlan(cached = true, hasSums = true, failures = 0, fresh = false))
         assertEquals(Prefetch.Reuse, prefetchPlan(cached = true, hasSums = false, failures = 9, fresh = true))
-        // 無ければ裏で取る。SHA256SUMS の無いリリースは取らずに知らせだけ (押すと断る)
+        // 無ければ裏で取る。SHA256SUMS の無いリリースは取らずに通知だけ (押すと断る)
         assertEquals(Prefetch.Download, prefetchPlan(cached = false, hasSums = true, failures = 0, fresh = false))
         assertEquals(Prefetch.Offer, prefetchPlan(cached = false, hasSums = false, failures = 0, fresh = true))
-        // 何度も取れなければ、開くたびには取らず知らせだけ。GitHub を引き直したときはもう一度取る
+        // 何度も取れなければ、開くたびには取らず通知だけ。GitHub を引き直したときはもう一度取る
         assertEquals(Prefetch.Download, prefetchPlan(cached = false, hasSums = true, failures = MAX_SILENT_FAILURES - 1, fresh = false))
         assertEquals(Prefetch.Offer, prefetchPlan(cached = false, hasSums = true, failures = MAX_SILENT_FAILURES, fresh = false))
         assertEquals(Prefetch.Download, prefetchPlan(cached = false, hasSums = true, failures = MAX_SILENT_FAILURES, fresh = true))

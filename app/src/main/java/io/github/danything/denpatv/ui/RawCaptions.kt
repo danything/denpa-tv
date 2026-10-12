@@ -45,14 +45,14 @@ import java.io.IOException
 import java.net.URI
 
 /**
- * **TS の読み手が 0 に寄せた幅を覚えておく** (元の TS の字幕を放送の PTS で突き合わせるため。`Pts.broadcast`)。
+ * **TsExtractor が 0 に寄せた幅を覚えておく** (元の TS の字幕を放送の PTS で突き合わせるため。`Pts.broadcast`)。
  *
  * Media3 の TsExtractor は、最初の PTS を 0 に寄せた時刻でサンプルを出す。寄せ幅は渡した `TimestampAdjuster` が持って
- * いるので、**読み手を作るところで自分の `TimestampAdjuster` を渡して控えておく**。中身は `DefaultExtractorsFactory` と
- * 同じ作り方の TsExtractor (ほかの形式はそのまま)。映像をリクエストし直すたびに読み手も作り直されるので、最後に作ったものを見る。
+ * いるので、**Extractor を作るところで自分の `TimestampAdjuster` を渡して控えておく**。中身は `DefaultExtractorsFactory` と
+ * 同じ作り方の TsExtractor (ほかの形式はそのまま)。映像をリクエストし直すたびに Extractor も作り直されるので、最後に作ったものを見る。
  *
- * `mp4` なら、fragmented MP4 の読み手にも同じように渡す (録画を denpa に流してもらうとき。denpa は塊の時刻を録画の時刻のまま書くので、
- * 寄せた幅から録画の時刻に戻せる。`StreamClock`)。応答の `X-Denpa-Origin` (元の TS の流れで、録画の時刻の 0 にあたる PTS) も控える
+ * `mp4` なら、fragmented MP4 の Extractor にも同じように渡す (録画を denpa に流してもらうとき。denpa は塊の時刻を録画の時刻のまま書くので、
+ * 寄せた幅から録画の時刻に戻せる。`StreamClock`)。応答の `X-Denpa-Origin` (元の TS のストリームで、録画の時刻の 0 にあたる PTS) も控える
  */
 @OptIn(UnstableApi::class, ExperimentalApi::class)
 class TsClock(
@@ -68,7 +68,7 @@ class TsClock(
         private set
     private var subtitleParserFactory: SubtitleParser.Factory = DefaultSubtitleParserFactory()
     private var transcoding = true
-    /** `DefaultExtractorsFactory` の既定と同じ (H.264・H.265 は GOP の中の参照を読む)。fragmented MP4 の読み手に渡す */
+    /** `DefaultExtractorsFactory` の既定と同じ (H.264・H.265 は GOP の中の参照を読む)。fragmented MP4 の Extractor に渡す */
     private var gopCodecs = C.VIDEO_CODEC_FLAG_H264 or C.VIDEO_CODEC_FLAG_H265
     private var parseHagc = true
 
@@ -84,7 +84,7 @@ class TsClock(
         return swap(inner.createExtractors(uri, responseHeaders))
     }
 
-    /** リクエストし直す前に、前の流れの寄せ幅と origin を捨てる (新しい流れを読みはじめるまで、前のもので数えないように) */
+    /** リクエストし直す前に、前のストリームの寄せ幅と origin を捨てる (新しいストリームを読みはじめるまで、前のもので数えないように) */
     fun reset() {
         adjuster = null
         origin = null
@@ -117,7 +117,7 @@ class TsClock(
     }
 
     /**
-     * 読み手の候補は形式ごとに1つずつ並んで来て、中身を嗅いだ1つだけが使われる。**どれに渡す `TimestampAdjuster` も同じ1つにする**
+     * Extractor の候補は形式ごとに1つずつ並んで来て、中身を嗅いだ1つだけが使われる。**どれに渡す `TimestampAdjuster` も同じ1つにする**
      * (使われたものの幅が控えに残るように)
      */
     private fun swap(extractors: Array<Extractor>): Array<Extractor> {
@@ -134,7 +134,7 @@ class TsClock(
 
     /**
      * `DefaultExtractorsFactory` の fragmented MP4 と同じ作り。違うのは `TimestampAdjuster` を渡すことと、MFRA (シークの索引) を読まないこと
-     * (流しっぱなしの流れには無い)
+     * (流しっぱなしのストリームには無い)
      */
     private fun fragmentedMp4(made: TimestampAdjuster) = FragmentedMp4Extractor(
         subtitleParserFactory,
@@ -181,7 +181,7 @@ class CaptionState(
  *
  * - 字幕のオン・オフはエンコード済みの録画の字幕と同じ設定 (端末ごと)。オフにしてある間も、選べる字幕があるかだけは訊く
  *   (ボタンを出すため。分かったら切る)
- * - **映像が流れはじめてからリクエストする** — TS の読み手が最初の PTS を読むまで時計が無く、ライブは映像のエンドポイントが
+ * - **映像が流れはじめてからリクエストする** — TsExtractor が最初の PTS を読むまで時計が無く、ライブは映像のエンドポイントが
  *   開いていないと字幕のエンドポイントが 404 を返す (denpa は字幕のためにチューナーを使わない)
  * - `generation` が変わったら (局を替えた・リクエストし直した・シークした) リクエストし直す。録画はリクエストするときの位置 (`fromMs`) から読ませる
  * - ライブは切れたら繋ぎ直す。録画は読み切ったら終わり
@@ -217,8 +217,8 @@ fun rememberRawCaptions(
         /** 続けて断られた回数。元のTSが無い・映像が開かないままのときにリクエストし続けない */
         var refused = 0
         while (true) {
-            // 映像が流れはじめる (リクエストし直した映像を TS の読み手が読みはじめる) まで待つ。
-            // 局を替えた直後は前の読み手の時計が残っているので、流れているかも見る
+            // 映像が流れはじめる (リクエストし直した映像を TsExtractor が読みはじめる) まで待つ。
+            // 局を替えた直後は前の Extractor の時計が残っているので、流れているかも見る
             delay(WAIT_MS)
             while (clock.offsetUs() == null || !player.isPlaying) delay(WAIT_MS)
             val query = CaptionPaths.query(fromMs?.invoke()?.let { it.coerceAtLeast(0) / 1000 })

@@ -135,7 +135,7 @@ fun BoxScope.ControlBar(
             .ignoreHeldCenter(),
         spacing = 6.dp,
     ) {
-        // 操作バーを出している間の知らせ (操作バーの中で押したものの返事など) は、下の端に別に出さずにタイトルの2行目へ (`PlayerFrame` の `covered`)
+        // 操作バーを出している間の通知 (操作バーの中で押したものの返事など) は、下の端に別に出さずにタイトルの2行目へ (`PlayerFrame` の `covered`)
         val notice = LocalBarNotice.current
         if (leading == null) {
             TitleLines(title, notice)
@@ -197,8 +197,8 @@ private val GROUP_GAP = 14.dp
 val SCRIM_TOP = 48.dp
 
 /**
- * 下の端に重ねるパネル (操作バー・知らせ)。下から薄く暗くし、**高さを字幕に知らせる** (`PlayerFrame` の中なら、字幕がこの上へ逃げる。
- * `rememberCoverReport`)。下の端に何か出すときは、これを使う (知らせ忘れると字幕が隠れる)
+ * 下の端に重ねるパネル (操作バー・通知)。下から薄く暗くし、**高さを字幕に知らせる** (`PlayerFrame` の中なら、字幕がこの上へ逃げる。
+ * `rememberCoverReport`)。下の端に何か出すときは、これを使う (伝え忘れると字幕が隠れる)
  */
 @Composable
 fun BoxScope.BottomPanel(modifier: Modifier = Modifier, spacing: Dp, content: @Composable ColumnScope.() -> Unit) {
@@ -219,7 +219,7 @@ fun BoxScope.BottomPanel(modifier: Modifier = Modifier, spacing: Dp, content: @C
 /**
  * パネルのタイトル。1行目は白く、2行目からは小さく (番組名・位置など)。
  * AnnotatedString なら、印 (`appendBroadcast`) の付いたところ (番組名・局名) を放送の字にする。
- * `notice` (操作バーを出している間の知らせ) は2行目の後ろに明るい azure で添える (`withNotice`)
+ * `notice` (操作バーを出している間の通知) は2行目の後ろに明るい azure で添える (`withNotice`)
  */
 @Composable
 fun TitleLines(text: CharSequence, notice: CharSequence? = null) {
@@ -234,8 +234,8 @@ fun TitleLines(text: CharSequence, notice: CharSequence? = null) {
 }
 
 /**
- * タイトルの2行目の後ろに知らせを添える (操作バーを出している間の知らせ。`LocalBarNotice`)。タイトルが1行なら知らせが2行目になる。
- * 知らせが何行かあれば1行に繋ぐ。印 (`appendBroadcast`) はそのまま残る
+ * タイトルの2行目の後ろに通知を添える (操作バーを出している間の通知。`LocalBarNotice`)。タイトルが1行なら通知が2行目になる。
+ * 通知が何行かあれば1行に繋ぐ。印 (`appendBroadcast`) はそのまま残る
  */
 internal fun withNotice(text: CharSequence, notice: CharSequence?): AnnotatedString {
     val title = text as? AnnotatedString ?: AnnotatedString(text.toString())
@@ -263,7 +263,7 @@ internal fun withNotice(text: CharSequence, notice: CharSequence?): AnnotatedStr
     }
 }
 
-/** タイトルの2行目と知らせの間 */
+/** タイトルの2行目と通知の間 */
 private const val NOTICE_GAP = "   "
 
 /**

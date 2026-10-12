@@ -145,7 +145,7 @@ class SpeedTest {
         assertEquals(false, normal.on)
         assertEquals("再生の速さ", normal.description)
         val fast = io.github.danything.denpatv.ui.speedControl(1.25f) {}
-        // × は付けない (ボタンの外の知らせ・タイトルは `speedLabel` で「×1.25」)
+        // × は付けない (ボタンの外の通知・タイトルは `speedLabel` で「×1.25」)
         assertEquals("1.25", fast.label)
         assertNull(fast.icon)
         assertEquals(true, fast.on)

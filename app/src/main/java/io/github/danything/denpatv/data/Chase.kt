@@ -39,7 +39,7 @@ object Chase {
      * 録り終えた録画をファイルの再生へ渡すか (`fresh` は読み直した一覧の1件、`playback` はその録画の観方)。**エンコードが終わったときだけ** —
      * 追っかけでなく、録画の再生が選ぶもの (`pickPlayback`) がエンコード済みのファイルのとき。
      * 「エンコードしない」設定の録画 (元の TS だけ) や、エンコード済みのファイルをこの端末でデコードできない録画は渡さない (追っかけのまま最後まで観る)。
-     * 一覧がまだ追いついていなければ、次の知らせを待つ
+     * 一覧がまだ追いついていなければ、次の通知を待つ
      */
     fun handOff(fresh: Recording?, playback: PlaybackInfo?, decoders: Decoders): Boolean {
         if (fresh == null || fresh.chasing || playback == null) return false

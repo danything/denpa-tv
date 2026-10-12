@@ -21,7 +21,7 @@ import io.github.danything.denpatv.data.captionLift
 import kotlin.math.roundToInt
 
 /**
- * **字幕を、下に重ねたものの上へ逃がす。** 操作バー・ライブのメニュー・知らせ (下の端に出すもの) が自分の高さを知らせ
+ * **字幕を、下に重ねたものの上へ逃がす。** 操作バー・ライブのメニュー・通知 (下の端に出すもの) が自分の高さを知らせ
  * (`rememberCoverReport`)、字幕の層 (`CaptionLayer`) はいちばん高いものの上へ
  * 持ち上がる (`liftCaptions`)。決め方は `captionLift`。`PlayerFrame` が1つ持って、上に重ねるものへ渡す (`LocalOverlayInsets`)
  */
@@ -47,7 +47,7 @@ val LocalOverlayInsets = staticCompositionLocalOf<OverlayInsets?> { null }
 /**
  * 下の端に重ねるもの (`BottomPanel`) の大きさを受けて、字幕を逃がす高さとして知らせる (`Modifier.onSizeChanged` に渡す)。
  * `skipTop` は上の透かし (`SCRIM` の上の空き) — 暗くしはじめたばかりで映像がほぼ透けて見えるので、字幕が乗ってもよい
- * (字幕は自分の縁取り・下地を持っている)。消えたら (画面から外れたら) 知らせを下ろす
+ * (字幕は自分の縁取り・下地を持っている)。消えたら (画面から外れたら) 通知を下ろす
  */
 @Composable
 internal fun rememberCoverReport(skipTop: Dp): (IntSize) -> Unit {

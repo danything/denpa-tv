@@ -17,11 +17,11 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 data class Connection(val server: String, val token: String?)
 
 /**
- * 覚えておくもの: 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・
+ * 覚えておくもの: 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・
  * アップデートを確かめた時刻と、押して許可の画面へ送った版。
  *
- * **トークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
- * 2025 年に全部非推奨になった。アプリの領域は他のアプリから読めず、トークンは denpa の画面からいつでも外せる
+ * **アクセストークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
+ * 2025 年に全部非推奨になった。アプリの領域は他のアプリから読めず、アクセストークンは denpa の画面からいつでも外せる
  * (docs/libraries.md)
  */
 class Settings(private val context: Context) {
@@ -62,7 +62,7 @@ class Settings(private val context: Context) {
         }
     }
 
-    /** 繋ぐ先を忘れる (外したとき・トークンが効かなくなったとき)。繋ぐ画面に戻る */
+    /** 繋ぐ先を忘れる (外したとき・アクセストークンが効かなくなったとき)。繋ぐ画面に戻る */
     suspend fun disconnect() {
         context.dataStore.edit {
             it.remove(serverKey)

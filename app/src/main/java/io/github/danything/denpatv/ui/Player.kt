@@ -121,19 +121,19 @@ fun dataSourceFactory(context: Context, engine: EngineHttp?, token: String?): Da
             .setReadTimeoutMs(Http.READ_TIMEOUT_MS)
             .setContentTypePredicate(::isMediaContentType)
     }
-    // 家の外の denpa に登録してあれば、映像にもトークンを付ける
+    // 家の外の denpa に登録してあれば、映像にもアクセストークンを付ける
     http.setDefaultRequestProperties(authorizationHeaders(token))
-    // 200 のまま空で閉じた流れ (選局・エンコードに失敗した) を見分ける (`EmptyStreamException`)
+    // 200 のまま空で閉じたストリーム (選局・エンコードに失敗した) を見分ける (`EmptyStreamException`)
     return DefaultDataSource.Factory(context, EmptyGuardDataSource.Factory(http))
 }
 
-/** 映像の要求に足すヘッダ。トークンが無ければ空 */
+/** 映像の要求に足すヘッダ。アクセストークンが無ければ空 */
 fun authorizationHeaders(token: String?): Map<String, String> =
     Http.bearer(token)?.let { mapOf("Authorization" to it) } ?: emptyMap()
 
 /**
- * `clock` は TS の読み手が 0 に寄せた幅を覚える (元の TS の字幕を放送の PTS で突き合わせるため。RawCaptions.kt)。
- * 読み手の作り方は Media3 の既定と同じ。`dualMono` は音の出口の手前に挟む (デュアルモノの片側を両耳へ。DualMono.kt)
+ * `clock` は TsExtractor が 0 に寄せた幅を覚える (元の TS の字幕を放送の PTS で突き合わせるため。RawCaptions.kt)。
+ * Extractor の作り方は Media3 の既定と同じ。`dualMono` は音の出口の手前に挟む (デュアルモノの片側を両耳へ。DualMono.kt)
  */
 @OptIn(UnstableApi::class)
 fun buildPlayer(
@@ -203,9 +203,9 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
  * 取り戻す** (閉じたものが消える間・操作バーが勝手に消えたとき・端末によって遅れて合いが外れる場合も)。
  * 開いている間と、画面を離れるとき (一覧に戻る間に一覧がフォーカスを取るので、取り返さない) は `active = false`
  *
- * **字幕 (`captions`) は、下に重ねたもの (知らせ・`above` の操作バーやメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
+ * **字幕 (`captions`) は、下に重ねたもの (通知・`above` の操作バーやメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
  *
- * **`above` が操作バーを出している間 (`covered`) は、下の端の知らせを出さない** (どちらも下の端のパネルなので重なる)。知らせとエラーは
+ * **`above` が操作バーを出している間 (`covered`) は、下の端の通知を出さない** (どちらも下の端のパネルなので重なる)。通知とエラーは
  * 操作バーのタイトルの2行目に添える (`LocalBarNotice`。`ControlBar` が読む)。操作バーの中で押したもの (CM 飛ばし・画質) の返事もそこに出る
  */
 @OptIn(UnstableApi::class)
@@ -220,15 +220,15 @@ fun PlayerFrame(
     /** キーを離したとき (ライブの局の切り替えは、離してから待ってリクエストする) */
     onKeyUp: (KeyEvent) -> Unit = {},
     onCenter: (CenterPress.Action) -> Unit = {},
-    /** 知らせの下に出す進み (ライブの番組の進み)。null なら出さない */
+    /** 通知の下に出す進み (ライブの番組の進み)。null なら出さない */
     progress: Pair<Long, Long>? = null,
-    /** denpa から受け取る字幕 (`rememberRawCaptions`・`rememberCaptionPages`)。知らせの下に重ねる */
+    /** denpa から受け取る字幕 (`rememberRawCaptions`・`rememberCaptionPages`)。通知の下に重ねる */
     captions: CaptionState,
-    /** 映るまでの間に出す、何をしているか (ライブは「選局しています」)。流れが届いたら「映像を待っています」に替わる */
+    /** 映るまでの間に出す、何をしているか (ライブは「選局しています」)。ストリームが届いたら「映像を待っています」に替わる */
     busyLabel: String = "読み込んでいます",
     /** 繋ぎ直しの様子 (`rememberPlayer` の `recovery`)。繋ぎ直している間は前の映像を残して「繋ぎ直しています」 */
     recovery: Recovery,
-    /** `above` が操作バーを出しているか。出している間は、知らせを下の端に出さずに操作バーのタイトルに添える */
+    /** `above` が操作バーを出しているか。出している間は、通知を下の端に出さずに操作バーのタイトルに添える */
     covered: Boolean = false,
     above: @Composable BoxScope.() -> Unit = {},
 ) {
@@ -289,7 +289,7 @@ fun PlayerFrame(
     }
 }
 
-/** 下の端に出す知らせ。操作バーと同じく、下の端に小さく (下から薄く暗くするだけ) */
+/** 下の端に出す通知。操作バーと同じく、下の端に小さく (下から薄く暗くするだけ) */
 @Composable
 private fun BoxScope.Notice(text: CharSequence?, progress: Pair<Long, Long>?) {
     if (text == null) return
@@ -299,7 +299,7 @@ private fun BoxScope.Notice(text: CharSequence?, progress: Pair<Long, Long>?) {
     }
 }
 
-/** 操作バー (`ControlBar`) のタイトルの2行目に添える知らせ。`PlayerFrame` が操作バーを出している間 (`covered`) だけ渡す */
+/** 操作バー (`ControlBar`) のタイトルの2行目に添える通知。`PlayerFrame` が操作バーを出している間 (`covered`) だけ渡す */
 val LocalBarNotice = compositionLocalOf<CharSequence?> { null }
 
 /** 映像にフォーカスがあるか見張る間 (ミリ秒) */
@@ -309,7 +309,7 @@ private const val FOCUS_WATCH_MS = 250L
  * 映るまでの様子 (`rememberLoading`)。**ブラウザの denpa の幕 (`PlayerVeil`) にあたる。**
  *
  * - `busy` … 動かすつもりで読み込んでいる (選局・再リクエスト・シークの直後)
- * - `arrived` … 流れが届きはじめた (中身の形式が分かった)。届くまでは「選局しています」、届いたら「映像を待っています」
+ * - `arrived` … ストリームが届きはじめた (中身の形式が分かった)。届くまでは「選局しています」、届いたら「映像を待っています」
  * - `pictured` … 一度でも映像を出したか。出していれば、次が映るまで**前の映像が画面に残っている** (Media3 は替えるときに面を消さない)
  * - `since` … `busy` になったとき (uptime ミリ秒)
  */
@@ -464,7 +464,7 @@ class Flash internal constructor() {
         shownAt = System.nanoTime()
     }
 
-    /** すぐ消す。操作バーを開いたとき (開く前の知らせ (開いてすぐの番組名など) を、操作バーのタイトルに持ち込まない) */
+    /** すぐ消す。操作バーを開いたとき (開く前の通知 (開いてすぐの番組名など) を、操作バーのタイトルに持ち込まない) */
     fun clear() {
         text = null
     }
@@ -522,7 +522,7 @@ fun rememberPlayer(
                 // 変換の枠が埋まって断られた (503 の言い分で見分ける)。何度かだけリクエストし直し、諦めたら「サーバが混んでいます」
                 val busy = isBusyAnswer(code, http?.responseBody)
                 val verdict = Reconnect.verdict(e.errorCode, code, busy)
-                // トークンが外された・期限切れ。繋ぐ画面へ
+                // アクセストークンが外された・期限切れ。繋ぐ画面へ
                 if (verdict == Reconnect.Verdict.Unauthorized) unauthorized()
                 val reason = "error=${e.errorCodeName}" + (code?.let { " HTTP $it" } ?: "") + (if (busy) " 変換の枠が埋まっている" else "") +
                     (e.cause?.let { " (${it.javaClass.simpleName}: ${it.message})" } ?: "") +
@@ -545,7 +545,7 @@ fun rememberPlayer(
                 if (state != Player.STATE_ENDED || !recovery.plan.endedIsLost) return
                 // 映したあとに終わったのは denpa の入れ替え。映る前に終わったのは、エンコードを断られたのかもしれない (何度か)
                 val verdict = if (recovery.pictured) Reconnect.Verdict.Retry else Reconnect.Verdict.RetryFew
-                if (!recovery.retry("ended 流れが終わった (映して ${recovery.playedSeconds()} 秒)", verdict)) error = EMPTY_STREAM_MESSAGE
+                if (!recovery.retry("ended ストリームが終わった (映して ${recovery.playedSeconds()} 秒)", verdict)) error = EMPTY_STREAM_MESSAGE
             }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = recovery.onPlayWhenReady(playWhenReady)
             override fun onRenderedFirstFrame() = recovery.onPictured()

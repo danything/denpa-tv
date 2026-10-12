@@ -21,7 +21,7 @@ import kotlin.concurrent.thread
  * エミュレータの中 (テストのプロセス) で動かす偽の denpa (`SmokeTest`)。**HTTP/1.1 を ServerSocket で数十行だけ話す** — Android に JDK の
  * `com.sun.net.httpserver` は無く、MockWebServer (OkHttp) を足すほどのことはしない (docs/libraries.md)。
  *
- * 答えるのは denpa の docs/api.md のうちアプリが叩くエンドポイントだけ。映像はテストの APK の assets (`scripts/smoke-media.sh` で作る)。
+ * 答えるのは denpa の docs/api.md のうちアプリが呼ぶエンドポイントだけ。映像はテストの APK の assets (`scripts/smoke-media.sh` で作る)。
  * 1つの要求ごとに繋ぎを閉じる (`Connection: close`)。映像は Range に答える。`api/events` (SSE) は閉じるまで開けておく。
  * 届いた要求は `requests` に `GET /api/…` の形式で溜める
  */
@@ -36,7 +36,7 @@ class FakeDenpa(
 
     /**
      * この数だけ、次のライブの要求に 503 を返す (denpa が入れ替わっている最中のつもり。アプリが待ってリクエストし直すかを見る)。
-     * ライブの映像 (live.mp4) は 10 秒で終わる — denpa が流れを閉じた (番組の境目での再エンコード・再起動) のと同じに見える
+     * ライブの映像 (live.mp4) は 10 秒で終わる — denpa がストリームを閉じた (番組の境目での再エンコード・再起動) のと同じに見える
      */
     val failLive = AtomicInteger(0)
 
@@ -137,7 +137,7 @@ class FakeDenpa(
                 json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"}]}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
             // エンコード前の録画: ファイルは元の TS だけなので、変換して流してもらう (エミュレータは MPEG-2 をデコードできない)。
-            // 流れはライブと同じ fMP4 (塊の時刻は 0 から)。CM は 4〜6 秒 (CM 飛ばしでリクエストし直す)
+            // ストリームはライブと同じ fMP4 (塊の時刻は 0 から)。CM は 4〜6 秒 (CM 飛ばしでリクエストし直す)
             path == "/api/recordings/$RAW_ID/playback" ->
                 json(out, """{"duration":10,"axis":"ts","audios":[],"offers":[{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"av1","way":"stream"},{"codec":"mpeg2","way":"raw"}]}""")
             path == "/api/recordings/$RAW_ID/chapters" ->
@@ -242,19 +242,19 @@ class FakeDenpa(
 
     /**
      * 追っかけの録画のエンコードが終わった (`done`) か、録画中に戻す。どちらも denpa と同じく `recordings` を知らせる
-     * (アプリは知らせのたびに録画の状態を聞き、一覧を読み直す)
+     * (アプリは通知のたびに録画の状態を聞き、一覧を読み直す)
      */
     fun encodeChase(done: Boolean) {
         chaseEncoded.set(done)
         pendingEvents += "event: recordings\ndata: 1\n\n"
     }
 
-    /** 次の知らせで送るもの (`yieldLive`)。知らせに繋いでいる流れが取り出して送る */
+    /** 次の通知で送るもの (`yieldLive`)。通知に繋いでいるストリームが取り出して送る */
     private val pendingEvents = ConcurrentLinkedQueue<String>()
 
     /**
      * **ライブがチューナーを録画に譲った**ことを知らせる (denpa の `yielded`)。局は [SERVICE_ID]、譲った録画は追っかけの [CHASE_ID]。
-     * ライブの流れは閉じない — 偽のライブは 10 秒で閉じるので、それを蹴られて閉じたのに見立てる
+     * ライブのストリームは閉じない — 偽のライブは 10 秒で閉じるので、それを、チューナーを取り上げられて閉じたものに見立てる
      */
     fun yieldLive() {
         val endAt = System.currentTimeMillis() + 3_600_000
@@ -262,8 +262,8 @@ class FakeDenpa(
     }
 
     /**
-     * 知らせ (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る。作り物の録画を返すときは、エンコードの進み (`encode`) も一緒に。
-     * リクエストされた知らせ (`yieldLive`) は待たずに送る
+     * 通知 (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る。作り物の録画を返すときは、エンコードの進み (`encode`) も一緒に。
+     * リクエストされた通知 (`yieldLive`) は待たずに送る
      */
     private fun events(out: OutputStream) {
         out.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n: connected\n\n".toByteArray())
@@ -395,7 +395,7 @@ class FakeDenpa(
         private const val SHOWCASE_LIVE_MS = 120_000L
         private const val HEAD_START_MS = 2_000L
         private const val PACE_MS = 200L
-        /** 知らせの流れが、リクエストされた知らせ (`yieldLive`) を見に行く間 */
+        /** 通知のストリームが、リクエストされた通知 (`yieldLive`) を見に行く間 */
         private const val EVENT_POLL_MS = 200L
         private val REASONS = mapOf(200 to "OK", 204 to "No Content", 206 to "Partial Content", 404 to "Not Found", 503 to "Service Unavailable", 416 to "Range Not Satisfiable")
     }

@@ -16,8 +16,8 @@ import java.net.URI
 /**
  * denpa の外向けの API (denpa の docs/api.md) を呼ぶ。
  *
- * **家の LAN からはトークン無しで通る** (denpa の TRUSTED_NETWORKS)。家の外の denpa (OIDC でログインする構成) では、
- * テレビを denpa に登録して受け取ったトークンを `Authorization: Bearer` で付ける (`token`、docs/pairing.md)
+ * **家の LAN からはアクセストークン無しで通る** (denpa の TRUSTED_NETWORKS)。家の外の denpa (OIDC でログインする構成) では、
+ * テレビを denpa に登録して受け取ったアクセストークンを `Authorization: Bearer` で付ける (`token`、docs/pairing.md)
  */
 class DenpaApi(
     /** 答えの形式が思っていたのと違うとき (denpa の版のずれ)。止めずに言うだけ */
@@ -25,7 +25,7 @@ class DenpaApi(
     /** 後ろに置く (`DenpaApi { token }` と書けるように) */
     private val token: () -> String? = { null },
 ) {
-    /** `api/health` (鍵は要らない)。denpa でない・繋がらなければ null */
+    /** `api/health` (アクセストークンは要らない)。denpa でない・繋がらなければ null */
     suspend fun health(base: URI): DenpaHealth? = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/health") ?: return@withContext null
         val response = try {
@@ -119,7 +119,7 @@ class DenpaApi(
     }
 
     /**
-     * 録画の状態 (`GET api/recordings/<id>`。`state` と録れた長さ)。追っかけの流れが終わったとき、録り終えて最後まで観たのかを確かめる。
+     * 録画の状態 (`GET api/recordings/<id>`。`state` と録れた長さ)。追っかけのストリームが終わったとき、録り終えて最後まで観たのかを確かめる。
      * 無い・消した (404) は null。届かない・読めなければ投げる (呼ぶ側は「分からない」と読む)
      */
     suspend fun recordingState(base: URI, id: Long): RecordingState? = withContext(Dispatchers.IO) {
@@ -137,7 +137,7 @@ class DenpaApi(
         res.ok || res.code == 404
     }
 
-    /** 鍵を付けてリクエストする。URL を組めない・届かなければ null。401 は `Unauthorized` */
+    /** アクセストークンを付けてリクエストする。URL を組めない・届かなければ null。401 は `Unauthorized` */
     private fun call(base: URI, path: String, method: String = "GET"): Http.Response? {
         val url = BaseUrl.resolve(base, path) ?: return null
         val res = try {
@@ -150,8 +150,8 @@ class DenpaApi(
     }
 
     /**
-     * トークン無しで中に入れるか (局の一覧を引いてみる)。入れれば true (家の LAN = TRUSTED_NETWORKS)、
-     * 断られれば false。denpa は家の外からのトークン無しを 401 で断る。認証を置いていない denpa や
+     * アクセストークン無しで中に入れるか (局の一覧を引いてみる)。入れれば true (家の LAN = TRUSTED_NETWORKS)、
+     * 断られれば false。denpa は家の外からのアクセストークン無しを 401 で断る。認証を置いていない denpa や
      * 一部のエンドポイントは 403 を返すことがあるので、それも「入れない」と読む
      */
     suspend fun openWithoutToken(base: URI): Boolean = withContext(Dispatchers.IO) {
@@ -187,13 +187,13 @@ class DenpaApi(
         }
     }
 
-    /** このテレビのトークンを denpa から外す (`POST api/device/logout`、204) */
+    /** このテレビのアクセストークンを denpa から外す (`POST api/device/logout`、204) */
     suspend fun logout(base: URI) = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/device/logout") ?: return@withContext
         try {
             Http.request(url, "POST", token = token())
         } catch (_: IOException) {
-            // 届かなくても、こちらはトークンを捨てる
+            // 届かなくても、こちらはアクセストークンを捨てる
         }
     }
 

@@ -7,10 +7,10 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * **ライブがチューナーを譲った録画** (denpa の知らせ `yielded` の `recording`。denpa の docs/api.md)。
+ * **ライブがチューナーを譲った録画** (denpa の通知 `yielded` の `recording`。denpa の docs/api.md)。
  *
- * denpa のライブは録画にだけ譲る。蹴られると denpa はライブの流れを閉じ、どの録画に譲ったかを知らせで流す
- * (流れの中では伝えられないので)。アプリは同じ局をリクエストし直し、**入れなかったときだけ**この録画の追っかけに切り替える
+ * denpa のライブは録画にだけ譲る。チューナーを取り上げられると denpa はライブのストリームを閉じ、どの録画に譲ったかを通知で流す
+ * (ストリームの中では伝えられないので)。アプリは同じ局をリクエストし直し、**入れなかったときだけ**この録画の追っかけに切り替える
  * (`YieldPlan`。ブラウザの denpa のライブと同じ動き。denpa の docs/stream.md「録画に譲る」)
  */
 @Serializable
@@ -37,13 +37,13 @@ object YieldPlan {
     fun chaseUrl(recordingId: Long, codec: String): String = Chase.url("api/recordings/$recordingId/chase", codec, EDGE_MS)
 
     /**
-     * リクエストし直したライブが**映らずに終わった** (エラー・空・流れが閉じた) とき、どの録画の追っかけに切り替えるか。切り替えずに
+     * リクエストし直したライブが**映らずに終わった** (エラー・空・ストリームが閉じた) とき、どの録画の追っかけに切り替えるか。切り替えずに
      * いつもどおりリクエストし直すなら null。
      *
-     * - `trying` … いまのリクエストが、蹴られたあと・「ライブに戻る」で出し直したリクエストで、まだ映っていない
+     * - `trying` … いまのリクエストが、チューナーを取り上げられたあと・「ライブに戻る」で出し直したリクエストで、まだ映っていない
      * - `returning` … 「ライブに戻る」を試している (戻れなければ、観ていた録画へ)
      * - `chased` … 観ていた録画 (「ライブに戻る」の前)
-     * - `kicked` … 知らせで来た、いま映している局が譲った録画
+     * - `kicked` … 通知で来た、いま映している局が譲った録画
      */
     fun fallback(trying: Boolean, returning: Boolean, chased: YieldedRecording?, kicked: YieldedRecording?): YieldedRecording? = when {
         !trying -> null
@@ -51,11 +51,11 @@ object YieldPlan {
         else -> kicked
     }
 
-    /** 切り替えたときの知らせ。番組名は放送の字で出すので、呼ぶ側が挟む (前・後) */
+    /** 切り替えたときの通知。番組名は放送の字で出すので、呼ぶ側が挟む (前・後) */
     const val SWITCHED_HEAD = "録画のため局を切り替えました: "
     const val SWITCHED_TAIL = " (録画中の番組を再生しています)"
 
-    /** 「ライブに戻る」を試して入れなかったときの知らせ */
+    /** 「ライブに戻る」を試して入れなかったときの通知 */
     fun refused(endAt: Long, zone: TimeZone = TimeZone.getDefault()): String =
         "録画が終わるまでライブは見られません (${SimpleDateFormat("HH:mm", Locale.JAPAN).apply { timeZone = zone }.format(Date(endAt))})"
 

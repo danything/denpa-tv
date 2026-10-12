@@ -53,7 +53,7 @@ private val NOTICE_WORDS = listOf("お知らせ", "おしらせ", "オシラセ"
 private val STORY_WORDS = listOf("あらすじ", "アラスジ", "ストーリー", "みどころ", "見どころ", "番組紹介", "作品紹介")
 private val CAST_KEYS = setOf("語り", "ナレーション", "ナレーター", "MC", "声優")
 
-/** 詳細の本文。上から読みもの → 出演者 → ほか (知らせは最後) の順に1列で出す */
+/** 詳細の本文。上から読みもの → 出演者 → ほか (通知は最後) の順に1列で出す */
 data class DetailText(
     /** 説明と番組内容・あらすじの段落。重なり (説明が番組内容の頭だけ、など) は除いてある */
     val story: List<String> = emptyList(),

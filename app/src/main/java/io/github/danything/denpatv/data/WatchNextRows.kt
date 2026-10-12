@@ -31,7 +31,7 @@ import java.io.FileNotFoundException
 class WatchNextRows(private val context: Context) {
     private val lock = Mutex()
 
-    /** 録画を閉じた。`posterUrl` は denpa のポスターの URL (トークンを付けて取り、ホームに渡せる形式で置く) */
+    /** 録画を閉じた。`posterUrl` は denpa のポスターの URL (アクセストークンを付けて取り、ホームに渡せる形式で置く) */
     suspend fun stopped(recording: Recording, positionMs: Long, durationMs: Long, finished: Boolean, posterUrl: String?, token: String?) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         guarded {
@@ -163,7 +163,7 @@ private fun Long.toIntMs(): Int = coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
 
 /**
  * 「続きを視聴」のポスターをホームに渡す。**denpa のポスターの URL はそのまま渡せない** — 家の外の denpa は
- * トークン (`Authorization: Bearer`) が要り、ホームはそれを付けられない。家の LAN でも素の HTTP をホームが読むとは限らない。
+ * アクセストークン (`Authorization: Bearer`) が要り、ホームはそれを付けられない。家の LAN でも素の HTTP をホームが読むとは限らない。
  * そこでアプリが取って `files/watchnext/<録画の id>.jpg` に置き、`content://<パッケージ>.watchnext/<id>` で読ませる。
  * 読むだけ・数の名前だけ (ほかの所は開けない)。ホームのアプリが読むので exported にしてある。出すのは録画のポスターだけ
  */
