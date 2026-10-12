@@ -221,7 +221,10 @@ class FakeDenpa(
         return "[${service(SERVICE_ID, SERVICE_NAME, 1, PROGRAM_TITLE)},${service(NEXT_SERVICE_ID, NEXT_SERVICE_NAME, 2, NEXT_PROGRAM_TITLE)}]"
     }
 
-    /** 録り終えた録画と、録っている最中の録画 (追っかけ。1時間後まで録る)。後者はエンコードが終わっていれば (`encodeChase`)、ファイルを持つ録り終えた録画 */
+    /**
+     * 録り終えた録画と、録っている最中の録画 (追っかけ。1時間後まで録る)。後者はエンコードが終わっていれば (`encodeChase`)、ファイルを持つ録り終えた録画。
+     * エンコード前の録画 [RAW_ID] は [RECORDING_ID] の1時間あと (一覧はいちばん古い録画に合わせて開くので、[RECORDING_ID] をいちばん古いままにする)
+     */
     private fun recordings(): String {
         val now = System.currentTimeMillis()
         val start = now - 86_400_000
@@ -233,7 +236,7 @@ class FakeDenpa(
         return """[{"id":$RECORDING_ID,"title":"$RECORDING_TITLE","serviceName":"$SERVICE_NAME","startAt":$start,"durationMs":10000,"watchedAt":null,
             "files":[{"source":"encoded","codec":"h264","url":"api/recordings/$RECORDING_ID/file"}]},
             {"id":$CHASE_ID,"title":"$CHASE_TITLE","serviceName":"$SERVICE_NAME","startAt":${now - 120_000},"endAt":${now + 3_600_000},$chase},
-            {"id":$RAW_ID,"title":"$RAW_TITLE","serviceName":"$SERVICE_NAME","startAt":${start - 86_400_000},"durationMs":10000,"watchedAt":null,
+            {"id":$RAW_ID,"title":"$RAW_TITLE","serviceName":"$SERVICE_NAME","startAt":${start + 3_600_000},"durationMs":10000,"watchedAt":null,
             "files":[{"source":"ts","codec":"mpeg2","url":"api/recordings/$RAW_ID/file?source=ts"}]}]"""
     }
 
