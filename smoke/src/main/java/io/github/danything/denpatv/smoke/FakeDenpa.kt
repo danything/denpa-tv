@@ -145,8 +145,8 @@ class FakeDenpa(
             // 録画の状態 (追っかけの画面がエンコードが終わったかを聞く)
             path == "/api/recordings/$CHASE_ID" ->
                 json(out, if (chaseEncoded.get()) """{"id":$CHASE_ID,"encoded":true,"state":"available"}""" else """{"id":$CHASE_ID,"encoded":false,"state":"recording"}""")
-            // エンコードが終わったあとのファイル (録画と同じ映像。色で移ったのが分かる)
-            path == "/api/recordings/$CHASE_ID/file" && chaseEncoded.get() -> media(out, "recording.mkv", "video/x-matroska", range)
+            // エンコードが終わったあとのファイル (録画と同じ映像。色で移ったのが分かる)。録画中に戻したあとの読み足しでも映せるよう、いつでも返す
+            path == "/api/recordings/$CHASE_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
             else -> respond(out, 404, "text/plain", "not found".toByteArray())
         }
     }

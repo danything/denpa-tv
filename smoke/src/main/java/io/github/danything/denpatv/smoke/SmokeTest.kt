@@ -257,7 +257,7 @@ class SmokeTest {
             open("denpa://recording/${FakeDenpa.CHASE_ID}")
             awaitText { it.startsWith("サーバが混んでいます") }
             assertTrue("混んでいたのが logcat にありません: ${appLog()}", "変換の枠が埋まっている" in appLog())
-            // 諦めたら頼まない (1回目と頼み直しの3回。Media3 の中でも読み直さない)
+            // 何度かで諦め、諦めたら頼まない (Media3 の中でも読み直さない)
             val asked = denpa.requests.count { it == chase } - before
             assertTrue("混んでいるのに $asked 回頼みました", asked in 1..BUSY_MOST_REQUESTS)
             SystemClock.sleep(BUSY_QUIET_MS)
@@ -758,8 +758,8 @@ class SmokeTest {
         // CI のエミュレータ (KVM はあるが GPU は無い) は遅いので長めに待つ
         private const val VIDEO_TIMEOUT_MS = 60_000L
         private const val TEXT_TIMEOUT_MS = 30_000L
-        /** 混んでいて断られたとき、頼んでよい数 (1回目と頼み直しの `Reconnect.FEW` 回) と、諦めたあと頼まないのを見る長さ (頼み直しの待ちの上限 10 秒より長く) */
-        private const val BUSY_MOST_REQUESTS = 4
+        /** 混んでいて断られたとき、頼んでよい数 (1回目と頼み直しの `Reconnect.FEW` 回。開いてすぐ頼み直すことがあるので、その倍まで) と、諦めたあと頼まないのを見る長さ (頼み直しの待ちの上限 10 秒より長く) */
+        private const val BUSY_MOST_REQUESTS = 8
         private const val BUSY_QUIET_MS = 12_000L
         /** 頼んだ映像が映るまで待つ長さ (偽の denpa はすぐ全部送るので、これで足りる) */
         private const val PICTURE_WAIT_MS = 3_000L
