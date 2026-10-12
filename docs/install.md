@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/danything/denpa-tv/main/scripts/ins
 
 Android は**同じ鍵で署名された APK でしか上書きインストールできません**。リリースは決まった鍵で署名して出すので、
 上書きで更新できます。debug の署名 (CI の APK、`-debug` のリリース) と行き来するときは、
-一度アンインストールしてからインストールし直してください (`adb uninstall`。設定 — 繋ぐ先 — は消えます)。
+一度アンインストールしてからインストールし直してください (`adb uninstall`。設定 — 接続先 — は消えます)。
 
 ## 2. パソコンに adb をインストールする
 

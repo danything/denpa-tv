@@ -94,16 +94,16 @@ fun isMediaContentType(contentType: String?): Boolean {
 fun playbackMessage(errorCode: Int, codeName: String, httpStatus: Int?, contentType: String?): String {
     val what = when {
         httpStatus == 404 -> "denpa に見つかりません (HTTP 404)。一覧を開き直してください"
-        httpStatus == 403 -> "denpa に断られました (HTTP 403)"
+        httpStatus == 403 -> "denpa にアクセスを拒否されました (HTTP 403)"
         httpStatus != null && httpStatus >= 500 -> "denpa が答えられません (HTTP $httpStatus)。denpa が動いているか確かめてください"
         httpStatus != null -> "denpa の答えが HTTP $httpStatus"
         errorCode == PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE ->
-            "denpa でないものが答えました${contentType?.let { " ($it)" } ?: ""}。繋ぐ先の URL を確かめてください"
+            "denpa でないものが答えました${contentType?.let { " ($it)" } ?: ""}。接続先の URL を確かめてください"
         errorCode in 2000..2999 || errorCode == PlaybackException.ERROR_CODE_TIMEOUT ->
             "denpa との繋がりが切れました。denpa とネットワークを確かめてください"
         errorCode in 3000..3999 -> "届いたものを映像として読めませんでした"
-        errorCode in 4000..4999 -> "この端末では解けませんでした"
-        errorCode in 5000..5999 -> "音を出せませんでした"
+        errorCode in 4000..4999 -> "この端末では再生できない形式です"
+        errorCode in 5000..5999 -> "音声を再生できませんでした"
         else -> null
     }
     return what?.let { "$it ($codeName)" } ?: codeName
@@ -111,4 +111,4 @@ fun playbackMessage(errorCode: Int, codeName: String, httpStatus: Int?, contentT
 
 /** denpa が映像を送らずに閉じた (`EmptyStreamException`・映る前に流れが終わった) ときに出す文 */
 const val EMPTY_STREAM_MESSAGE =
-    "denpa が映像を送らずに閉じました (チューナーの空きが無い・放送休止・焼けなかったなど)。少し待つか、局か画質を替えてください"
+    "denpa が映像を送らずに閉じました (チューナーの空きが無い・放送休止・変換できなかったなど)。少し待つか、局か画質を替えてください"

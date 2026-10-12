@@ -89,7 +89,7 @@ class StreamErrorsTest {
         )
         assertEquals("denpa の答えが HTTP 400 (ERROR_CODE_IO_BAD_HTTP_STATUS)", message(badStatus, 400))
         assertEquals(
-            "denpa でないものが答えました (text/html)。繋ぐ先の URL を確かめてください (ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE)",
+            "denpa でないものが答えました (text/html)。接続先の URL を確かめてください (ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE)",
             message(PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE, type = "text/html"),
         )
         // 回線 (切れた・途中で終わった・HttpEngine の中の失敗)
@@ -102,7 +102,7 @@ class StreamErrorsTest {
             "届いたものを映像として読めませんでした (ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED)",
             message(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED),
         )
-        assertEquals("この端末では解けませんでした (ERROR_CODE_DECODER_INIT_FAILED)", message(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED))
+        assertEquals("この端末では再生できない形式です (ERROR_CODE_DECODER_INIT_FAILED)", message(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED))
         // 当てはまらないものは番号の名前だけ
         assertEquals("ERROR_CODE_UNSPECIFIED", message(PlaybackException.ERROR_CODE_UNSPECIFIED))
     }

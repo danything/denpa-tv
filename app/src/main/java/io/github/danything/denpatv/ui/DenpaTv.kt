@@ -156,7 +156,7 @@ private suspend fun open(
                     when {
                         service != null -> repo.app.settings.setLastService(service.id)
                         // 取れなかったのに「見つからない」とは言わない
-                        repo.services.isEmpty() && !fetched -> notice("局の一覧を取れませんでした")
+                        repo.services.isEmpty() && !fetched -> notice("局の一覧を取得できませんでした")
                         else -> notice("${channel.take(NOTICE_MAX)} という局が見つかりませんでした")
                     }
                 }
@@ -169,7 +169,7 @@ private suspend fun open(
                 val fetched = if (id != null && repo.recordings.none { it.id == id }) refreshQuietly { repo.refreshRecordings() } else true
                 if (id != null && repo.recordings.any { it.id == id }) backStack.replaceAll(Main(stamp), Watch(id))
                 else {
-                    notice(if (fetched) "録画 ${link.id.take(NOTICE_MAX)} が見つかりませんでした" else "録画の一覧を取れませんでした")
+                    notice(if (fetched) "録画 ${link.id.take(NOTICE_MAX)} が見つかりませんでした" else "録画の一覧を取得できませんでした")
                     backStack.replaceAll(Main(stamp))
                 }
             }

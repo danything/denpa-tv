@@ -33,7 +33,7 @@ val MIN_DENPA = DenpaVersion(1, 50, 0)
  * **古くても止めない** (読める口は読み、無い口は出ないだけ)。言うだけ
  */
 fun denpaTooOld(version: String?): String? {
-    if (version == null) return "denpa $MIN_DENPA 以上が要ります"
+    if (version == null) return "denpa $MIN_DENPA 以上が必要です"
     val running = DenpaVersion.parse(version) ?: return null
-    return if (running < MIN_DENPA) "denpa $MIN_DENPA 以上が要ります (いまは $running)" else null
+    return if (running < MIN_DENPA) "denpa $MIN_DENPA 以上が必要です (いまは $running)" else null
 }

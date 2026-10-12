@@ -352,7 +352,7 @@ class SmokeTest {
         // ライブは選ぶとすぐ映すので、キーで下りず、設定を直に押す
         val settings = node { it.text?.toString() == "設定" }?.let(::clickable) ?: throw AssertionError("メニューが開きません: ${texts()}")
         assertTrue("「設定」を押せません", settings.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-        awaitText { it.startsWith("繋ぐ先: ${denpa.url}") }
+        awaitText { it.startsWith("接続先: ${denpa.url}") }
     }
 
     /**
