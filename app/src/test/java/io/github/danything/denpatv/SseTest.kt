@@ -6,8 +6,10 @@ import io.github.danything.denpatv.data.SseParser
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.denpaEvent
 import io.github.danything.denpatv.data.followEvents
+import io.github.danything.denpatv.data.staleServices
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -86,5 +88,12 @@ class SseTest {
             assertEquals(listOf(1_000L, 2_000L, 4_000L), waits)
             assertEquals("Bearer denpa_x", denpa.requests.take().authorization)
         }
+    }
+
+    /** 予約・録画の知らせでも局の一覧を古いとみなす (局の `now` の録画の印が変わる)。ほかの知らせでは古くしない */
+    @Test
+    fun 局の一覧を古くする知らせ() {
+        for (name in listOf("services", "programs", "reservations", "recordings")) assertTrue(name, staleServices(name))
+        for (name in listOf("tuners", "encode", "logos", "yielded")) assertFalse(name, staleServices(name))
     }
 }

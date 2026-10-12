@@ -23,6 +23,7 @@ import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.Chase
 import io.github.danything.denpatv.data.ChaseEnd
+import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingCommand
@@ -31,7 +32,11 @@ import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.chaseEnd
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.resyncAfterSpeedChange
+import io.github.danything.denpatv.data.withBusyAdvice
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 /**
@@ -43,16 +48,27 @@ import kotlinx.coroutines.launch
  *   続けて押したぶんはまとめて頼む。シークバーの長さは録れた長さ (いま − 放送の始まり)
  * - 最新の近くまで来たら、ライブのようにそのまま観つづける (勝手に飛ばない)。速くして観ていたら等速に戻す。
  *   操作の列の「最新」で最新の少し手前へ
- * - 録り終えて最後まで来たら「最後まで観ました」。エンコードが終わった録画は、次に開くとふつうのファイルで観る
+ * - 録り終えて最後まで来たら「最後まで観ました」
+ * - **観ている間にエンコードが終わったら、ファイルの再生へ移る** (`onEncoded`。位置は引き継ぐ)。denpa の `recordings` の知らせのたびに
+ *   `GET api/recordings/<id>` で確かめる (denpa の docs/api.md「録画の状態」。ブラウザの追っかけと同じ聞き方)
  * - **切れたら (エラー・録り終える前に流れが閉じた・10 秒進まない) 居た場所から頼み直す** (`Recovery`。ライブと同じ決まり)
  * - H.264 / AV1 を denpa がエンコードできないと (ffmpeg が降りた・録画を読めない)、空の 200 が返る。映る前に終わった・空だったらそう出す
+ * - H.264 / AV1 は denpa の変換の枠を使う。埋まっていると 503 で断られる (`Reconnect.Verdict.Busy`)。何度かだけ頼み直し、
+ *   諦めたら「サーバが混んでいます」と出して、MPEG-2 をデコードできる端末なら MPEG-2 を勧める (`withBusyAdvice`)
  *
  * キーは録画の再生と同じ (左右で 10 秒、決定で止める・動かす、下でシークバー、上・Menu で操作の列、決定の長押しと情報キーで詳細)。
  * 止めたまま操作バーが閉じたら、録画の再生と同じく「一時停止」と位置のバーを出す
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
+fun ChasePlayerScreen(
+    repo: Repository,
+    recording: Recording,
+    onLeave: () -> Unit,
+    onUnauthorized: () -> Unit,
+    /** エンコードが終わった。読み直した録画 (続きの位置はいまの位置) をファイルの再生で開く */
+    onEncoded: (Recording) -> Unit,
+) {
     val chase = recording.chase ?: return Centered("追っかけ再生できません")
     val quality = rememberLiveQuality(repo) ?: return
     val buffering = quality.buffering
@@ -84,6 +100,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     val scope = rememberCoroutineScope()
     /** エンコードを断られた。頼み直すまで、ふつうのエラーの代わりにそう出す */
     var refused by remember { mutableStateOf(false) }
+    /** 追っかけの口が 404 を返した (録画が無い・まだ何も録れていない)。頼み直すまで、ふつうのエラーの代わりに `Chase.NOT_FOUND` を出す */
+    var notFound by remember { mutableStateOf(false) }
     // 一覧の「録画中」は古くなる (録り終える・エンコードが終わる)。戻ったら読み直してもらう
     DisposableEffect(Unit) { onDispose { repo.recordingsStale = true } }
 
@@ -164,6 +182,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         caughtUp = false
         started = false
         refused = false
+        notFound = false
         recovery.requested()
         player.load(url, quality.mime)
         codec.requested(quality)
@@ -294,7 +313,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
             override fun onPlayerError(e: PlaybackException) {
                 val code = (e.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
                 when {
-                    code == 404 -> flash("エンコードが終わったようです。一覧から開き直してください")
+                    // 繋ぎ直さずに止まる (`Reconnect.Verdict.GiveUp`)。ふつうの 404 の文の代わりに、追っかけの 404 の意味で言う
+                    code == 404 -> notFound = true
                     // エンコードを断られた (空の返事)。繋ぎ直さずにそう出す
                     Chase.refused(started, baked = quality != LiveQuality.Raw, httpStatus = code, errorCode = e.errorCode) -> {
                         refused = true
@@ -305,6 +325,42 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         }
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
+    }
+
+    /*
+     * **エンコードが終わったら、ファイルの再生へ移る** (denpa の docs/api.md「録画の状態」)。ファイルなら denpa に変換させずに済み、
+     * CM 飛ばし・チャプターも揃う。`recordings` の知らせ (とその間に切れていた知らせの繋ぎ直し) のたびに聞く — ブラウザの追っかけと同じ。
+     * 知らせは続けて来るので、まとめて1回 (1 秒待つ)。終わっていたら一覧を読み直して、ファイルの載った録画を受け取る
+     */
+    /** エンコードが終わって、ファイルの再生へ渡す録画。移れる合間 (下) を待っている */
+    var encodedAs by remember { mutableStateOf<Recording?>(null) }
+    LaunchedEffect(Unit) {
+        repo.events.filter { it == DenpaEvent.Opened || it == DenpaEvent.Changed("recordings") }.collectLatest {
+            if (encodedAs != null) return@collectLatest
+            delay(1_000)
+            val fresh = try {
+                if (!repo.api.encoded(repo.base, recording.id)) return@collectLatest
+                repo.refreshRecordings()
+                repo.recordings.firstOrNull { it.id == recording.id }
+            } catch (_: Unauthorized) {
+                return@collectLatest onUnauthorized()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 一覧が読めない (denpa の入れ替えの最中)。次の知らせで聞き直す
+                return@collectLatest
+            }
+            if (Chase.handOff(fresh, repo.app.decoders)) encodedAs = fresh
+        }
+    }
+    /*
+     * 移るのは**観ている最中だけ** (止めている・操作バーや詳細を開いている・最後まで観た・離れる途中・裏に回っている間は待つ)。
+     * 開いているものが急に消えたり、止めていたのに動き出したりしないように。閉じたら・動かしたら移る。位置はいまの位置を続きとして渡す
+     */
+    LaunchedEffect(encodedAs, playing, bar, details, ended, deleted, ui.leaving, stoppedAt) {
+        val fresh = encodedAs ?: return@LaunchedEffect
+        if (!playing || bar != null || details || ended || deleted || ui.leaving || stoppedAt != null) return@LaunchedEffect
+        onEncoded(fresh.copy(resumeMs = position()))
     }
 
     /**
@@ -357,7 +413,13 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
 
     // 操作バー (終わり・止めている間・操作の列) を出している間は、知らせを操作バーのタイトルに添える (録画の再生と同じ)
     val covered = ended || bar != null || !playing
-    PlayerFrame(player, overlay, if (refused) REFUSED else error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, covered = covered, above = {
+    val shownError = when {
+        refused -> REFUSED
+        error == null -> null
+        notFound -> Chase.NOT_FOUND
+        else -> withBusyAdvice(error, quality, repo.app.decoders)
+    }
+    PlayerFrame(player, overlay, shownError, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, covered = covered, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました (録画は終わっています)",

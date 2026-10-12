@@ -15,6 +15,7 @@ import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.denpaTooOld
 import io.github.danything.denpatv.data.followEvents
+import io.github.danything.denpatv.data.staleServices
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -71,7 +72,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
         incoming.tryEmit(DenpaEvent.Changed("recordings"))
     }
 
-    /** 局が古くなった (denpa から `services` / `programs` が来た)。ライブを開いたら読み直す */
+    /** 局が古くなった (denpa から `services` / `programs` / `reservations` / `recordings` が来た。`staleServices`)。ライブを開いたら読み直す */
     var servicesStale = false
 
     /**
@@ -154,9 +155,9 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
                 servicesStale = true
                 launch { checkVersion() }
             }
-            is DenpaEvent.Changed -> when (event.name) {
-                "recordings" -> recordingsStale = true
-                "services", "programs" -> servicesStale = true
+            is DenpaEvent.Changed -> {
+                if (event.name == "recordings") recordingsStale = true
+                if (staleServices(event.name)) servicesStale = true
             }
             is DenpaEvent.Encode -> {
                 encodingExpiry.remove(event.recordingId)?.cancel()

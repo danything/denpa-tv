@@ -67,6 +67,8 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.metadata.Chapter
+import io.github.danything.denpatv.data.BUSY_MESSAGE
+import io.github.danything.denpatv.data.BusyLoadErrorPolicy
 import io.github.danything.denpatv.data.EMPTY_STREAM_MESSAGE
 import io.github.danything.denpatv.data.EmptyGuardDataSource
 import io.github.danything.denpatv.data.EmptyStreamException
@@ -76,6 +78,7 @@ import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.Http
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.Reconnect
+import io.github.danything.denpatv.data.isBusyAnswer
 import io.github.danything.denpatv.data.isMediaContentType
 import io.github.danything.denpatv.data.playbackMessage
 import androidx.media3.ui.compose.PlayerSurface
@@ -142,7 +145,11 @@ fun buildPlayer(
     dualMono: DualMonoProcessor,
 ): ExoPlayer =
     ExoPlayer.Builder(context, DualMonoRenderersFactory(context, dualMono))
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory(context, engine, token), clock))
+        .setMediaSourceFactory(
+            DefaultMediaSourceFactory(dataSourceFactory(context, engine, token), clock)
+                // 変換の枠が埋まって断られたら、Media3 の中では読み直さない (繋ぎ直しは `Recovery` が何度かだけ)
+                .setLoadErrorHandlingPolicy(BusyLoadErrorPolicy()),
+        )
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(buffering.minMs, buffering.maxMs, buffering.startMs, buffering.afterRebufferMs)
@@ -510,22 +517,28 @@ fun rememberPlayer(
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) {
-                val code = (e.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
-                val verdict = Reconnect.verdict(e.errorCode, code)
+                val http = e.cause as? HttpDataSource.InvalidResponseCodeException
+                val code = http?.responseCode
+                // 変換の枠が埋まって断られた (503 の言い分で見分ける)。何度かだけ頼み直し、諦めたら「サーバが混んでいます」
+                val busy = isBusyAnswer(code, http?.responseBody)
+                val verdict = Reconnect.verdict(e.errorCode, code, busy)
                 // トークンが外された・期限切れ。繋ぐ画面へ
                 if (verdict == Reconnect.Verdict.Unauthorized) unauthorized()
-                val reason = "error=${e.errorCodeName}" + (code?.let { " HTTP $it" } ?: "") +
+                val reason = "error=${e.errorCodeName}" + (code?.let { " HTTP $it" } ?: "") + (if (busy) " 変換の枠が埋まっている" else "") +
                     (e.cause?.let { " (${it.javaClass.simpleName}: ${it.message})" } ?: "") +
                     " 映して ${recovery.playedSeconds()} 秒"
                 if (verdict != Reconnect.Verdict.Unauthorized && recovery.retry(reason, verdict)) {
                     error = null
                     return
                 }
-                error = if (e.cause is EmptyStreamException) {
-                    EMPTY_STREAM_MESSAGE
-                } else {
-                    val type = (e.cause as? HttpDataSource.InvalidContentTypeException)?.contentType
-                    PLAYBACK_ERROR_PREFIX + playbackMessage(e.errorCode, e.errorCodeName, code, type)
+                error = when {
+                    e.cause is EmptyStreamException -> EMPTY_STREAM_MESSAGE
+                    // 短く。勧め (MPEG-2) は画質の分かる画面が足す (`withBusyAdvice`)
+                    busy -> BUSY_MESSAGE
+                    else -> {
+                        val type = (e.cause as? HttpDataSource.InvalidContentTypeException)?.contentType
+                        PLAYBACK_ERROR_PREFIX + playbackMessage(e.errorCode, e.errorCodeName, code, type)
+                    }
                 }
             }
             override fun onPlaybackStateChanged(state: Int) {

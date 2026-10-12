@@ -41,6 +41,7 @@ import io.github.danything.denpatv.data.liveCommand
 import io.github.danything.denpatv.data.neighbor
 import io.github.danything.denpatv.data.number
 import io.github.danything.denpatv.data.remoteKeyService
+import io.github.danything.denpatv.data.withBusyAdvice
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
@@ -67,7 +68,8 @@ import kotlinx.coroutines.launch
  * - **切れたら (エラー・denpa が流れを閉じた・10 秒進まない) 同じ局を頼み直す** (`Recovery`)。前の絵を残し、1.5 秒たったら
  *   回るものと「繋ぎ直しています」。待ちは 1 秒から倍々で 10 秒まで、回数の上限は無い。局が無い (404) などは理由を出して止める
  * - **録画にチューナーを譲ったら** (denpa の知らせ `yielded`)、同じ局を頼み直し、映らなかったときだけ譲った録画の追っかけに切り替えて
- *   知らせを出しっぱなしにする。メニューは「ライブに戻る」(頼み直しを試し、だめなら追っかけに戻る) と局の列だけ (`YieldPlan`)
+ *   知らせを出しっぱなしにする。メニューは「ライブに戻る」(頼み直しを試し、だめなら追っかけに戻る) と画質と局の列だけ (`YieldPlan`)。
+ *   追っかけは denpa の変換の枠を使うので、埋まっていれば断られる。何度かだけ頼み直し、諦めたら「サーバが混んでいます」(MPEG-2 を勧める)
  * - アプリが裏に回ったら (ホーム・別のアプリ) 止めて denpa から降りる (チューナーを空ける)。戻ったら同じ局を映し直す
  * - **決定の長押しと情報キーで、いま放送中の番組の詳細** (`LiveDetailDialog`。録画の詳細と同じもの)。そこからも録画できる
  * - 何も開いていないときの戻るは、メニューの画面へ (「ライブ」に合う)
@@ -229,6 +231,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             trying = false
             recovery.requested()
             player.load(url, quality.mime)
+            // 画質はメニューで替えられる (変換の枠が埋まって断られたら MPEG-2 へ)。替えたら、映ったかを見る
+            codec.requested(quality)
             return@LaunchedEffect
         }
         if (!baked.ready) return@LaunchedEffect
@@ -475,7 +479,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
          * 録画に譲っている間は、その知らせを出しっぱなしにする (ほかの知らせが出ている間はそちら)
          */
         (overlay ?: chasing?.let(::yieldNotice)).takeUnless { detail },
-        error,
+        // 譲った録画の追っかけは変換の枠を使う。埋まって断られたら MPEG-2 を勧める (ライブそのものは断られない)
+        withBusyAdvice(error, quality, repo.app.decoders),
         active = menu == null && !detail && !leaving,
         // `::run` (関数の参照) にしない。Compose が参照を覚えたままにして、前の局から送ってしまう
         onKey = { event ->
@@ -504,8 +509,15 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                     menu = null
                 }
             }
+            // 画質の列 (どちらのメニューにも出す)。選んだらすぐ入れる (映るまでは題が「… に切り替え中」)
+            val qualities = "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
+                Control(choice.label, on = choice == codec.chosen, icon = if (choice == codec.chosen) R.drawable.ic_quality else null) {
+                    codec.choose(choice)
+                }
+            }
             /*
-             * 録画に譲っている間のメニューは「ライブに戻る」だけ (開いたらそこに合う)。下の局の列から別の局も選べる。
+             * 録画に譲っている間のメニューは「ライブに戻る」(開いたらそこに合う) と画質だけ。画質は、追っかけが変換の枠が埋まって
+             * 断られたときに MPEG-2 へ替えるため。下の局の列から別の局も選べる。
              * 題は観ている録画の局。何を観ているかは知らせ (題の2行目に添わる) が言う
              */
             if (chasing != null) {
@@ -514,7 +526,10 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                         appendBroadcast(chasing.recording.serviceName)
                         append("  録画中")
                     },
-                    groups = listOf("" to listOf(Control(YieldPlan.BACK_TO_LIVE, icon = R.drawable.ic_live, initial = true) { backToLive() })),
+                    groups = listOf(
+                        "" to listOf(Control(YieldPlan.BACK_TO_LIVE, icon = R.drawable.ic_live, initial = true) { backToLive() }),
+                        qualities,
+                    ),
                     focusActions = start == MenuStart.Controls,
                     onActivity = { touched = System.nanoTime() },
                     onUp = { menu = null },
@@ -524,12 +539,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             } else ControlBar(
                 describe(current, codec.label),
                 groups = listOf(
-                    "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
-                        // 選んだらすぐ入れる (映るまでは題が「… に切り替え中」)
-                        Control(choice.label, on = choice == codec.chosen, icon = if (choice == codec.chosen) R.drawable.ic_quality else null) {
-                            codec.choose(choice)
-                        }
-                    },
+                    qualities,
                     "" to tracks.controls() + baked.controls(),
                     "" to listOf(recordControl(now) { record(fromDetail = false) }),
                 ),

@@ -120,12 +120,17 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
                 val leave = { backStack.removeAt(backStack.lastIndex); Unit }
                 // 録画中は追っかけ (伸びている元のTSを denpa に流してもらう)、録り終えたものはファイルで
                 // 「最初から」は続きの位置を持たないものとして開く (頭から流し、観た位置はいつもどおり預ける)
-                val recording = remember(key) {
-                    repo.recordings.firstOrNull { it.id == key.recordingId }?.let { if (key.fromStart) it.copy(resumeMs = null) else it }
+                // 追っかけの途中でエンコードが終わったら、読み直した録画 (続きはそこまで観た位置) に替えてファイルで続ける
+                val opened = remember(key) {
+                    mutableStateOf(repo.recordings.firstOrNull { it.id == key.recordingId }?.let { if (key.fromStart) it.copy(resumeMs = null) else it })
                 }
+                val recording = opened.value
                 when {
                     recording == null -> Centered("録画が見つかりません")
-                    recording.chasing -> ChasePlayerScreen(repo, recording, leave, unauthorized)
+                    recording.chasing -> ChasePlayerScreen(repo, recording, leave, unauthorized) { encoded ->
+                        notice(context, "エンコードが終わったので、ファイルで再生します")
+                        opened.value = encoded
+                    }
                     else -> RecordingPlayerScreen(repo, recording, leave, unauthorized)
                 }
             }

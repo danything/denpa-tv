@@ -2,7 +2,9 @@ package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.AudioTrack
 import io.github.danything.denpatv.data.Chase
+import io.github.danything.denpatv.data.Decoders
 import io.github.danything.denpatv.data.Recording
+import io.github.danything.denpatv.data.RecordingFile
 import io.github.danything.denpatv.data.audioTrack
 import io.github.danything.denpatv.data.chasing
 import io.github.danything.denpatv.data.rememberedAudio
@@ -69,5 +71,21 @@ class ChaseTest {
         assertNull(rememberedAudio(named, null))
         val bare = listOf(audioTrack(0, null, "jpn"), audioTrack(1, null, "jpn"))
         assertNull(rememberedAudio(bare, "音声 2 (日本語)"))
+    }
+
+    /** エンコードが終わった録画をファイルの再生へ渡すのは、録り終えていて開けるファイルがあるときだけ (一覧が追いついていなければ待つ) */
+    @Test
+    fun エンコードが終わったらファイルの再生へ渡す() {
+        val decoders = Decoders(av1 = false, h264 = true, mpeg2 = false)
+        val encoded = Recording(
+            id = 12, title = "番組", startAt = 0,
+            files = listOf(RecordingFile("encoded", "h264", "api/recordings/12/file?source=encoded")),
+        )
+        assertTrue(Chase.handOff(encoded, decoders))
+        // 一覧がまだ録画中のまま・ファイルが無い・開けるファイルが無い・一覧から消えた
+        assertFalse(Chase.handOff(encoded.copy(recording = true, chase = "api/recordings/12/chase"), decoders))
+        assertFalse(Chase.handOff(encoded.copy(files = emptyList()), decoders))
+        assertFalse(Chase.handOff(encoded.copy(files = listOf(RecordingFile("encoded", "av1", "x"))), decoders))
+        assertFalse(Chase.handOff(null, decoders))
     }
 }
