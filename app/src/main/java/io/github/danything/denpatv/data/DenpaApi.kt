@@ -9,6 +9,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import java.io.IOException
 import java.net.URI
 
@@ -89,11 +90,45 @@ class DenpaApi(
 
     /**
      * 録り終えたか (`GET api/recordings/<id>` の `state`。denpa の docs/api.md「録画の状態」)。追っかけの画面が、ファイルの再生へ移れるかを聞く入口。
-     * 録画中・録画が無い (404)・届かない・読めないは false (移らずに追っかけを続ける)。エンコード済みのファイルがあるかは、呼ぶ側が一覧の `files` で見る
+     * 録画中・録画が無い (404)・届かない・読めないは false (移らずに追っかけを続ける)。エンコード済みのファイルで観られるかは、呼ぶ側が `playback` で見る (`Chase.handOff`)
      */
     suspend fun recordingFinished(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
         val res = call(base, "api/recordings/$id")?.takeIf { it.ok } ?: return@withContext false
         parseFinished(res.text(), warn)
+    }
+
+    /**
+     * 録画を何で観られるか (`GET api/recordings/<id>/playback`)。観られない (404。録画中・ファイルが無い・口の無い古い denpa) は `Missing`、
+     * 届かない・読めないは `Failed`
+     */
+    suspend fun playback(base: URI, id: Long): PlaybackLookup = withContext(Dispatchers.IO) {
+        val res = call(base, PlaybackPaths.info(id)) ?: return@withContext PlaybackLookup.Failed("denpa に接続できません")
+        if (res.code == 404) return@withContext PlaybackLookup.Missing
+        if (!res.ok) return@withContext PlaybackLookup.Failed("denpa が答えません (${res.code})")
+        runCatching { lenientJson.decodeFromString(PlaybackInfo.serializer(), res.text()) }.getOrNull()?.let { PlaybackLookup.Found(it) }
+            ?: PlaybackLookup.Failed("denpa の応答を読めません").also { warn("playback の答えを読めません (denpa の版のずれ?)") }
+    }
+
+    /**
+     * 録画のチャプター (`GET api/recordings/<id>/chapters`。時刻は `playback` の物差し)。無い・届かない・読めないは空
+     * (CM 飛ばしが効かないだけで、観るのは止めない)
+     */
+    suspend fun chapters(base: URI, id: Long): List<ChapterMark> = withContext(Dispatchers.IO) {
+        val res = call(base, PlaybackPaths.chapters(id))?.takeIf { it.ok } ?: return@withContext emptyList()
+        parsePlaybackChapters(res.text())
+    }
+
+    /**
+     * 録画の状態 (`GET api/recordings/<id>`。`state` と録れた長さ)。追っかけの流れが終わったとき、録り終えて最後まで観たのかを確かめる。
+     * 無い・消した (404) は null。届かない・読めなければ投げる (呼ぶ側は「分からない」と読む)
+     */
+    suspend fun recordingState(base: URI, id: Long): RecordingState? = withContext(Dispatchers.IO) {
+        val url = BaseUrl.resolve(base, "api/recordings/$id") ?: throw IOException("URL を組み立てられません")
+        val res = Http.request(url, token = token())
+        if (res.code == 401) throw Unauthorized(url)
+        if (res.code == 404) return@withContext null
+        if (!res.ok) throw IOException("${res.code} $url")
+        parseRecordingState(res.text(), warn) ?: throw IOException("録画の状態を読めません: $url")
     }
 
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。もう無い (404) のも消せたとみなして true。録画中 (409) などは false */
@@ -211,14 +246,24 @@ sealed interface TokenResult {
  * `state` が `recorded` (録り終えた) か `available` (ファイルが揃った) なら終わった。`recording`・`failed` は終わっていない扱い。
  *
  * **`encoded` は見ない。** denpa は「エンコードしない」設定の録画でも、元の TS をライブラリに置くので `encoded` が true になる
- * (`available` も同じ)。エンコードが終わったかは、読み直した一覧にエンコード済みのファイルがあるかで決める (`Chase.handOff`)。
+ * (`available` も同じ)。エンコードが終わったかは、観方 (`playback`) でエンコード済みのファイルを開くかで決める (`Chase.handOff`)。
  * `state` が読めなければ版のずれとして `warn` に書き、終わっていないとみなす
  */
-fun parseFinished(body: String, warn: (String) -> Unit = {}): Boolean {
+fun parseFinished(body: String, warn: (String) -> Unit = {}): Boolean = parseRecordingState(body, warn)?.finished == true
+
+/**
+ * `api/recordings/<id>` の答えを読む。`state` が読めなければ版のずれとして `warn` に書き、null。
+ * `durationMs` は一覧と同じ録れた長さ (denpa v1.55.0 から。無ければ null)
+ */
+fun parseRecordingState(body: String, warn: (String) -> Unit = {}): RecordingState? {
     val json = runCatching { lenientJson.parseToJsonElement(body).jsonObject }.getOrNull()
     val state = json?.get("state")?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }
-    if (state == null) warn("録画の状態の形が違います (denpa の版が違う?): ${body.take(200)}")
-    return state == "recorded" || state == "available"
+    if (state == null) {
+        warn("録画の状態の形が違います (denpa の版が違う?): ${body.take(200)}")
+        return null
+    }
+    val duration = json?.get("durationMs")?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
+    return RecordingState(state, duration)
 }
 
 /** `api/health` の答え。`version` はリリースのタグ (`v1.44.0`。手元・develop は `dev`)、版を返さないとても古い denpa では null */

@@ -24,11 +24,13 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 
 ### Media3 で何が再生できるか
 
-- **fragmented MP4 (H.264 / AV1)** — denpa のライブ (`api/services/<id>/live`) と追っかけ (`api/recordings/<id>/chase`)。ExoPlayer の
-  `FragmentedMp4Extractor` が読む。流しっぱなし (長さ不明) でもそのまま再生できる
+- **fragmented MP4 (H.264 / AV1)** — denpa のライブ (`api/services/<id>/live`)・追っかけ (`api/recordings/<id>/chase`)・
+  録画を流してもらうとき (`api/recordings/<id>/stream`)。ExoPlayer の `FragmentedMp4Extractor` が読む。流しっぱなし (長さ不明) でもそのまま再生できる。
+  録画の流れは、denpa が塊の時刻 (tfdt) を録画の時刻のまま書く。`FragmentedMp4Extractor` にも自分の `TimestampAdjuster` を渡して頭を 0 に寄せ、
+  寄せ幅から録画の時刻に戻す (`TsClock` の `mp4`。下の TS の字幕の時計と同じ仕組み。頼んだ位置ちょうどからは始まらないので、頼んだ位置では数えない)
 - **Matroska (.mkv)** — denpa のエンコード済みの録画。`MatroskaExtractor` が読む。字幕 (`S_ARIBSUB`、放送の字幕のまま) は読まないので、
   denpa の `captions.json` (下の文字の配置) で出す
-- **MPEG-TS (MPEG-2)** — エンコード前の録画と、ライブ・追っかけの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
+- **MPEG-TS (MPEG-2)** — 録画の元の TS (`stream?codec=mpeg2`。録画の時刻の 0 にあたる PTS を `X-Denpa-Origin` で受け取る) と、ライブ・追っかけの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
 - **ARIB の字幕は Media3 ではデコードしない。** Media3 に ARIB の字幕の読み手は無く、libaribcaption を NDK で抱えるのは重い。
   denpa がデコードして置き場所まで決めた**文字の配置** (放送の PTS 付き) を受け取り、android の Canvas で描いて重ねる
   (`ui/RawCaptions.kt`・`ui/TextCaptions.kt`。描き方は denpa のブラウザの `caption-draw.ts` に揃える。字は丸ゴシックを APK に入れて
@@ -38,8 +40,8 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
   PES を自分で覗いて最初の PTS を拾う手もあるが、Media3 がどの PES の PTS を 0 にしたかと食い違いうる (映像と音声で数百 ms 違う)。
   寄せ幅そのものを読めばシーク (寄せ直し) も一周 (Media3 は伸ばし続ける) もそのまま合う
 - **チャプター** — Matroska の Chapters を `Chapter` として track の `Metadata` に出す (1.11.0 から。
-  [リリースノート](https://github.com/androidx/media/blob/release/RELEASENOTES.md))。CM 飛ばしはこれを読むので、
-  自前の EBML 読みも denpa の API も要らない
+  [リリースノート](https://github.com/androidx/media/blob/release/RELEASENOTES.md))。エンコード済みのファイルの CM 飛ばしはこれを読むので、
+  自前の EBML 読みは要らない。denpa に流してもらう録画 (エンコード前など) は流れにチャプターが無いので、denpa の `api/recordings/<id>/chapters` を読む
 - **AV1 のソフトデコードは入れない。** Media3 1.9 から dav1d ベースの `decoder_av1` があるが、
   **Maven には出ておらず、NDK でソースからビルドする決まり** ([decoder_av1 の README](https://github.com/androidx/media/tree/release/libraries/decoder_av1)、
   [Media3 1.9.0 の紹介](https://android-developers.googleblog.com/2025/12/media3-190-whats-new.html))。
@@ -71,7 +73,7 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 アプリで1つを使い回す (`DenpaApp.engineHttp`)。
 
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
-読み 30 秒と書いてある)。叩くのは局と録画の一覧・番組の中身 (`detail`・`api/programs/<id>`)・観た位置・いまの番組の録画・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
+読み 30 秒と書いてある)。叩くのは局と録画の一覧・録画の観方とチャプターと状態 (`playback`・`chapters`・`api/recordings/<id>`)・番組の中身 (`detail`・`api/programs/<id>`)・観た位置・いまの番組の録画・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
 元の TS の字幕 (`api/…/captions`、長さ付きのこまが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。エンコード済みの録画の字幕 (`captions.json`) も同じ。
 
 → **アプリの中のアップデート (GitHub のリリースを引く・APK を取る) も HttpURLConnection** (`data/Update.kt`)。入れるのは OS の

@@ -9,7 +9,7 @@ import android.os.Build
  * この端末がデコードできる映像の形。`*Hardware` はハードウェアのデコーダがあるか。
  *
  * **ライブはハードでデコードできるものから選ぶ。** ソフトの AV1 / MPEG-2 デコーダを持つ端末もあるが、
- * 1080i を流しっぱなしでデコードするには非力なことが多い。録画はデコードできさえすれば開く (`pickFile`)
+ * 1080i を流しっぱなしでデコードするには非力なことが多い。録画はデコードできさえすれば開く (`pickPlayback`)
  */
 data class Decoders(
     val av1: Boolean,
@@ -77,21 +77,5 @@ enum class LiveQuality(val codec: String, val label: String, val mime: String) {
             val choices = available(decoders)
             return choices.firstOrNull { it.name == saved } ?: if (Raw in choices) Raw else H264
         }
-    }
-}
-
-/**
- * 録画のどのファイルを開くか。デコードできる中で軽いほうから — AV1、H.264、元の TS (MPEG-2) の順。
- * デコードできるものが無ければ null
- */
-fun pickFile(files: List<RecordingFile>, decoders: Decoders): RecordingFile? {
-    fun can(codec: String) = when (codec) {
-        "av1" -> decoders.av1
-        "h264" -> decoders.h264
-        "mpeg2" -> decoders.mpeg2
-        else -> false
-    }
-    return listOf("av1", "h264", "mpeg2").firstNotNullOfOrNull { codec ->
-        files.firstOrNull { it.codec == codec && can(codec) }
     }
 }

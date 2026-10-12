@@ -295,7 +295,7 @@ class SmokeTest {
 
     /**
      * 追っかけも、録り終える前に流れが閉じたら (denpa の入れ替え) 居た場所から頼み直す。録り終えたのかは denpa に聞いて決めるので、
-     * 録画の一覧を読み直してから頼み直す。「最後まで観ました」にはしない
+     * 録画の状態 (`api/recordings/<id>`) を聞いてから頼み直す。「最後まで観ました」にはしない
      */
     @Test
     fun chaseReconnect() = watching {
@@ -367,6 +367,24 @@ class SmokeTest {
             "詳細を閉じたら止めた位置のバーが出ていません (動き出した・画面ごと戻った?): ${windowTexts()}",
             poll(TEXT_TIMEOUT_MS) { windowTexts().any { it.startsWith("一時停止  ") } },
         )
+    }
+
+    /**
+     * エンコード前の録画 (元の TS だけ) は、denpa に変換して流してもらう (`playback` で選ぶ。エミュレータは MPEG-2 をデコードできない)。
+     * チャプターは denpa から読み、CM (4〜6 秒) に来たら CM の終わりから頼み直して飛ぶ
+     */
+    @Test
+    fun recordingStream() = watching {
+        open("denpa://recording/${FakeDenpa.RAW_ID}")
+        awaitVideo(LIVE_COLOR)
+        assertRequested("GET /api/recordings/${FakeDenpa.RAW_ID}/playback")
+        val chapters = "GET /api/recordings/${FakeDenpa.RAW_ID}/chapters"
+        assertTrue("チャプターを読みません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { chapters in denpa.requests })
+        val stream = "GET /api/recordings/${FakeDenpa.RAW_ID}/stream"
+        assertTrue("CM で頼み直しません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == stream } >= 2 })
+        assertTrue("ファイルを開きました (元の TS は流してもらうはず)", "GET /api/recordings/${FakeDenpa.RAW_ID}/file" !in denpa.requests)
+        press(KeyEvent.KEYCODE_BACK)
+        awaitText { it == FakeDenpa.RECORDING_TITLE }
     }
 
     /** ライブの詳細が開いている (番組の説明と「閉じる」) */
