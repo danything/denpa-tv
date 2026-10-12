@@ -52,7 +52,7 @@ fun denpaEvent(event: SseEvent, warn: (String) -> Unit = {}): DenpaEvent? = when
         val id = body?.get("recordingId")?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
         val percent = body?.get("percent")?.let { runCatching { it.jsonPrimitive.doubleOrNull }.getOrNull() }
         if (id == null || percent == null) {
-            warn("encode の形が違います (denpa の版が違う?): ${event.data.take(200)}")
+            warn("encode の形式が違います (denpa の版が違う?): ${event.data.take(200)}")
             null
         } else {
             // 0..1 (名前に反して百分率ではない。denpa の docs/api.md)
@@ -62,8 +62,8 @@ fun denpaEvent(event: SseEvent, warn: (String) -> Unit = {}): DenpaEvent? = when
     "yielded" -> runCatching { lenientJson.decodeFromString(YieldedBody.serializer(), event.data) }.fold(
         onSuccess = { DenpaEvent.Yielded(it.serviceId, it.recording) },
         onFailure = {
-            // 読めなくても止めない (譲ったときに追っかけへ切り替わらず、頼み直し続けるだけ)
-            warn("yielded の形が違います (denpa の版が違う?): ${event.data.take(200)}")
+            // 読めなくても止めない (譲ったときに追っかけへ切り替わらず、リクエストし直し続けるだけ)
+            warn("yielded の形式が違います (denpa の版が違う?): ${event.data.take(200)}")
             null
         },
     )

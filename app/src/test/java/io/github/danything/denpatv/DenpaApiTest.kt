@@ -96,7 +96,7 @@ class DenpaApiTest {
     }
 
     /**
-     * 未視聴は `watchedAt` も `resumeMs` も null のもの。形が違っても一覧は読む
+     * 未視聴は `watchedAt` も `resumeMs` も null のもの。形式が違っても一覧は読む
      */
     @Test
     fun 未視聴を見分ける() = runTest {
@@ -150,7 +150,7 @@ class DenpaApiTest {
         assertNull(api.health(BaseUrl.normalize("http://127.0.0.1:1")!!))
     }
 
-    /** 番組の中身は別の口。無い (404) なら null で、画面は出さないだけ */
+    /** 番組の中身は別のエンドポイント。無い (404) なら null で、画面は出さないだけ */
     @Test
     fun 番組の中身を読み_無ければ_null() = runTest {
         val base = BaseUrl.normalize(denpa.url())!!
@@ -187,7 +187,7 @@ class DenpaApiTest {
         // encoded は見ない (録り終えたかは state だけで決める)
         assertFalse(parseFinished("""{"id":12,"encoded":true,"state":"recording"}""", warnings::add))
         assertTrue(warnings.isEmpty())
-        // 形が違う (版のずれ): 言うだけで、終わっていないとみなす
+        // 形式が違う (版のずれ): 言うだけで、終わっていないとみなす
         assertFalse(parseFinished("""{"encoded":true}""", warnings::add))
         assertFalse(parseFinished("<html></html>", warnings::add))
         assertEquals(2, warnings.size)

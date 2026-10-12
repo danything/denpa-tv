@@ -56,7 +56,7 @@ class ChaptersTest {
         // 過ぎた CM・飛ばした (戻って観に行った) CM は入れない
         assertEquals(listOf(900_000L - CM_LEAD_MS), cmHopPoints(chapters, 200_000, emptySet(), CM_LEAD_MS).map { it.first })
         assertEquals(listOf(900_000L - CM_LEAD_MS), cmHopPoints(chapters, 0, setOf(60_000L), CM_LEAD_MS).map { it.first })
-        // もう手前の幅に入っているもの・中に居るものは今すぐ飛ぶほう (cmSkipTarget)
+        // もう手前の幅に入っているもの・中にいるものは今すぐ飛ぶほう (cmSkipTarget)
         assertEquals(listOf(900_000L - CM_LEAD_MS), cmHopPoints(chapters, 59_990, emptySet(), CM_LEAD_MS).map { it.first })
         assertEquals(60_000L, cmSkipTarget(chapters, 59_990, emptySet(), CM_LEAD_MS)?.startMs)
         // 手前の幅の1つ前なら、まだ先回りして預ける
@@ -138,14 +138,14 @@ class SpeedTest {
     }
 
     @org.junit.Test
-    fun 速さの札は等速なら印だけ_速めている間は数字だけ() {
+    fun 速さのボタンは等速なら印だけ_速めている間は数字だけ() {
         val normal = io.github.danything.denpatv.ui.speedControl(1f) {}
         assertEquals("", normal.label)
         assertEquals(io.github.danything.denpatv.R.drawable.ic_speed, normal.icon)
         assertEquals(false, normal.on)
         assertEquals("再生の速さ", normal.description)
         val fast = io.github.danything.denpatv.ui.speedControl(1.25f) {}
-        // × は付けない (ボタンの外の知らせ・題は `speedLabel` で「×1.25」)
+        // × は付けない (ボタンの外の知らせ・タイトルは `speedLabel` で「×1.25」)
         assertEquals("1.25", fast.label)
         assertNull(fast.icon)
         assertEquals(true, fast.on)

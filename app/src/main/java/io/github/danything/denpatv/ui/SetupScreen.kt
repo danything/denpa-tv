@@ -80,7 +80,7 @@ fun SetupScreen(app: DenpaApp) {
     val connectButton = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         text = app.settings.lastServer.first() ?: "http://"
-        // 最初は「繋ぐ」に合わせる (入れる欄に合わせるとキーボードが開いて QR が隠れる)
+        // 最初は「繋ぐ」にフォーカスする (入力欄にフォーカスするとキーボードが開いて QR が隠れる)
         runCatching { connectButton.requestFocus() }
     }
 
@@ -133,7 +133,7 @@ fun SetupScreen(app: DenpaApp) {
                     Text("スマホで denpa にログインしてください", style = MaterialTheme.typography.headlineSmall)
                     Text("スマホが denpa の画面に移ります。ログインが済むと、テレビは自動で次に進みます。", style = MaterialTheme.typography.bodyLarge)
                     Text("スマホが移らないときは、左の QR か次の URL を開いてください: ${current.verificationUrl}", style = MaterialTheme.typography.bodySmall)
-                    DenpaButton(onClick = { polling?.cancel(); state = SetupState.Waiting }, primary = false) { Text("やめる") }
+                    DenpaButton(onClick = { polling?.cancel(); state = SetupState.Waiting }, primary = false) { Text("キャンセル") }
                 }
             }
             else -> {

@@ -21,7 +21,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * **放送の字** (denpa が字幕を映像に焼き込んでいたときと同じ丸ゴシック。Denpa Font。ARIB の外字を全部持つ)。APK の assets に入れてある
+ * **放送の字** (denpa が字幕を映像に入れてエンコードしていたときと同じ丸ゴシック。Denpa Font。ARIB の外字を全部持つ)。APK の assets に入れてある
  * (ビルドのときに取ってくる。app/build.gradle.kts の `fetchCaptionFont`)。字幕の文字の配置 (`typeface`) と、
  * 放送から来た字 (番組名・説明・局名。`fonts` → `BroadcastFont`) の両方に使う。
  * 読むのはアプリを開いたときに1度だけ (`DenpaApp`。4.2MB あるので画面の糸では読まない)。読めなければ・読み終えるまでは端末の字。

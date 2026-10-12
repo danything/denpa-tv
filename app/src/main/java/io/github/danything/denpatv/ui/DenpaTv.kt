@@ -89,7 +89,7 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
     val repo = remember(base, token) { Repository(app, base, token) }
     /** トークンが効かなくなった (外された・期限切れ)、または家の外と見なされた。忘れて繋ぐ画面へ */
     val unauthorized: () -> Unit = { scope.launch { app.settings.disconnect() } }
-    // denpa の知らせ (SSE) は、アプリが前に出ている間だけ1本繋ぐ。ここはどの画面より外なので Activity の生き死にに沿う
+    // denpa の知らせ (SSE) は、アプリが前に出ている間だけ1本繋ぐ。ここはどの画面より外なので Activity のライフサイクルに沿う
     LifecycleStartEffect(repo) {
         val job = scope.launch { repo.listen(unauthorized) }
         onStopOrDispose { job.cancel() }
@@ -218,11 +218,11 @@ fun Centered(text: String) {
 }
 
 /**
- * **戻るキーは、合いを動かすのに使わせず、そのまま「戻る」にする** (`BackHandler` が受ける)。
+ * **戻るキーは、フォーカスの移動に使わせず、そのまま「戻る」にする** (`BackHandler` が受ける)。
  *
- * Android 12 以前 (予測型の戻るが無い) では、戻るキーはまず画面の部品に届き、Compose は合いのあるところから
- * **合いを外へ出す** (FocusDirection.Exit) のに使ってしまう。そうなると、ライブのメニューや操作バーを開いて戻るを押しても
- * 操作バーは閉じず、合いだけが操作バーの外へ抜けて (どこにも合わずに) リモコンが効かなくなったり、操作バーを飛ばして画面ごと戻ったりした。
+ * Android 12 以前 (予測型の戻るが無い) では、戻るキーはまず画面の部品に届き、Compose はフォーカスのあるところから
+ * **フォーカスを外へ出す** (FocusDirection.Exit) のに使ってしまう。そうなると、ライブのメニューや操作バーを開いて戻るを押しても
+ * 操作バーは閉じず、フォーカスだけが操作バーの外へ抜けて (どこにもフォーカスが無いまま) リモコンが効かなくなったり、操作バーを飛ばして画面ごと戻ったりした。
  * Android 13 以降の予測型の戻るでは、もともと戻るキーは部品に届かない。どちらでも同じ動きにする。
  * 押し続けた繰り返しは捨て、離したときに1回だけ戻る
  */

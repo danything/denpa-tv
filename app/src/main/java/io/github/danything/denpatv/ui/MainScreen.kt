@@ -77,22 +77,22 @@ fun MainScreen(
     val items = remember { Destination.entries.associateWith { FocusRequester() } }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val focusManager = LocalFocusManager.current
-    /** 「ライブ」に合っているか (ライブから戻ったときに合わせ直す) */
+    /** 「ライブ」にフォーカスがあるか (ライブから戻ったときにフォーカスし直す) */
     var liveFocused by remember { mutableStateOf(false) }
 
-    /** 最後に左キーを押したとき (左キーで開いたのか、戻ってきて合いが仮にメニューへ落ちたのかを分ける) */
+    /** 最後に左キーを押したとき (左キーで開いたのか、戻ってきてフォーカスが仮にメニューへ落ちたのかを分ける) */
     var leftAt by remember { mutableLongStateOf(0L) }
-    // 左キーで開いたら、いま出している行き先に合わせる (近いものに合うので、録画の2列目から開くとライブに合ってしまう)。
-    // 観て戻ってきたときは、右の画面 (録画の一覧なら開いた録画) が合いを取るので、ここでは取らない。
+    // 左キーで開いたら、いま出している行き先にフォーカスする (近いものにフォーカスが移るので、録画の2列目から開くとライブに移ってしまう)。
+    // 観て戻ってきたときは、右の画面 (録画の一覧なら開いた録画) がフォーカスを取るので、ここでは取らない。
     // 取るとメニューが開いたままになる
     LaunchedEffect(drawer.currentValue) {
         val byKey = System.nanoTime() - leftAt < 1_000_000_000L
         if (drawer.currentValue == DrawerValue.Open && byKey) runCatching { items.getValue(selected).requestFocus() }
     }
     /*
-     * **ライブから戻ったら、左のメニューの「ライブ」に合わせる** (戻るでいちばん上のメニューへ)。右の画面 (録画の一覧) も
-     * 戻ってきたときに合いを取りにいくので、そちらには取らせない (`takeFocus`)。合うまで何こまか試す —
-     * 合わせ損ねると、どこにも合わずにリモコンが効かなくなる
+     * **ライブから戻ったら、左のメニューの「ライブ」にフォーカスする** (戻るでいちばん上のメニューへ)。右の画面 (録画の一覧) も
+     * 戻ってきたときにフォーカスを取りにいくので、そちらには取らせない (`takeFocus`)。フォーカスが移るまで何フレームか試す —
+     * フォーカスし損ねると、どこにもフォーカスが無くなってリモコンが効かなくなる
      */
     var toMenu by remember { mutableStateOf(repo.menuOnReturn.also { repo.menuOnReturn = false }) }
     LaunchedEffect(Unit) {
@@ -103,7 +103,7 @@ fun MainScreen(
             if (runCatching { live.requestFocus() }.getOrDefault(false) && liveFocused) break
             delay(MENU_FOCUS_WAIT_MS)
         }
-        // 合わせ終えたら (合わせ損ねても) 元どおり。このあと録画の一覧を開き直したときは、一覧がカードに合わせる
+        // フォーカスし終えたら (し損ねても) 元どおり。このあと録画の一覧を開き直したときは、一覧がカードにフォーカスする
         toMenu = false
     }
     // メニューが開いているときの戻るは、右の画面へ戻す (右キーと同じ)。何もしないと戻るが効かないように見える
@@ -145,7 +145,7 @@ fun MainScreen(
             }
         },
     ) {
-        // 観て戻ったら右の画面が合いを取る (録画の一覧なら開いた録画、設定なら頭のボタン)
+        // 観て戻ったら右の画面がフォーカスを取る (録画の一覧なら開いた録画、設定なら頭のボタン)
         when (selected) {
             Destination.Settings -> SettingsScreen(repo)
             else -> RecordingsScreen(repo, onWatch, onUnauthorized, onLive = onLive, takeFocus = !toMenu)
@@ -153,13 +153,13 @@ fun MainScreen(
     }
 }
 
-/** ライブから戻ったとき「ライブ」に合わせるのを試す回数と間 (ミリ秒)。画面の入れ替えが終わるまで */
+/** ライブから戻ったとき「ライブ」にフォーカスするのを試す回数と間 (ミリ秒)。画面の入れ替えが終わるまで */
 private const val MENU_FOCUS_TRIES = 20
 private const val MENU_FOCUS_WAIT_MS = 50L
 
 /**
  * メニューの頭の印。**denpa の電波塔を azure で**、開いているときは名前も (アプリのアイコン・バナーと同じ)。
- * 合わせるものではない (左のメニューの行き先だけを上下で辿る)
+ * フォーカスするものではない (左のメニューの行き先だけを上下で辿る)
  */
 @Composable
 private fun Brand(open: Boolean) {
@@ -175,7 +175,7 @@ private fun Brand(open: Boolean) {
 
 /**
  * 行き先のボタン。**畳んだときは印だけの小さな丸** (YouTube の Android TV と同じく細い列にして、右の画面に幅を回す)、
- * 開くと名前も出して横に伸びる。選んでいるものは azure で塗り、合わせたものは白 (ボタンと同じ縁と光)
+ * 開くと名前も出して横に伸びる。選んでいるものは azure で塗り、フォーカスしたものは白 (ボタンと同じ縁と光)
  */
 @Composable
 private fun RailItem(destination: Destination, selected: Boolean, open: Boolean, onClick: () -> Unit, modifier: Modifier) {

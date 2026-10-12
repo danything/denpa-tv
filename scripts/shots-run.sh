@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# 画面の絵を撮る (smoke/ の Screenshots)。CI の Screenshots の流れ (.github/workflows/screenshots.yml) が、
+# スクリーンショットを撮る (smoke/ の Screenshots)。CI の Screenshots の流れ (.github/workflows/screenshots.yml) が、
 # API 36・1080p の Android TV エミュレータで走らせる。手元でも、繋いだ端末で同じに撮れる。
 #
-#   scripts/shots-run.sh <app-minified.apk> <smoke-minified.apk> [絵を置くディレクトリ]
+#   scripts/shots-run.sh <app-minified.apk> <smoke-minified.apk> [画像を置くディレクトリ]
 #
-# 絵は PNG (1920×1080) で置く。webp にするのは呼ぶ側 (README の絵は 1280 幅の webp)
+# 画像は PNG (1920×1080) で置く。webp にするのは呼ぶ側 (README の画像は 1280 幅の webp)
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -20,7 +20,7 @@ adb install -r -t "$smoke"
 timeout 900 adb shell am instrument -w -r -e shots 1 -e class io.github.danything.denpatv.smoke.Screenshots \
     io.github.danything.denpatv.smoke/androidx.test.runner.AndroidJUnitRunner | tee "$out/instrument.txt" || true
 adb pull /data/local/tmp/shots/. "$out/" || true
-# 終わりに一覧を上下に送ったあいだのこま (Screenshots の最後) と、そのあとの覚えの量
+# 終わりに一覧を上下に送ったあいだのフレーム (Screenshots の最後) と、そのあとのメモリ使用量
 timeout 60 adb shell dumpsys gfxinfo io.github.danything.denpatv > "$out/gfxinfo.txt" || true
 timeout 60 adb shell dumpsys meminfo io.github.danything.denpatv > "$out/meminfo.txt" || true
 ls -l "$out"

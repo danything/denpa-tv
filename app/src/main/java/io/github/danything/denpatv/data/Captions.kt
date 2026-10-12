@@ -22,7 +22,7 @@ import java.net.URI
  */
 class CaptionCue(val pts: Long, val page: CaptionPage?)
 
-/** 字幕の口から読んだ1こま */
+/** 字幕のエンドポイントから読んだ1フレーム */
 sealed interface CaptionFrame {
     class Cue(val cue: CaptionCue) : CaptionFrame
 
@@ -34,7 +34,7 @@ sealed interface CaptionFrame {
 }
 
 /**
- * 字幕の口の読み方。本文は WebSocket の1こまの頭に長さを付けたものが並ぶ:
+ * 字幕のエンドポイントの読み方。本文は WebSocket の1フレームの頭に長さを付けたものが並ぶ:
  *
  *     [4: 後ろの長さ (BE)][1: 種別][8: 時刻 (90kHz, BE)][中身]
  *     0x22 字幕の文字の配置  JSON (`CaptionPage`)
@@ -44,12 +44,12 @@ object CaptionFeed {
     const val TEXT = 0x22
     const val CONTROL = 0x40
 
-    /** 1こまの上限。壊れた長さで何百 MB も取りにいかない */
+    /** 1フレームの上限。壊れた長さで何百 MB も取りにいかない */
     private const val MAX_FRAME = 16 * 1024 * 1024
     /** denpa は 20 秒おきに ping を送る。2 回来なければ切れたとみなす */
     private const val READ_TIMEOUT_MS = 45_000
 
-    /** 1こま読む。終わり (きれいに閉じた) なら null */
+    /** 1フレーム読む。終わり (きれいに閉じた) なら null */
     fun read(input: DataInputStream): CaptionFrame? {
         val length = try {
             input.readInt()
@@ -67,13 +67,13 @@ object CaptionFeed {
         }
     }
 
-    /** JSON として読めなければ読み捨てる。読めても知らない版・形なら、描かない1枚 (前の1枚は消す) */
+    /** JSON として読めなければ読み捨てる。読めても知らない版・形式なら、描かない1枚 (前の1枚は消す) */
     private fun text(pts: Long, payload: ByteArray): CaptionFrame {
         val json = runCatching { lenientJson.parseToJsonElement(payload.toString(Charsets.UTF_8)) }.getOrNull() ?: return CaptionFrame.Other
         return CaptionFrame.Cue(CaptionCue(pts, parseCaptionPage(json)))
     }
 
-    /** 形の違う知らせは読み捨てる (denpa の版の違い。止めるほどのことではない) */
+    /** 形式の違う知らせは読み捨てる (denpa の版の違い。止めるほどのことではない) */
     private fun notice(payload: ByteArray): CaptionFrame {
         val obj = runCatching { lenientJson.parseToJsonElement(payload.toString(Charsets.UTF_8)) as? JsonObject }.getOrNull()
             ?: return CaptionFrame.Other
@@ -154,18 +154,18 @@ class CueTimeline {
     }
 }
 
-/** 字幕の口の場所 (denpa の根からの相対) */
+/** 字幕のエンドポイントの場所 (denpa のルートからの相対) */
 object CaptionPaths {
-    /** ライブ。局の一覧の `live` (`api/services/<id>/live`) の隣。形が違えば null (字幕は出さない) */
+    /** ライブ。局の一覧の `live` (`api/services/<id>/live`) の隣。形式が違えば null (字幕は出さない) */
     fun live(live: String): String? =
         live.substringBefore('?').takeIf { it.endsWith("/live") }?.let { it.removeSuffix("/live") + "/captions" }
 
-    /** 追っかけ・録画 (元のTS)。頼むときに `query` を付ける */
+    /** 追っかけ・録画 (元のTS)。リクエストするときに `query` を付ける */
     fun recording(id: Long): String = "api/recordings/$id/captions"
 
     /** エンコード済みの録画の字幕まるごと (文字の配置)。字幕を持たない録画は 404 */
     fun recordingText(id: Long): String = "api/recordings/$id/captions.json"
 
-    /** 字幕の口に付けるもの。録画は読ませる位置 (秒)、ライブは何も付けない */
+    /** 字幕のエンドポイントに付けるもの。録画は読ませる位置 (秒)、ライブは何も付けない */
     fun query(fromSeconds: Long?): String = fromSeconds?.let { "?from=$it" } ?: ""
 }

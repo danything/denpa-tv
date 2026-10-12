@@ -106,7 +106,7 @@ class Settings(private val context: Context) {
     }
 
     /**
-     * デュアルモノで最後に選んだ側 (主音声・副音声・主+副)。**既定は主音声** (ブラウザの denpa が何も頼まれないとき
+     * デュアルモノで最後に選んだ側 (主音声・副音声・主+副)。**既定は主音声** (ブラウザの denpa が何もリクエストされないとき
      * 主音声を選ぶのと同じ)。次のデュアルモノの番組もこれで始める
      */
     val dualMonoSide: Flow<AudioSide> = context.dataStore.data.map { AudioSide.of(it[dualMonoKey]) ?: AudioSide.Main }

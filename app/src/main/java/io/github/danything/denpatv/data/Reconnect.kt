@@ -5,7 +5,7 @@ import androidx.media3.common.PlaybackException
 /**
  * **映像が切れた・止まったときの繋ぎ直し** (ui/Recovery.kt)。決まりはブラウザの denpa のライブ (`live-player.svelte.ts` の
  * `reconnect`) と同じ: 待ち時間は `RETRY_FIRST_MS` から倍々に伸ばして `RETRY_MOST_MS` で頭打ち、**回数の上限は置かない**
- * (点けっぱなしで戻ってきたときに映っていてほしい)。次の絵が出たら数え直す。
+ * (点けっぱなしで戻ってきたときに映っていてほしい)。次のフレームが出たら数え直す。
  *
  * 切れる理由でいちばん多いのは denpa の側の入れ替え (番組の境目での再エンコード・GPU からソフトウェアへ降りた・denpa の再起動) と、
  * チューナーのドライバが黙ること。どれも待てば帰ってくるので、こちらから諦める理由が無い。
@@ -26,9 +26,9 @@ object Reconnect {
     const val FEW = 3
 
     /**
-     * 映していて (絵を1枚でも出したあと)、これだけ何も進まなければ止まったとみなして繋ぎ直す (ミリ秒)。
+     * 映していて (フレームを1枚でも出したあと)、これだけ何も進まなければ止まったとみなして繋ぎ直す (ミリ秒)。
      * 位置も溜まりも伸びないこと。**`RETRY_MOST_MS` と同じ 10 秒**: denpa が流れの中でエンコーダを温め直す間 (`WARM_WAIT` 8 秒) より長く、
-     * 読みの待ち (`Http.READ_TIMEOUT_MS` 30 秒) より十分短い。前の絵を残すのは 6 秒 (`HOLD_MOST`) までなので、
+     * 読みの待ち (`Http.READ_TIMEOUT_MS` 30 秒) より十分短い。前の映像を残すのは 6 秒 (`HOLD_MOST`) までなので、
      * 暗くなってから少しで繋ぎ直しに入る
      */
     const val STALL_MS = 10_000L
@@ -55,7 +55,7 @@ object Reconnect {
 
         /**
          * denpa の変換の枠が埋まって断られた (503 と `BUSY_MESSAGE`。`isBusyAnswer`)。ほかの人が観終えれば空くが、いつかは分からない。
-         * 何度でも頼み直すと denpa を叩き続けるだけなので、`RetryFew` と同じく `FEW` 回まで (待ちは倍々で 1・2・4 秒)。
+         * 何度でもリクエストし直すと denpa を叩き続けるだけなので、`RetryFew` と同じく `FEW` 回まで (待ちは倍々で 1・2・4 秒)。
          * 諦めたら「サーバが混んでいます」と出す
          */
         Busy,
@@ -97,13 +97,13 @@ object Reconnect {
 
     /**
      * 繋ぎ直すか。`stream` はライブ・追っかけ (流しっぱなしの1本)、そうでなければ録画のファイル。
-     * `attempts` は続けて失敗した回数、`few` はそのうち `RetryFew` か `Busy` だった回数 (どちらも次の絵が出たら 0 に戻す)
+     * `attempts` は続けて失敗した回数、`few` はそのうち `RetryFew` か `Busy` だった回数 (どちらも次のフレームが出たら 0 に戻す)
      */
     fun shouldRetry(verdict: Verdict, stream: Boolean, attempts: Int, few: Int): Boolean = when (verdict) {
         Verdict.Unauthorized, Verdict.GiveUp -> false
         Verdict.Retry -> stream || attempts < FEW
         Verdict.RetryFew -> stream && few < FEW
-        // 流しっぱなしのものも録画も同じ (録画も、変換して流す口は断られうる)
+        // 流しっぱなしのものも録画も同じ (録画も、変換して流すエンドポイントは断られうる)
         Verdict.Busy -> few < FEW
     }
 }
@@ -141,7 +141,7 @@ enum class ChaseEnd { Finished, Lost }
  *
  * - `stillRecording` … 終わったあとに denpa に聞いた、まだ録っているか。聞けなければ null (denpa が入れ替わっている最中なので、切れた)
  * - `durationMs` … 録り終えた長さ。分からなければ最後まで観たことにする
- * - `pictured` … この頼みで絵を出したか。録り終えた録画を頼み直して何も映らずに終わったなら、もう続きは無い (繰り返さない)
+ * - `pictured` … このリクエストでフレームを出したか。録り終えた録画をリクエストし直して何も映らずに終わったなら、もう続きは無い (繰り返さない)
  */
 fun chaseEnd(stillRecording: Boolean?, positionMs: Long, durationMs: Long?, pictured: Boolean): ChaseEnd = when {
     stillRecording == null || stillRecording -> ChaseEnd.Lost
@@ -150,5 +150,5 @@ fun chaseEnd(stillRecording: Boolean?, positionMs: Long, durationMs: Long?, pict
     else -> ChaseEnd.Lost
 }
 
-/** 録り終えた録画で、尻からこれより手前で終わったら切れたとみなす (ミリ秒)。頼む位置は秒に丸めるので、そのずれより十分大きく */
+/** 録り終えた録画で、尻からこれより手前で終わったら切れたとみなす (ミリ秒)。リクエストする位置は秒に丸めるので、そのずれより十分大きく */
 private const val CHASE_END_MARGIN_MS = 30_000L

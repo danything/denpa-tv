@@ -33,19 +33,19 @@ class StreamErrorsTest {
         watch.opened(unset, 0)
         assertFalse(watch.read(188))
         assertFalse(watch.read(C.RESULT_END_OF_INPUT))
-        // 0 バイトの読み (頼んだ長さが 0) は届いたうちに数えないが、終わりでもない
+        // 0 バイトの読み (要求した長さが 0) は届いたうちに数えないが、終わりでもない
         watch.opened(unset, 0)
         assertFalse(watch.read(0))
         assertTrue(watch.read(C.RESULT_END_OF_INPUT))
     }
 
     @Test
-    fun 長さの分かるものと途中から頼んだものは見ない() {
+    fun 長さの分かるものと途中からリクエストしたものは見ない() {
         val watch = EmptyWatch()
         // 録画のファイル (Content-Length がある)
         watch.opened(0, 0)
         assertFalse(watch.read(C.RESULT_END_OF_INPUT))
-        // 尻に飛んだ (途中から頼んで何も無いのは正しい)
+        // 尻に飛んだ (途中からリクエストして何も無いのは正しい)
         watch.opened(unset, 1_000)
         assertFalse(watch.read(C.RESULT_END_OF_INPUT))
     }
@@ -63,7 +63,7 @@ class StreamErrorsTest {
 
     @Test
     fun 映像の型だけを受け取る() {
-        // denpa の映像の口 (docs/api.md)
+        // denpa の映像のエンドポイント (docs/api.md)
         assertTrue(isMediaContentType("video/mp4"))
         assertTrue(isMediaContentType("video/mp2t"))
         assertTrue(isMediaContentType("video/x-matroska"))
@@ -131,7 +131,7 @@ class StreamErrorsTest {
         assertFalse(isBusyAnswer(null, busy))
     }
 
-    /** 混んでいたら、変換を頼んでいて MPEG-2 をハードでデコードできるときだけ MPEG-2 を勧める */
+    /** 混んでいたら、変換をリクエストしていて MPEG-2 をハードでデコードできるときだけ MPEG-2 を勧める */
     @Test
     fun 混んでいたら_MPEG_2_を勧める() {
         val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)

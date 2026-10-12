@@ -62,7 +62,7 @@ import kotlinx.coroutines.launch
  * 十字キーで辿れるよう縦に積んだ列にした (地上波の列 → BS の列 → CS の列)。左右で局を選び、決定で替える。
  *
  * 開いたときは、いま映している局の列がいちばん上に見えていて、下の列の名前が覗く (操作バーの高さを取りすぎない)。
- * 操作の列から下キーで、いま映している局に合う (`current`)。列から列へは、真上・真下のカードへ (横の送り具合は列ごとに覚える)。
+ * 操作の列から下キーで、いま映している局にフォーカスが移る (`current`)。列から列へは、真上・真下のカードへ (横の送り具合は列ごとに覚える)。
  *
  * ブラウザのライブと同じく、**放送している局だけ並べる** (本放送と同じものを流しているサブチャンネルは出さない。
  * 別の番組を流せば名前が付くので出てくる)。いま映している局は放送していなくても残す
@@ -85,20 +85,20 @@ fun ChannelRows(
     val start = rows.indexOfFirst { it.first == current.type }.coerceAtLeast(0)
     val column = rememberLazyListState(initialFirstVisibleItemIndex = start)
     /*
-     * **合わせた列を、いつも枠のいちばん上に揃える。** 合わせたカードを見せるだけの送り方だと、上の列のカードの裾が
+     * **フォーカスした列を、いつも枠のいちばん上に揃える。** フォーカスしたカードを見せるだけの送り方だと、上の列のカードの裾が
      * 中途半端に覗いて読みにくい
      */
     var focusedRow by remember { mutableIntStateOf(start) }
     LaunchedEffect(focusedRow) { column.animateScrollToItem(focusedRow) }
     /*
      * **列ごとの横の送り具合は、列の外で覚える。** 列の中で覚えると、縦に送って枠の外に出た列 (CS に下りたときの地上波) は
-     * 捨てられ、戻ると送り具合も最後に合わせたカードも初めからになる
+     * 捨てられ、戻ると送り具合も最後にフォーカスしたカードも初めからになる
      */
     val states = remember { mutableMapOf<String, LazyListState>() }
     val scope = rememberCoroutineScope()
     /*
-     * **縦は自分で送る (上の `focusedRow`) ので、カードに合わせたときの送りは縦には効かせない。** テレビでは Compose の既定が
-     * 「合わせたものを枠の 3 割の高さへ」なので、効かせると左右に送るたびに
+     * **縦は自分で送る (上の `focusedRow`) ので、カードにフォーカスしたときの送りは縦には効かせない。** テレビでは Compose の既定が
+     * 「フォーカスしたものを枠の 3 割の高さへ」なので、効かせると左右に送るたびに
      * 上に揃えた列が上下に揺れる
      */
     CompositionLocalProvider(LocalBringIntoViewSpec provides StayPut) {
@@ -124,25 +124,25 @@ fun ChannelRows(
         ) {
             itemsIndexed(rows, key = { _, it -> it.first }) { index, (type, label, row) ->
                 val at = row.indexOfFirst { it.id == current.id }
-                // 見えていないカードには合わせられないので、いま映している局が見えるところから並べる
+                // 見えていないカードにはフォーカスできないので、いま映している局が見えるところから並べる
                 val state = states.getOrPut(type) { LazyListState(firstVisibleItemIndex = (at - 1).coerceAtLeast(0)) }
                 Column(Modifier.onFocusChanged { if (it.hasFocus) focusedRow = index }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(label, style = MaterialTheme.typography.labelMedium, color = Palette.OnScrimMuted)
                     /*
-                     * **横は、合わせたカードの左の端をいつも同じ所 (`KEYLINE`。左に1枚ぶん) に置く。** 送るたびにカードが同じ所に来るので、
+                     * **横は、フォーカスしたカードの左の端をいつも同じ所 (`KEYLINE`。左に1枚ぶん) に置く。** 送るたびにカードが同じ所に来るので、
                      * どの列でも目の置き場が変わらない。端のカードで送れないときは、送れるところまで
                      */
                     CompositionLocalProvider(LocalBringIntoViewSpec provides Keyline) {
                         LazyRow(
                             state = state,
-                            // 枠は幅いっぱい (局の少ない列でも、合わせて膨らんだカードの縁と光が枠で切れないように)。送れる側の端は溶かす
+                            // 枠は幅いっぱい (局の少ない列でも、フォーカスで膨らんだカードの縁と光が枠で切れないように)。送れる側の端は溶かす
                             modifier = Modifier.fillMaxWidth().fadeEdges(state),
                             /*
-                             * 上下で列を移ったときは、**真上・真下のカードへ** (どの列も合わせたカードが `KEYLINE` に居るので、目を動かさずに済む)。
-                             * 最後に合わせていたカードへ戻す (`focusRestorer`) のはやめた。枠の外に出て捨てられた列では覚えが消え、
-                             * 見えていないカードへ飛んだり、離れたカードに合ったりした
+                             * 上下で列を移ったときは、**真上・真下のカードへ** (どの列もフォーカスしたカードが `KEYLINE` にあるので、目を動かさずに済む)。
+                             * 最後にフォーカスしていたカードへ戻す (`focusRestorer`) のはやめた。枠の外に出て捨てられた列では覚えが消え、
+                             * 見えていないカードへ飛んだり、離れたカードにフォーカスが移ったりした
                              */
-                            // 上下は、合わせたカードの膨らみと光が端を溶かす層 (`fadeEdges`) で切れないだけ空ける
+                            // 上下は、フォーカスしたカードの膨らみと光が端を溶かす層 (`fadeEdges`) で切れないだけ空ける
                             contentPadding = PaddingValues(vertical = 12.dp, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
                         ) {
@@ -158,12 +158,12 @@ fun ChannelRows(
     }
 }
 
-/** 縦の列の枠は、カードに合わせても送らない (送るのは `focusedRow` だけ) */
+/** 縦の列の枠は、カードにフォーカスしても送らない (送るのは `focusedRow` だけ) */
 private val StayPut = object : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
 }
 
-/** 横の列で、合わせたカードの左の端を `KEYLINE` に置く。送れる分は列が決める (端では止まる) */
+/** 横の列で、フォーカスしたカードの左の端を `KEYLINE` に置く。送れる分は列が決める (端では止まる) */
 private val Keyline = object : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         // カードの幅が枠より広いことは無いが、念のためカードの頭を見せる
@@ -176,7 +176,7 @@ private val Keyline = object : BringIntoViewSpec {
 /**
  * 局のカード1枚。番号・ロゴ・局名、いま放送中の番組、印 (視聴中・録画中・予約済み)。
  * ロゴはブラウザの denpa と同じく番号の右に (ロゴがまだ無い局は、そこに種別のラベル)。
- * いま映している局は azure の縁と淡い azure の地 (ブラウザの視聴中の行と同じ)。合わせると膨らみ、明るい azure の縁と光 (`Focus`)
+ * いま映している局は azure の縁と淡い azure の地 (ブラウザの視聴中の行と同じ)。フォーカスすると膨らみ、明るい azure の縁と光 (`Focus`)
  */
 @Composable
 private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modifier: Modifier, onClick: () -> Unit) {
@@ -227,8 +227,8 @@ private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modi
 }
 
 /**
- * 局ロゴ (denpa が放送波から拾ったもの。`api/services/<id>/logo`)。放送のロゴは 64x36 ほどの小さな絵なので、そのくらいの大きさで。
- * **まだ拾えていない局は、ブラウザの denpa と同じく種別 (GR・BS・CS) のラベル**を同じ大きさで置く (局名の頭を揃える)
+ * 局ロゴ (denpa が放送波から取得したもの。`api/services/<id>/logo`)。放送のロゴは 64x36 ほどの小さな画像なので、そのくらいの大きさで。
+ * **まだ取得できていない局は、ブラウザの denpa と同じく種別 (GR・BS・CS) のラベル**を同じ大きさで置く (局名の頭を揃える)
  */
 @Composable
 fun ChannelLogo(repo: Repository, service: Service, modifier: Modifier) {
@@ -259,7 +259,7 @@ private val CARD_WIDTH = 220.dp
 private val CARD_HEIGHT = 92.dp
 private val CARD_GAP = 12.dp
 
-/** 合わせたカードの左の端を置く所 (横の枠の幅に対する割合)。左に1枚ぶんのカードが見える */
+/** フォーカスしたカードの左の端を置く所 (横の枠の幅に対する割合)。左に1枚ぶんのカードが見える */
 private const val KEYLINE_FRACTION = 0.25f
 
 /** 局の列を出す高さ。1列がまるごと見えて、次の列の名前が覗く (下に続きがあると分かる) */

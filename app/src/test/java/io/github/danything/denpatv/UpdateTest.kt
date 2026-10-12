@@ -58,7 +58,7 @@ class UpdateTest {
     }
 
     @Test
-    fun 手元で焼いた版は上げない() {
+    fun 手元でビルドした版は上げない() {
         assertTrue(isDevBuild("0.0.0-dev"))
         assertTrue(isDevBuild("なにか"))
         assertFalse(isDevBuild("0.3.0"))
@@ -110,7 +110,7 @@ class UpdateTest {
         assertNull(update.sumsUrl)
     }
 
-    /** GitHub の答えの形 (知らない鍵は無視する) */
+    /** GitHub の答えの形式 (知らない鍵は無視する) */
     @Test
     fun リリースを引く() {
         github.enqueue(
@@ -205,14 +205,14 @@ class UpdateTest {
         val request = InstallRequest("0.4.0", at)
         val update = Update("0.4.0", "denpa-tv-0.4.0.apk", "", null)
         val file = File("denpa-tv-0.4.0.apk")
-        // 頼まれた版を入れられる
+        // リクエストされた版を入れられる
         assertEquals(Resume.Start, resumePlan(UpdateState.Ready(update, file), request, at))
         assertEquals(Resume.Start, resumePlan(UpdateState.Available(update), request, at + INSTALL_REQUEST_TTL_MS))
-        // 確かめられなかった・裏で取れなかった (Idle に戻る)・取ってきている: 頼みは残す (期限で切れる)
+        // 確かめられなかった・裏で取れなかった (Idle に戻る)・取ってきている: リクエストは残す (期限で切れる)
         for (state in listOf(UpdateState.Idle, UpdateState.Checking, UpdateState.CheckFailed("x"), UpdateState.Preparing(update, 10))) {
             assertEquals(state.toString(), Resume.Wait, resumePlan(state, request, at))
         }
-        // その間にもっと新しい版が出たら、頼まれた版ではないので忘れる
+        // その間にもっと新しい版が出たら、リクエストされた版ではないので忘れる
         assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update.copy(version = "0.4.1"), file), request, at))
         // ずっと後 (許可せずに戻って、何日も後に開いた)・時計が戻った: 勝手に入れ始めない
         assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update, file), request, at + INSTALL_REQUEST_TTL_MS + 1))
@@ -233,7 +233,7 @@ class UpdateTest {
         // この版で一度送ったあと (戻ってきた・押し直した): 見えなくても入れてみる (本当に無ければ OS が尋ねる)
         assertEquals(InstallStep.Install, installStep(false, unset, asked, "0.8.0", at + 5_000))
         assertEquals(InstallStep.Install, installStep(false, unset, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS))
-        // ほかの版・古い頼み・時計が戻った: もう一度許可の画面を開く
+        // ほかの版・古いリクエスト・時計が戻った: もう一度許可の画面を開く
         assertEquals(InstallStep.AskPermission, installStep(false, unset, asked, "0.8.1", at))
         assertEquals(InstallStep.AskPermission, installStep(false, unset, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS + 1))
         assertEquals(InstallStep.AskPermission, installStep(false, unset, asked, "0.8.0", at - 1))

@@ -19,7 +19,7 @@ import java.io.DataOutputStream
 import java.io.IOException
 
 class CaptionsTest {
-    /** denpa の `appFrame` と同じ形: [4:後ろの長さ][1:種別][8:時刻][中身] */
+    /** denpa の `appFrame` と同じ形式: [4:後ろの長さ][1:種別][8:時刻][中身] */
     private fun frame(out: DataOutputStream, kind: Int, pts: Long, payload: ByteArray) {
         out.writeInt(1 + 8 + payload.size)
         out.writeByte(kind)
@@ -49,7 +49,7 @@ class CaptionsTest {
     }
 
     @Test
-    fun 字幕を持たない放送は0本_形の違う知らせは読み捨てる() {
+    fun 字幕を持たない放送は0本_形式の違う知らせは読み捨てる() {
         val stream = input { out ->
             frame(out, 0x40, 0, """{"type":"captions","tracks":[],"track":0}""".toByteArray())
             frame(out, 0x40, 0, "not json".toByteArray())
@@ -130,7 +130,7 @@ class CaptionsTest {
     }
 
     @Test
-    fun 字幕の口の場所() {
+    fun 字幕のエンドポイントの場所() {
         assertEquals("api/services/3227310008/captions", CaptionPaths.live("api/services/3227310008/live"))
         assertEquals("api/recordings/12/captions", CaptionPaths.recording(12))
         assertEquals("api/services/1/captions", CaptionPaths.live("api/services/1/live?codec=raw"))
@@ -144,7 +144,7 @@ class CaptionsTest {
     private val page = """{"v":1,"plane":[960,540],"duration":null,"runs":[{"x":250,"y":450,"w":40,"h":60,"fx":2,"fy":12,"size":36,"scaleX":1,"text":"字幕","fg":"#ffffffff","bg":"#00000080"}]}"""
 
     @Test
-    fun 文字の配置のこまを読む() {
+    fun 文字の配置のフレームを読む() {
         val stream = input { out ->
             frame(out, 0x22, 0x1_0000_0000L, page.toByteArray())
             // 消す (runs が空)

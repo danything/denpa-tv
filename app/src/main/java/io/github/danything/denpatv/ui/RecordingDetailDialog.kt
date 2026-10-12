@@ -17,11 +17,11 @@ import kotlinx.coroutines.launch
 /**
  * 録画の詳細 (カードの長押しで開く)。中身の並びは `ProgramDetailDialog` (ライブ・再生中と同じもの)。
  *
- * - ボタンは **「続きから再生 (0:14:22)」(続きがあれば) → 「最初から」→「削除」→「閉じる」**。開いたときは先頭に合う
+ * - ボタンは **「続きから再生 (0:14:22)」(続きがあれば) → 「最初から」→「削除」→「閉じる」**。開いたときは先頭にフォーカスする
  *   (決定の押し間違いで消えないように)。続きが無ければ「再生」。録画中の録画は「再生」の代わりに「追っかけ再生」
  * - 削除はブラウザの denpa と同じ2回押し
- * - 説明は別の口 (`api/recordings/<id>/detail`) から開いたときに取る。取れなければ出さない
- * - **録画は番組表の口 (`api/programs/<id>`) を引かない。** 番組表の行は終わると消え・入れ替わり、番組 ID も使い回されるので、
+ * - 説明は別の API (`api/recordings/<id>/detail`) から開いたときに取る。取れなければ出さない
+ * - **録画は番組表の API (`api/programs/<id>`) を引かない。** 番組表の行は終わると消え・入れ替わり、番組 ID も使い回されるので、
  *   録り始めに写した録画自身の中身 (`detail`) だけを出す (番組表を引くのはライブの詳細だけ)
  */
 @Composable
@@ -47,19 +47,19 @@ fun RecordingDetailDialog(
         add(DetailAction(deleteLabel(delete.armed)) { if (delete.press()) onDelete() })
         add(DetailAction(CLOSE, onClick = onDismiss))
     }
-    // 後ろに録画の絵をうすく敷く (一覧の上で開くとき。映像の上で開くときは映像が見えるので敷かない)
+    // 後ろに録画の画像をうすく敷く (一覧の上で開くとき。映像の上で開くときは映像が見えるので敷かない)
     val facts = recordingFacts(recording, rememberRecordingDetail(repo, recording, onUnauthorized))
     ProgramDetailDialog(facts, actions, onDismiss, backdrop = repo.url(recording.poster), token = repo.token)
 }
 
 /**
  * 再生の画面 (録画・追っかけ) の決定の長押し・情報キーで開く詳細。一覧のものと同じ中身で、ボタンは **「削除」→「閉じる」**
- * (閉じるはどの詳細でも右の端)。**開いたときは「閉じる」に合う** (映像に戻るだけ)。映像は止めも動かしもしない。戻る・「閉じる」で閉じて映像に戻る (合いは PlayerFrame が取り戻す)
+ * (閉じるはどの詳細でも右の端)。**開いたときは「閉じる」にフォーカスする** (映像に戻るだけ)。映像は止めも動かしもしない。戻る・「閉じる」で閉じて映像に戻る (フォーカスは PlayerFrame が取り戻す)
  */
 @Composable
 fun PlayerDetailDialog(repo: Repository, recording: Recording, onDelete: () -> Unit, onClose: () -> Unit, onUnauthorized: () -> Unit) {
     val delete = rememberTwoPress()
-    // 並びは一覧の詳細と同じ (閉じるが右の端)。開いたときは閉じるに合わせる (決定の押し間違いで消えないように。映像に戻るだけ)
+    // 並びは一覧の詳細と同じ (閉じるが右の端)。開いたときは閉じるにフォーカスする (決定の押し間違いで消えないように。映像に戻るだけ)
     val actions = listOf(
         DetailAction(deleteLabel(delete.armed)) { if (delete.press()) { onClose(); onDelete() } },
         DetailAction(CLOSE, initial = true, onClick = onClose),
@@ -114,7 +114,7 @@ private fun recordingAudioLabels(recording: Recording): List<String> =
     }.distinct()
 
 /**
- * 再生の画面 (録画・追っかけ) から録画を消す。消せたら一覧から抜き、戻ったときに隣の録画に合うようにして `onDeleted`
+ * 再生の画面 (録画・追っかけ) から録画を消す。消せたら一覧から抜き、戻ったときに隣の録画にフォーカスするようにして `onDeleted`
  * (一覧へ戻る)。録画中などで断られたら1行知らせる
  */
 fun CoroutineScope.deleteFromPlayer(

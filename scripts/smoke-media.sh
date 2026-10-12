@@ -5,8 +5,8 @@
 #
 #   live.mp4       ライブ (fragmented MP4、H.264 / AAC)。地は緑
 #   recording.mkv  エンコード済みの録画 (Matroska、H.264 / AAC)。地は赤紫
-#   showcase-live-{1,2,3}.mp4  画面の絵 (Screenshots) のライブ・追っかけ。ぼかした色の縞がゆっくり動く (120 秒。局ごとに色を替える)
-#   showcase.mkv   画面の絵の録画 (30 秒。最後まで観たときの絵も撮るので短く)
+#   showcase-live-{1,2,3}.mp4  スクリーンショット (Screenshots) のライブ・追っかけ。ぼかした色の縞がゆっくり動く (120 秒。局ごとに色を替える)
+#   showcase.mkv   スクリーンショットの録画 (30 秒。最後まで観たときの画面も撮るので短く)
 #
 # エンコード前の録画・ライブの元の TS (MPEG-2) は無い。Android TV のエミュレータは MPEG-2 のデコーダを有効にしていない
 # (c2.android.mpeg2.decoder は domain="tv" で、エミュレータでは使えない) ので、映せるかを確かめようがない。
@@ -27,7 +27,7 @@ aac=(-c:a aac -b:a 32k -ac 2)
 ff "$(video 0x20C040)" "${h264[@]}" "${aac[@]}" -movflags frag_keyframe+empty_moov+default_base_moof "$out/live.mp4"
 ff "$(video 0xC02080)" "${h264[@]}" "${aac[@]}" "$out/recording.mkv"
 
-# 画面の絵のもの (音は無音)。320x180・10 fps。ぼかしてあるので引き伸ばしても粗さが目立たない
+# スクリーンショットのもの (音は無音)。320x180・10 fps。ぼかしてあるので引き伸ばしても粗さが目立たない
 showcase() { echo "gradients=s=320x180:r=10:d=$1:n=3:c0=$2:c1=$3:c2=$4:speed=0.004:type=$5,gblur=sigma=12,format=yuv420p"; }
 quiet() { ffmpeg -hide_banner -loglevel error -y -f lavfi -i "$1" -f lavfi -i "anullsrc=r=48000:cl=stereo" -t "$2" "${@:3}"; }
 small=(-c:v libx264 -profile:v baseline -g 30 -crf 36 -c:a aac -b:a 16k)

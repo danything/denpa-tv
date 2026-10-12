@@ -34,7 +34,7 @@ import kotlin.math.abs
  * NoClassDefFoundError) は R8 を通した APK を古い Android で動かしたときだけ出たので、その組み合わせを API ごとに確かめる。
  *
  * アプリには外からだけ触る (別のプロセス。smoke/build.gradle.kts): 起動とリンク (`denpa://…`) は Intent、見るのは
- * 画面の文字 (アクセシビリティの木。Compose の Text も出る) と画面の絵、キーは UiAutomation で送る。
+ * 画面の文字 (アクセシビリティツリー。Compose の Text も出る) とスクリーンショット、キーは UiAutomation で送る。
  * 偽の denpa (`FakeDenpa`) はこのプロセスで 127.0.0.1 に立て、繋ぐ画面の欄に URL を入れて繋ぐ。
  *
  * **落ちたかは logcat の crash の記録と、プロセスの id で見る** (落ちてもこのテストは生き残る)。
@@ -43,7 +43,7 @@ import kotlin.math.abs
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class SmokeTest {
     /**
-     * **1件ごとの上限。** 固まったら (画面の木を取りに行ったまま戻らないなど) その1件を落として次へ進む。
+     * **1件ごとの上限。** 固まったら (画面のツリーを取りに行ったまま戻らないなど) その1件を落として次へ進む。
      * CI の遅いエミュレータでも、ふつうは1件 1 分もかからない
      */
     @get:Rule
@@ -57,13 +57,13 @@ class SmokeTest {
     }
 
     /**
-     * ライブのキーとメニュー。**左右で局を送る** (右で次の局を、左で元の局を denpa に頼む)。**決定の長押しで番組の詳細**
+     * ライブのキーとメニュー。**左右で局を送る** (右で次の局を、左で元の局を denpa にリクエストする)。**決定の長押しで番組の詳細**
      * (`api/programs/<now.id>` の説明が出る。メニューは開かない。離しても決定にならない)。**繰り返しを送らずに押したままでも
-     * 長押しになる** (押した・離したの2つだけを送るリモコン)。戻るで詳細だけが閉じる。**上で、局の列のいま映している局に合わせてメニューが開く。**
+     * 長押しになる** (押した・離したの2つだけを送るリモコン)。戻るで詳細だけが閉じる。**上で、局の列のいま映している局にフォーカスしてメニューが開く。**
      * 局の列から上キーを押し続けても操作の列で止まり (閉じない)、**操作の列でもう一度上を押すと閉じて映像に戻る**。決定で操作の列と局の列が開き、「録画」で denpa にいまの番組を予約する。**戻るでメニューだけが閉じ**
-     * (画面ごと戻らない。Android 12 以前では戻るキーが合いを外へ出すのに使われ、閉じずに合いだけが抜けていた)、
-     * もう一度の戻るでいちばん上のメニューへ (「ライブ」に合う)。流している間は画面を点けたまま (スクリーンセーバーを出さない)、
-     * ホームに出たら流れを閉じ、戻ったら頼み直す
+     * (画面ごと戻らない。Android 12 以前では戻るキーがフォーカスを外へ出すのに使われ、閉じずにフォーカスだけが抜けていた)、
+     * もう一度の戻るでいちばん上のメニューへ (「ライブ」にフォーカス)。流している間は画面を点けたまま (スクリーンセーバーを出さない)、
+     * ホームに出たら流れを閉じ、戻ったらリクエストし直す
      */
     @Test
     fun liveMenu() = watching {
@@ -71,15 +71,15 @@ class SmokeTest {
         awaitVideo(LIVE_COLOR)
         assertTrue("流している間に画面を点けたままにしていません", poll(TEXT_TIMEOUT_MS) { keepsScreenOn() })
 
-        // 右で次の局へ。押すとすぐ行き先の局名が出て、離して少したってから頼む
+        // 右で次の局へ。押すとすぐ行き先の局名が出て、離して少したってからリクエストする
         val next = "GET /api/services/${FakeDenpa.NEXT_SERVICE_ID}/live"
         pressUntil(KeyEvent.KEYCODE_DPAD_RIGHT, "右で次の局へ送りません") { next in denpa.requests || texts().any { FakeDenpa.NEXT_SERVICE_NAME in it } }
-        assertTrue("右で次の局を頼みません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { next in denpa.requests })
+        assertTrue("右で次の局をリクエストしません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { next in denpa.requests })
         awaitVideo(LIVE_COLOR)
         // 左で元の局へ戻る
         val before = denpa.requests.count { it == LIVE_REQUEST }
         press(KeyEvent.KEYCODE_DPAD_LEFT)
-        assertTrue("左で前の局を頼みません: ${denpa.requests.filter { it.endsWith("/live") }}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > before })
+        assertTrue("左で前の局をリクエストしません: ${denpa.requests.filter { it.endsWith("/live") }}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > before })
         awaitVideo(LIVE_COLOR)
 
         // 決定の長押しで番組の詳細 (ダイアログ。別の窓なので windowTexts で見る)。メニューは開かず、離しても決定にならない
@@ -95,16 +95,16 @@ class SmokeTest {
         assertTrue("繰り返し無しの長押しでメニューが開きました: ${windowTexts()}", "地上波" !in windowTexts())
         closeLiveDetail()
 
-        // 上で、局の列のいま映している局に合わせて開く。戻るで閉じる
+        // 上で、局の列のいま映している局にフォーカスして開く。戻るで閉じる
         pressUntil(KeyEvent.KEYCODE_DPAD_UP, "上でメニューが開きません") { "地上波" in texts() }
         assertTrue(
-            "上で開いたメニューが、いま映している局に合っていません: ${focusedTexts()}",
+            "上で開いたメニューが、いま映している局にフォーカスしていません: ${focusedTexts()}",
             poll(TEXT_TIMEOUT_MS) { focusedTexts().any { FakeDenpa.SERVICE_NAME in it } },
         )
         /*
          * 局の列から上キーを押し続けて操作の列へ上がっても閉じない (操作の列に届くのは繰り返しと離しだけ。押しはじめを見ていない)。
-         * 合いが移ったかは画面の木では見ない (Compose の入力の合いは、局のカードからカードへ移っても古いまま返ることがある)。
-         * 続けて上をもう1回押して閉じれば、操作の列 (いちばん上) に居たことになる (局の列のままなら、上がるだけで閉じない)。
+         * フォーカスが移ったかは画面のツリーでは見ない (Compose の入力フォーカスは、局のカードからカードへ移っても古いまま返ることがある)。
+         * 続けて上をもう1回押して閉じれば、操作の列 (いちばん上) にいたことになる (局の列のままなら、上がるだけで閉じない)。
          * メニューは 8 秒触らなければ閉じるので、待つのは MENU_WAIT_MS まで (勝手に閉じたのを上キーで閉じたと取り違えない)
          */
         holdKey(KeyEvent.KEYCODE_DPAD_UP, HOLD_REPEATS)
@@ -122,7 +122,7 @@ class SmokeTest {
         assertTrue("「録画」を押せません", record.performAction(AccessibilityNodeInfo.ACTION_CLICK))
         /*
          * 届いたかは偽の denpa の記録で見る。「録画を始めます」の1行は 4 秒で消えるので、遅いエミュレータでは
-         * 画面の木を読み終える前に消えていることがある (CI の API 36 で、出たのに見落として落ちた)
+         * 画面のツリーを読み終える前に消えていることがある (CI の API 36 で、出たのに見落として落ちた)
          */
         val recordRequest = "POST /api/services/${FakeDenpa.SERVICE_ID}/record"
         assertTrue("$recordRequest が来ていません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { recordRequest in denpa.requests })
@@ -134,7 +134,7 @@ class SmokeTest {
         assertTrue("戻るでメニューが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "地上波" !in texts() })
         awaitVideo(LIVE_COLOR)
 
-        // ホームに出ると流れを閉じ、戻ると同じ局を頼み直す
+        // ホームに出ると流れを閉じ、戻ると同じ局をリクエストし直す
         val asked = denpa.requests.count { it == LIVE_REQUEST }
         press(KeyEvent.KEYCODE_HOME)
         assertTrue("ホームに出ません", poll(TEXT_TIMEOUT_MS) { activeWindow()?.packageName?.toString() != APP })
@@ -142,7 +142,7 @@ class SmokeTest {
         SystemClock.sleep(STOP_WAIT_MS)
         assertTrue("ホームに出ても画面を点けたままです", poll(TEXT_TIMEOUT_MS) { !keepsScreenOn() })
         relaunch()
-        assertTrue("戻ってもライブを頼み直しません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > asked })
+        assertTrue("戻ってもライブをリクエストし直しません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > asked })
         awaitVideo(LIVE_COLOR)
 
         press(KeyEvent.KEYCODE_BACK)
@@ -152,38 +152,38 @@ class SmokeTest {
 
     /**
      * **切れたら繋ぎ直す。** 偽の denpa のライブは 10 秒で流れを閉じる (denpa が番組の境目で再エンコードした・入れ替わったのと同じ)。
-     * アプリは同じ局を頼み直す。流れが閉じずに黙ったら (チューナーのドライバが止まった)、10 秒進まないのに気付いて頼み直す。そこで 503 (入れ替わりの最中) が続いても、Media3 が中で読み直し尽くしたあと、アプリが待って
-     * 頼み直し続け、denpa が戻ればまた映す。その間「再生できません」は出さない (`watching`)。繋ぎ直した理由は logcat に1行ずつ (タグ denpa)
+     * アプリは同じ局をリクエストし直す。流れが閉じずに黙ったら (チューナーのドライバが止まった)、10 秒進まないのに気付いてリクエストし直す。そこで 503 (入れ替わりの最中) が続いても、Media3 が中で読み直し尽くしたあと、アプリが待って
+     * リクエストし直し続け、denpa が戻ればまた映す。その間「再生できません」は出さない (`watching`)。繋ぎ直した理由は logcat に1行ずつ (タグ denpa)
      */
     @Test
     fun liveReconnect() = watching {
         shell("logcat -c")
         open("denpa://live/${FakeDenpa.SERVICE_ID}")
         awaitVideo(LIVE_COLOR)
-        // 流れが閉じたら頼み直す。次の流れは途中で黙る (閉じない) ので、10 秒進まないのに気付いてまた頼み直す
+        // 流れが閉じたらリクエストし直す。次の流れは途中で黙る (閉じない) ので、10 秒進まないのに気付いてまたリクエストし直す
         denpa.stallLive.set(1)
-        assertTrue("流れが閉じても頼み直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "ended" in appLog() })
-        // 黙ったのに気付いたら、その頼み直しからは 503 (denpa の入れ替わりの最中) を返し続ける
+        assertTrue("流れが閉じてもリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "ended" in appLog() })
+        // 黙ったのに気付いたら、そのリクエストし直しからは 503 (denpa の入れ替わりの最中) を返し続ける
         denpa.failLive.set(Int.MAX_VALUE)
-        assertTrue("流れが黙っても頼み直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "stall" in appLog() })
-        // 503 が続いて Media3 が諦めても、アプリが頼み直す
-        assertTrue("503 が続くと頼み直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "HTTP 503" in appLog() })
-        // 繋ぎ直している間は、前の絵の上に回るものと「繋ぎ直しています」
+        assertTrue("流れが黙ってもリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "stall" in appLog() })
+        // 503 が続いて Media3 が諦めても、アプリがリクエストし直す
+        assertTrue("503 が続くとリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "HTTP 503" in appLog() })
+        // 繋ぎ直している間は、前の映像の上に回るものと「繋ぎ直しています」
         assertTrue("「繋ぎ直しています」が出ません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "繋ぎ直しています" in texts() })
         texts().firstOrNull { it.startsWith("再生できません") }?.let { fail(it) }
         // denpa が戻ったら、また映す
         val asked = denpa.requests.count { it == LIVE_REQUEST }
         denpa.failLive.set(0)
-        assertTrue("denpa が戻っても頼み直しません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > asked })
-        // 映ったら幕を下ろす (地の色は前の絵でも同じなので、映ったかは幕で見る)
+        assertTrue("denpa が戻ってもリクエストし直しません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > asked })
+        // 映ったら幕を下ろす (地の色は前の映像でも同じなので、映ったかは幕で見る)
         assertTrue("映り直しても「繋ぎ直しています」が消えません", poll(VIDEO_TIMEOUT_MS) { "繋ぎ直しています" !in texts() })
         awaitVideo(LIVE_COLOR)
     }
 
     /**
-     * **denpa が 200 のまま何も送らずに閉じたら** (選局・エンコードに失敗した)、何度か頼み直してから「映像を送らずに閉じました」と言う
+     * **denpa が 200 のまま何も送らずに閉じたら** (選局・エンコードに失敗した)、何度かリクエストし直してから「映像を送らずに閉じました」と言う
      * (Media3 の `ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED` をそのまま出さない)。denpa が戻ってから局を替えれば、また映る。
-     * 次の局を頼むので、`liveMenu` (まだ次の局を頼んでいないのを確かめてから送る) より後に走る名前にしておく
+     * 次の局をリクエストするので、`liveMenu` (まだ次の局をリクエストしていないのを確かめてから送る) より後に走る名前にしておく
      */
     @Test
     fun liveRefused() = watching {
@@ -200,36 +200,36 @@ class SmokeTest {
     }
 
     /**
-     * **ライブが録画にチューナーを譲ったら** (denpa の知らせ `yielded`)、同じ局を頼み直し、映らなかったときだけ譲った録画の追っかけに
-     * 切り替えて知らせを出しっぱなしにする。決定で開くメニューは「ライブに戻る」に合い、押すと頼み直す。まだ入れなければ追っかけに
+     * **ライブが録画にチューナーを譲ったら** (denpa の知らせ `yielded`)、同じ局をリクエストし直し、映らなかったときだけ譲った録画の追っかけに
+     * 切り替えて知らせを出しっぱなしにする。決定で開くメニューは「ライブに戻る」にフォーカスし、押すとリクエストし直す。まだ入れなければ追っかけに
      * 戻って「録画が終わるまで…」、入れれば局に戻って知らせが消える
      */
     @Test
     fun liveYield() = watching {
         shell("logcat -c")
-        // 前のテストの局 (同じ地の色) が映ったままなので、この局を頼んで映すまで待つ (映る前に送らなくすると、頼み直しが譲りより先に尽きる)
+        // 前のテストの局 (同じ地の色) が映ったままなので、この局をリクエストして映すまで待つ (映る前に送らなくすると、リクエストし直しが譲りより先に尽きる)
         val opened = denpa.requests.count { it == LIVE_REQUEST }
         open("denpa://live/${FakeDenpa.SERVICE_ID}")
-        assertTrue("ライブを頼みません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > opened })
+        assertTrue("ライブをリクエストしません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > opened })
         SystemClock.sleep(PICTURE_WAIT_MS)
         awaitVideo(LIVE_COLOR)
-        // 譲った: 知らせを流し、ライブの流れが閉じたら (偽のライブは 10 秒で閉じる) 頼み直しには何も送らない (チューナーが空かない)
+        // 譲った: 知らせを流し、ライブの流れが閉じたら (偽のライブは 10 秒で閉じる) リクエストし直しには何も送らない (チューナーが空かない)
         denpa.emptyLive.set(Int.MAX_VALUE)
         try {
             val chase = "GET /api/recordings/${FakeDenpa.CHASE_ID}/chase"
-            // 追っかけは前のテスト (chaseReconnect) でも頼んでいるので、数で見る
+            // 追っかけは前のテスト (chaseReconnect) でもリクエストしているので、数で見る
             val before = denpa.requests.count { it == chase }
             denpa.yieldLive()
             assertTrue("譲った録画の追っかけに切り替わりません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == chase } > before })
-            awaitText { it.startsWith("録画のためチャンネルを切り替えました") && FakeDenpa.CHASE_TITLE in it }
+            awaitText { it.startsWith("録画のため局を切り替えました") && FakeDenpa.CHASE_TITLE in it }
             awaitVideo(LIVE_COLOR)
-            // メニューは「ライブに戻る」に合う。押すと頼み直し、まだ入れないので追っかけに戻って、いつまでかを言う
+            // メニューは「ライブに戻る」にフォーカスする。押すとリクエストし直し、まだ入れないので追っかけに戻って、いつまでかを言う
             openMenu()
-            assertTrue("メニューが「ライブに戻る」に合いません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { "ライブに戻る" in focusedTexts() })
+            assertTrue("メニューが「ライブに戻る」にフォーカスしません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { "ライブに戻る" in focusedTexts() })
             val asked = denpa.requests.count { it == LIVE_REQUEST }
             val chased = denpa.requests.count { it == chase }
             press(KeyEvent.KEYCODE_DPAD_CENTER)
-            assertTrue("「ライブに戻る」で頼み直しません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > asked })
+            assertTrue("「ライブに戻る」でリクエストし直しません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > asked })
             assertTrue("戻れないのに追っかけに戻りません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == chase } > chased })
             awaitText { it.startsWith("録画が終わるまでライブは見られません (") }
         } finally {
@@ -237,15 +237,15 @@ class SmokeTest {
         }
         // 録画が終わって (denpa が送るようになって) から押せば、局に戻って知らせが消える
         openMenu()
-        assertTrue("メニューが「ライブに戻る」に合いません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { "ライブに戻る" in focusedTexts() })
+        assertTrue("メニューが「ライブに戻る」にフォーカスしません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { "ライブに戻る" in focusedTexts() })
         press(KeyEvent.KEYCODE_DPAD_CENTER)
         awaitVideo(LIVE_COLOR)
-        assertTrue("戻っても知らせが消えません: ${texts()}", poll(VIDEO_TIMEOUT_MS) { texts().none { it.startsWith("録画のためチャンネルを切り替えました") } })
+        assertTrue("戻っても知らせが消えません: ${texts()}", poll(VIDEO_TIMEOUT_MS) { texts().none { it.startsWith("録画のため局を切り替えました") } })
     }
 
     /**
-     * **denpa の変換の枠が埋まって断られたら** (503 `{"message":"サーバが混んでいます"}`)、何度かだけ頼み直して「サーバが混んでいます」と言い、
-     * それ以上は頼まない (denpa を叩き続けない)。入れ替えの最中の 503 (`liveReconnect`) とは違って「繋ぎ直しています」のまま回り続けない
+     * **denpa の変換の枠が埋まって断られたら** (503 `{"message":"サーバが混んでいます"}`)、何度かだけリクエストし直して「サーバが混んでいます」と言い、
+     * それ以上はリクエストしない (denpa を叩き続けない)。入れ替えの最中の 503 (`liveReconnect`) とは違って「繋ぎ直しています」のまま回り続けない
      */
     @Test
     fun chaseBusy() = watching {
@@ -257,11 +257,11 @@ class SmokeTest {
             open("denpa://recording/${FakeDenpa.CHASE_ID}")
             awaitText { it.startsWith("サーバが混んでいます") }
             assertTrue("混んでいたのが logcat にありません: ${appLog()}", "変換の枠が埋まっている" in appLog())
-            // 何度かで諦め、諦めたら頼まない (Media3 の中でも読み直さない)
+            // 何度かで諦め、諦めたらリクエストしない (Media3 の中でも読み直さない)
             val asked = denpa.requests.count { it == chase } - before
-            assertTrue("混んでいるのに $asked 回頼みました", asked in 1..BUSY_MOST_REQUESTS)
+            assertTrue("混んでいるのに $asked 回リクエストしました", asked in 1..BUSY_MOST_REQUESTS)
             SystemClock.sleep(BUSY_QUIET_MS)
-            assertEquals("諦めたあとも頼み直しています", asked, denpa.requests.count { it == chase } - before)
+            assertEquals("諦めたあともリクエストし直しています", asked, denpa.requests.count { it == chase } - before)
         } finally {
             denpa.busyChase.set(false)
         }
@@ -271,7 +271,7 @@ class SmokeTest {
 
     /**
      * **追っかけの途中でエンコードが終わったら** (denpa が `recordings` を知らせ、録画の状態が録り終えた `available` で、一覧にエンコード済みのファイルが載る)、ファイルの再生へ移る
-     * (エンコード済みのファイルを頼み、録画の映像が出る)。戻ったら録画中に戻して、一覧を読み直させる (あとのテストが追っかけを開けるように)
+     * (エンコード済みのファイルをリクエストし、録画の映像が出る)。戻ったら録画中に戻して、一覧を読み直させる (あとのテストが追っかけを開けるように)
      */
     @Test
     fun chaseEncoded() = watching {
@@ -280,7 +280,7 @@ class SmokeTest {
         val listed = denpa.requests.count { it == "GET /api/recordings" }
         try {
             denpa.encodeChase(true)
-            assertTrue("エンコードが終わってもファイルを頼みません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { "GET /api/recordings/${FakeDenpa.CHASE_ID}/file" in denpa.requests })
+            assertTrue("エンコードが終わってもファイルをリクエストしません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { "GET /api/recordings/${FakeDenpa.CHASE_ID}/file" in denpa.requests })
             assertRequested("GET /api/recordings/${FakeDenpa.CHASE_ID}")
             assertTrue("録画の一覧を読み直していません", denpa.requests.count { it == "GET /api/recordings" } > listed)
             awaitVideo(RECORDING_COLOR)
@@ -294,8 +294,8 @@ class SmokeTest {
     }
 
     /**
-     * 追っかけも、録り終える前に流れが閉じたら (denpa の入れ替え) 居た場所から頼み直す。録り終えたのかは denpa に聞いて決めるので、
-     * 録画の状態 (`api/recordings/<id>`) を聞いてから頼み直す。「最後まで観ました」にはしない
+     * 追っかけも、録り終える前に流れが閉じたら (denpa の入れ替え) いた位置からリクエストし直す。録り終えたのかは denpa に聞いて決めるので、
+     * 録画の状態 (`api/recordings/<id>`) を聞いてからリクエストし直す。「最後まで観ました」にはしない
      */
     @Test
     fun chaseReconnect() = watching {
@@ -304,7 +304,7 @@ class SmokeTest {
         awaitVideo(LIVE_COLOR)
         val chase = "GET /api/recordings/${FakeDenpa.CHASE_ID}/chase"
         val asked = denpa.requests.count { it == chase }
-        assertTrue("追っかけの流れが閉じても頼み直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == chase } > asked })
+        assertTrue("追っかけの流れが閉じてもリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == chase } > asked })
         val log = appLog()
         assertTrue("追っかけの繋ぎ直しが logcat にありません: $log", "chase" in log && "ended" in log)
         assertTrue("録っている最中なのに「最後まで観ました」になりました", texts().none { it.startsWith("最後まで観ました") })
@@ -317,7 +317,7 @@ class SmokeTest {
     private fun appLog(): String = shell("logcat -d -s denpa:I")
 
     /**
-     * 録画を映す。字幕 (文字の配置の `captions.json`。`FakeCaptions`) を描く。**決定で止めると操作バーが操作の列の「再生」に合って開き**、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる。
+     * 録画を映す。字幕 (文字の配置の `captions.json`。`FakeCaptions`) を描く。**決定で止めると操作バーが操作の列の「再生」にフォーカスして開き**、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる。
      * 下で開いたシークバーからも上で閉じる。偽の録画は 10 秒しかないので、映ったらすぐ止めてから見る
      * (操作バーは止めている間も 5 秒触らなければ閉じる。キーを押すたびに数え直すので、続けて押している間は閉じない)
      * **決定の長押しで番組の詳しいところ** (一覧のカードの長押しと同じ) が開き、戻るで閉じて映像に戻る (止めたまま。長押しの離しで動き出さない)
@@ -339,10 +339,10 @@ class SmokeTest {
         // 字は APK に入れてある丸ゴシック (縮めた APK でも assets から読めた)
         assertTrue("字幕の字を読めていません: ${appLog()}", "字幕の字を読めません" !in appLog())
 
-        // 止めると操作の列が開いて「再生」に合う (決定でそのまま動かせる)
+        // 止めると操作の列が開いて「再生」にフォーカスする (決定でそのまま動かせる)
         press(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertTrue("決定で止めても操作の列が「再生」に合って開きません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { barOpen() && "再生" in focusedTexts() })
-        // 操作の列から上でシークバーへ (閉じない)。シークバーに居たかは、次の上で閉じることで見る (画面の木の合いは古いことがある)
+        assertTrue("決定で止めても操作の列が「再生」にフォーカスして開きません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { barOpen() && "再生" in focusedTexts() })
+        // 操作の列から上でシークバーへ (閉じない)。シークバーにいたかは、次の上で閉じることで見る (画面のツリーのフォーカスは古いことがある)
         press(KeyEvent.KEYCODE_DPAD_UP)
         SystemClock.sleep(FOCUS_SETTLE_MS)
         assertTrue("操作の列から上で操作バーが閉じました: ${texts()}", barOpen())
@@ -371,7 +371,7 @@ class SmokeTest {
 
     /**
      * エンコード前の録画 (元の TS だけ) は、denpa に変換して流してもらう (`playback` で選ぶ。エミュレータは MPEG-2 をデコードできない)。
-     * チャプターは denpa から読み、CM (4〜6 秒) に来たら CM の終わりから頼み直して飛ぶ
+     * チャプターは denpa から読み、CM (4〜6 秒) に来たら CM の終わりからリクエストし直して飛ぶ
      */
     @Test
     fun recordingStream() = watching {
@@ -381,7 +381,7 @@ class SmokeTest {
         val chapters = "GET /api/recordings/${FakeDenpa.RAW_ID}/chapters"
         assertTrue("チャプターを読みません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { chapters in denpa.requests })
         val stream = "GET /api/recordings/${FakeDenpa.RAW_ID}/stream"
-        assertTrue("CM で頼み直しません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == stream } >= 2 })
+        assertTrue("CM でリクエストし直しません: ${denpa.requests.distinct()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == stream } >= 2 })
         assertTrue("ファイルを開きました (元の TS は流してもらうはず)", "GET /api/recordings/${FakeDenpa.RAW_ID}/file" !in denpa.requests)
         press(KeyEvent.KEYCODE_BACK)
         awaitText { it == FakeDenpa.RECORDING_TITLE }
@@ -411,7 +411,7 @@ class SmokeTest {
     fun recordingsAndSettings() = watching {
         open("denpa://recordings")
         awaitText { it == FakeDenpa.RECORDING_TITLE }
-        // 左キーでメニューを開く (どこにも合っていなければ、1回目は一覧に合うだけ)。開くと行き先の名前が出る。
+        // 左キーでメニューを開く (どこにもフォーカスが無ければ、1回目は一覧にフォーカスするだけ)。開くと行き先の名前が出る。
         // 遅いエミュレータでは開くのに間がかかるので、押すたびにしばらく待つ
         for (i in 0 until MENU_TRIES) {
             press(KeyEvent.KEYCODE_DPAD_LEFT)
@@ -441,7 +441,7 @@ class SmokeTest {
     }
 
     /**
-     * 映像が出るまで待つ。画面の絵を撮って、映像の地の色 (`scripts/smoke-media.sh`) の点が `VIDEO_SHARE` 以上あれば出ている。
+     * 映像が出るまで待つ。スクリーンショットを撮って、映像の地の色 (`scripts/smoke-media.sh`) の点が `VIDEO_SHARE` 以上あれば出ている。
      * 落ちた・再生の画面が「再生できません」を出したら、待たずに失敗にする
      */
     private fun awaitVideo(color: Int) {
@@ -466,7 +466,7 @@ class SmokeTest {
 
     /**
      * `done` になるまで `code` を押す (届かなかったときだけ押し直す)。ならなければ `message` で失敗にする。
-     * **押す前に `done` でないのを確かめる** — 前の操作で閉じるはずのもの (「録画」で閉じるメニュー) は次のこまで消えるので、
+     * **押す前に `done` でないのを確かめる** — 前の操作で閉じるはずのもの (「録画」で閉じるメニュー) は次のフレームで消えるので、
      * 押してすぐ読むと閉じかけのものを「開いた」と取り違え、キーが届いていない (閉じかけのボタンに届いて捨てられた) のに先へ進んでしまう
      */
     private fun pressUntil(code: Int, message: String, done: () -> Boolean) {
@@ -478,7 +478,7 @@ class SmokeTest {
         fail("$message: ${texts()}")
     }
 
-    /** 合っているもの (入力の合い) とその中の文字。Compose のボタンは中の Text を子に持つ */
+    /** フォーカスしているもの (入力フォーカス) とその中の文字。Compose のボタンは中の Text を子に持つ */
     private fun focusedTexts(): List<String> {
         val focused = activeWindow()?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return emptyList()
         val out = mutableListOf<String>()
@@ -610,7 +610,7 @@ class SmokeTest {
             /*
              * pm clear で前の画面ごと消えると、ランチャーが前に出て、あとから自分の知らせの画面 (Google TV の ShowDialogsActivity)
              * をアプリの上に重ねることがある (手元の API 36 で、開いたアプリが隠れたまま「繋ぐ」を待ち切った)。
-             * アプリでない窓に合いがあるまま `RELAUNCH_MS` たったら、もう一度前に出す
+             * アプリでない窓にフォーカスがあるまま `RELAUNCH_MS` たったら、もう一度前に出す
              */
             val deadline = SystemClock.uptimeMillis() + TEXT_TIMEOUT_MS
             var started = SystemClock.uptimeMillis()
@@ -618,7 +618,7 @@ class SmokeTest {
             while (texts().none { it == "繋ぐ" }) {
                 assertNoCrash()
                 val now = SystemClock.uptimeMillis()
-                if (now > deadline) fail("繋ぐ画面が出ません。合いのある窓: ${focusedWindow()}、画面の文字: ${texts()}")
+                if (now > deadline) fail("繋ぐ画面が出ません。フォーカスのある窓: ${focusedWindow()}、画面の文字: ${texts()}")
                 if (now - started > RELAUNCH_MS && focusedWindow().let { it != null && it != APP }) {
                     instrumentation.context.startActivity(launch)
                     started = now
@@ -683,25 +683,25 @@ class SmokeTest {
         private fun pid(): String = shell("pidof $APP").trim()
 
         /**
-         * **キーを送る前に、アプリの窓 (ダイアログも) に入力の合いが来ているのを待つ。** キーは合いのある窓に届くので、
-         * 開き直した直後 (ホームから戻した・リンクで開き直した) にまだ前の窓に合いがあると、送ったキーはそちらへ行って消える
-         * (映像は合いより先に映るので、映ったのを見てからでも早すぎることがある)
+         * **キーを送る前に、アプリの窓 (ダイアログも) に入力フォーカスが来ているのを待つ。** キーはフォーカスのある窓に届くので、
+         * 開き直した直後 (ホームから戻した・リンクで開き直した) にまだ前の窓にフォーカスがあると、送ったキーはそちらへ行って消える
+         * (映像はフォーカスより先に映るので、映ったのを見てからでも早すぎることがある)
          */
         private fun awaitAppFocus() {
-            assertTrue("アプリの窓に入力の合いが来ません: ${focusedWindow()}", poll(TEXT_TIMEOUT_MS) { focusedWindow() == APP })
+            assertTrue("アプリの窓に入力フォーカスが来ません: ${focusedWindow()}", poll(TEXT_TIMEOUT_MS) { focusedWindow() == APP })
         }
 
-        /** 入力の合いがある窓のパッケージ (WindowManager の mCurrentFocus。ダイアログは題が無いのでパッケージ名だけで出る) */
+        /** 入力フォーカスがある窓のパッケージ (WindowManager の mCurrentFocus。ダイアログはタイトルが無いのでパッケージ名だけで出る) */
         private fun focusedWindow(): String? =
             Regex("mCurrentFocus=Window\\{\\S+ u\\d+ ([^ /}]+)").find(shell("dumpsys window"))?.groupValues?.get(1)
 
         private fun activeWindow(): AccessibilityNodeInfo? = freshAutomation().rootInActiveWindow
 
         /**
-         * **画面の木を読む前に、毎回アクセシビリティのキャッシュを捨てる。** UiAutomation は読んだ部品をキャッシュし、アプリからの
+         * **画面のツリーを読む前に、毎回アクセシビリティのキャッシュを捨てる。** UiAutomation は読んだ部品をキャッシュし、アプリからの
          * 「中身が替わった」の知らせで捨てる。Compose の画面では知らせで捨てられない枝が残り、**閉じた操作バー・ダイアログを何十秒も返し続ける**
-         * ことがある (CI の API 31 で、上キーで閉じた操作バーが 30 秒たっても木に残り、ダイアログを閉じたあとはアプリの窓が1つも取れなかった。
-         * 手元の API 31 でも、古い木が返っている間に部品ごとに取り直す (refresh) と閉じていて、キャッシュを捨てると読み直せた)。キャッシュは API 34 からは clearCache() で、
+         * ことがある (CI の API 31 で、上キーで閉じた操作バーが 30 秒たってもツリーに残り、ダイアログを閉じたあとはアプリの窓が1つも取れなかった。
+         * 手元の API 31 でも、古いツリーが返っている間に部品ごとに取り直す (refresh) と閉じていて、キャッシュを捨てると読み直せた)。キャッシュは API 34 からは clearCache() で、
          * それより前は setServiceInfo (中で捨ててから設定する) で捨てる。ダイアログも読むので、アプリの窓を全部取る印も一緒に付ける
          */
         private fun freshAutomation(): UiAutomation {
@@ -776,10 +776,10 @@ class SmokeTest {
         // CI のエミュレータ (KVM はあるが GPU は無い) は遅いので長めに待つ
         private const val VIDEO_TIMEOUT_MS = 60_000L
         private const val TEXT_TIMEOUT_MS = 30_000L
-        /** 混んでいて断られたとき、頼んでよい数 (1回目と頼み直しの `Reconnect.FEW` 回。開いてすぐ頼み直すことがあるので、その倍まで) と、諦めたあと頼まないのを見る長さ (頼み直しの待ちの上限 10 秒より長く) */
+        /** 混んでいて断られたとき、リクエストしてよい数 (1回目とリクエストし直しの `Reconnect.FEW` 回。開いてすぐリクエストし直すことがあるので、その倍まで) と、諦めたあとリクエストしないのを見る長さ (リクエストし直しの待ちの上限 10 秒より長く) */
         private const val BUSY_MOST_REQUESTS = 8
         private const val BUSY_QUIET_MS = 12_000L
-        /** 頼んだ映像が映るまで待つ長さ (偽の denpa はすぐ全部送るので、これで足りる) */
+        /** リクエストした映像が映るまで待つ長さ (偽の denpa はすぐ全部送るので、これで足りる) */
         private const val PICTURE_WAIT_MS = 3_000L
         private const val SETTLE_MS = 3_000L
         private const val POLL_MS = 500L
@@ -795,7 +795,7 @@ class SmokeTest {
         /** 押し続けたときの繰り返しの数と間 (リモコンの繰り返しはおよそ 50 ミリ秒ごと) */
         private const val HOLD_REPEATS = 6
         private const val REPEAT_MS = 50L
-        /** キーで合いを移してから次のキーを送るまで (合わせる先が出来て合いが移り終えるのを待つ) */
+        /** キーでフォーカスを移してから次のキーを送るまで (フォーカスする先が出来てフォーカスが移り終えるのを待つ) */
         private const val FOCUS_SETTLE_MS = 1_000L
     }
 }

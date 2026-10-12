@@ -73,7 +73,7 @@ data class Control(
     val label: String,
     val on: Boolean = false,
     val icon: Int? = null,
-    /** 開いたときにここに合わせる (無ければ、オンのものの1つ目) */
+    /** 開いたときにここにフォーカスする (無ければ、オンのものの1つ目) */
     val initial: Boolean = false,
     /** 読み上げの名前。ボタンを短くしたもの (「前へ」) だけ、略さない名前 (「前のチャプター」) を付ける。null なら `label` */
     val description: String? = null,
@@ -84,11 +84,11 @@ data class Control(
  * 映像の下に出す操作バー。**ブラウザの denpa の再生の操作列にあたるもの** (画質・速さ・CM 飛ばしなど)。
  * 設定の画面に置かないのは、ブラウザと同じく「観ながら変えて、その端末で覚える」ものだから。
  *
- * **映像を隠さないよう、下の端に小さく。** 重い板ではなく下から薄く暗くし (上と真ん中は空けたまま)、
+ * **映像を隠さないよう、下の端に小さく。** 重いパネルではなく下から薄く暗くし (上と真ん中は空けたまま)、
  * 文字は離れて読める大きさのまま小さめ、操作は印つきの小さなボタンにする。
  *
- * 上から: 題 (2行目からは小さく。番組名・位置など)、`header` (録画のシークバー・ライブの番組の進み)、操作の列。
- * `focusActions` なら開いたときに操作の列の最初の (オンの) ものに合わせる。そうでなければ `header` が自分で合わせる。
+ * 上から: タイトル (2行目からは小さく。番組名・位置など)、`header` (録画のシークバー・ライブの番組の進み)、操作の列。
+ * `focusActions` なら開いたときに操作の列の最初の (オンの) ものにフォーカスする。そうでなければ `header` が自分でフォーカスする。
  * 戻るで閉じる (呼ぶ側)。キーが来るたびに `onActivity` (しばらく触らなければ閉じるため)
  */
 @Composable
@@ -99,26 +99,26 @@ fun BoxScope.ControlBar(
     header: (@Composable ColumnScope.(FocusRequester) -> Unit)? = null,
     focusActions: Boolean = true,
     onActivity: () -> Unit = {},
-    /** 操作の列から下キーで合わせる先 (ライブの局の列の、いま映している局)。null なら近いものへ */
+    /** 操作の列から下キーでフォーカスする先 (ライブの局の列の、いま映している局)。null なら近いものへ */
     down: FocusRequester? = null,
     /** 操作の列の下に足すもの (ライブの局の列) */
     below: (@Composable ColumnScope.() -> Unit)? = null,
     /**
      * 操作の列で押した上キーで閉じる (`closeOnUp`)。**操作の列がいちばん上の列のときだけ渡す** (ライブのメニュー)。
-     * 上に合わせられるシークバーがある操作バー (録画・追っかけ) では、上キーはシークバーへ上がるので渡さない (シークバーの `onUp` で閉じる)
+     * 上にフォーカスできるシークバーがある操作バー (録画・追っかけ) では、上キーはシークバーへ上がるので渡さない (シークバーの `onUp` で閉じる)
      */
     onUp: (() -> Unit)? = null,
-    /** 題の左に置くもの (ライブの局ロゴ) */
+    /** タイトルの左に置くもの (ライブの局ロゴ) */
     leading: (@Composable () -> Unit)? = null,
 ) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (focusActions) runCatching { first.requestFocus() } }
     /*
-     * 合わせるものがある操作バーでは、操作バーの中に合いを持ち続ける。合っていたボタンが消えた (「最新」に追いついた)・戻るの取り合いで
-     * 合いが外れた、のどれでも、操作バーの中に合いが無ければ操作の列に戻す — 開いたまま合いがどこにも無いとリモコンが効かなくなる
+     * フォーカスできるものがある操作バーでは、操作バーの中にフォーカスを持ち続ける。フォーカスのあったボタンが消えた (「最新」に追いついた)・戻るの取り合いで
+     * フォーカスが外れた、のどれでも、操作バーの中にフォーカスが無ければ操作の列に戻す — 開いたままフォーカスがどこにも無いとリモコンが効かなくなる
      */
     val holdFocus = groups.any { it.second.isNotEmpty() }
-    /** 操作バーの中 (ボタン・シークバー・局の列) に合いがあるか */
+    /** 操作バーの中 (ボタン・シークバー・局の列) にフォーカスがあるか */
     var inside by remember { mutableStateOf(false) }
     LaunchedEffect(holdFocus) {
         if (!holdFocus) return@LaunchedEffect
@@ -135,7 +135,7 @@ fun BoxScope.ControlBar(
             .ignoreHeldCenter(),
         spacing = 6.dp,
     ) {
-        // 操作バーを出している間の知らせ (操作バーの中で押したものの返事など) は、下の端に別に出さずに題の2行目へ (`PlayerFrame` の `covered`)
+        // 操作バーを出している間の知らせ (操作バーの中で押したものの返事など) は、下の端に別に出さずにタイトルの2行目へ (`PlayerFrame` の `covered`)
         val notice = LocalBarNotice.current
         if (leading == null) {
             TitleLines(title, notice)
@@ -146,15 +146,15 @@ fun BoxScope.ControlBar(
             }
         }
         header?.invoke(this, first)
-        /** 開いたときに合わせるボタンを、もう決めたか (組み直すたびに数え直す) */
+        /** 開いたときにフォーカスするボタンを、もう決めたか (組み直すたびに数え直す) */
         var focused = false
         /*
          * **1080p・720p (どちらも 960dp 幅) で1行に収める。** ボタンは短く (「前へ」「次へ」)、組の間も詰める。
-         * それでもはみ出したら (音声の名前が長い・「もう一度押すと削除」・文字を大きくしたテレビ)、合わせたものが
+         * それでもはみ出したら (音声の名前が長い・「もう一度押すと削除」・文字を大きくしたテレビ)、フォーカスしたものが
          * 見えるところまで横に送る
          */
         Row(
-            // 合わせたボタンは少し膨らむ (1.1 倍) ので、横に送る枠で切れないよう両脇を空けておく (左の端は操作バーの端に揃える)
+            // フォーカスしたボタンは少し膨らむ (1.1 倍) ので、横に送る枠で切れないよう両脇を空けておく (左の端は操作バーの端に揃える)
             Modifier
                 .offset(x = (-10).dp)
                 .closeOnUp(onUp)
@@ -168,7 +168,7 @@ fun BoxScope.ControlBar(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (name.isNotEmpty()) Text(name, style = MaterialTheme.typography.labelSmall, color = Palette.OnScrimMuted)
                     controls.forEach { control ->
-                        // `initial` のもの、無ければオンのものの1つ目に合わせる (それも無ければいちばん最初)
+                        // `initial` のもの、無ければオンのものの1つ目にフォーカスする (それも無ければいちばん最初)
                         val take = !focused && when {
                             groups.any { (_, all) -> all.any { it.initial } } -> control.initial
                             else -> control.on || controls.none { it.on }
@@ -187,7 +187,7 @@ fun BoxScope.ControlBar(
 /** 印だけのボタン (丸) の大きさ。ほかのボタンの高さ (tv-material の Button の最小の高さ) と同じ */
 private val ICON_CHIP = 40.dp
 
-/** 操作バーの中に合いがあるか見張る間 (ミリ秒) */
+/** 操作バーの中にフォーカスがあるか見張る間 (ミリ秒) */
 private const val HOLD_FOCUS_MS = 300L
 
 /** 組 (再生・速さ・CM 飛ばし・字幕と音声・削除) の間。ボタンの間 (6dp) より広く、区切りが分かるだけ */
@@ -197,7 +197,7 @@ private val GROUP_GAP = 14.dp
 val SCRIM_TOP = 48.dp
 
 /**
- * 下の端に重ねる板 (操作バー・知らせ)。下から薄く暗くし、**高さを字幕に知らせる** (`PlayerFrame` の中なら、字幕がこの上へ逃げる。
+ * 下の端に重ねるパネル (操作バー・知らせ)。下から薄く暗くし、**高さを字幕に知らせる** (`PlayerFrame` の中なら、字幕がこの上へ逃げる。
  * `rememberCoverReport`)。下の端に何か出すときは、これを使う (知らせ忘れると字幕が隠れる)
  */
 @Composable
@@ -217,7 +217,7 @@ fun BoxScope.BottomPanel(modifier: Modifier = Modifier, spacing: Dp, content: @C
 }
 
 /**
- * 板の題。1行目は白く、2行目からは小さく (番組名・位置など)。
+ * パネルのタイトル。1行目は白く、2行目からは小さく (番組名・位置など)。
  * AnnotatedString なら、印 (`appendBroadcast`) の付いたところ (番組名・局名) を放送の字にする。
  * `notice` (操作バーを出している間の知らせ) は2行目の後ろに明るい azure で添える (`withNotice`)
  */
@@ -234,7 +234,7 @@ fun TitleLines(text: CharSequence, notice: CharSequence? = null) {
 }
 
 /**
- * 題の2行目の後ろに知らせを添える (操作バーを出している間の知らせ。`LocalBarNotice`)。題が1行なら知らせが2行目になる。
+ * タイトルの2行目の後ろに知らせを添える (操作バーを出している間の知らせ。`LocalBarNotice`)。タイトルが1行なら知らせが2行目になる。
  * 知らせが何行かあれば1行に繋ぐ。印 (`appendBroadcast`) はそのまま残る
  */
 internal fun withNotice(text: CharSequence, notice: CharSequence?): AnnotatedString {
@@ -263,18 +263,18 @@ internal fun withNotice(text: CharSequence, notice: CharSequence?): AnnotatedStr
     }
 }
 
-/** 題の2行目と知らせの間 */
+/** タイトルの2行目と知らせの間 */
 private const val NOTICE_GAP = "   "
 
 /**
- * 下から暗くする (映像の上でも文字が読めるように)。上の透かし (`SCRIM_TOP`) を過ぎた題のあたりから、もう十分に暗く
- * (明るい場面でも題の白い字が沈まないように)。上の端だけ透かして映像に溶かす
+ * 下から暗くする (映像の上でも文字が読めるように)。上の透かし (`SCRIM_TOP`) を過ぎたタイトルのあたりから、もう十分に暗く
+ * (明るい場面でもタイトルの白い字が沈まないように)。上の端だけ透かして映像に溶かす
  */
 val SCRIM = Brush.verticalGradient(0f to Color.Transparent, 0.25f to Color(0xB3000000), 0.5f to Color(0xCC000000), 1f to Color(0xE0000000))
 
 /**
  * テレビの縁で切れない所 (オーバースキャンの安全域。Android TV の指針の 5%: 横 48dp・縦 27dp)。
- * 下の端に出す板の横の余白と、下の余白 (合わせて膨らんだボタンの縁と光も入るよう、少し多めに)
+ * 下の端に出すパネルの横の余白と、下の余白 (フォーカスで膨らんだボタンの縁と光も入るよう、少し多めに)
  */
 val SAFE_HORIZONTAL = 48.dp
 val SAFE_VERTICAL = 27.dp
@@ -296,8 +296,8 @@ private fun Chip(control: Control, modifier: Modifier) {
         // 1行のまま中身に合わせて伸ばす (「もう一度押すと削除」のように押すと長くなるボタンが切れないように)
         if (!iconOnly) Text(control.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
     }
-    // オン・オフで部品を替えない (Button と OutlinedButton を替えると、押したボタンから合いが外れて列の頭に飛ぶ・
-    // どこにも合わなくなる)。色だけ変える。オンのものは azure で塗り、合わせたら白く (字は入っていれば azure)
+    // オン・オフで部品を替えない (Button と OutlinedButton を替えると、押したボタンからフォーカスが外れて列の頭に飛ぶ・
+    // どこにもフォーカスが無くなる)。色だけ変える。オンのものは azure で塗り、フォーカスしたら白く (字は入っていれば azure)
     val colors = OutlinedButtonDefaults.colors(
         containerColor = if (control.on) Palette.Accent else Color(0x33000000),
         contentColor = Color.White,
@@ -326,11 +326,11 @@ private fun Chip(control: Control, modifier: Modifier) {
 }
 
 /**
- * 進行バー。`chapters` の CM は琥珀で塗る (`Palette.Cm`)。`onStep` を渡すと合わせられるシークバーになり、
- * 合っている間は左右で `onStep(-1 / 1)` (呼ぶ側が 10 秒ずつ動かす)。下で操作の列へ、上で `onUp` (操作バーを閉じる。`closeOnUp`)。
+ * 進行バー。`chapters` の CM は琥珀で塗る (`Palette.Cm`)。`onStep` を渡すとフォーカスできるシークバーになり、
+ * フォーカスがある間は左右で `onStep(-1 / 1)` (呼ぶ側が 10 秒ずつ動かす)。下で操作の列へ、上で `onUp` (操作バーを閉じる。`closeOnUp`)。
  *
- * **合っているのが離れても分かるように**、合っている間はバーを太くし、位置に大きな白い丸を明るい azure の縁で置き、
- * 丸の上に位置 (1:02:03) を出す。位置の字のぶん、シークバーは上を空けておく (合わせてもバーの高さが変わらないように)
+ * **フォーカスがあるのが離れても分かるように**、フォーカスがある間はバーを太くし、位置に大きな白い丸を明るい azure の縁で置き、
+ * 丸の上に位置 (1:02:03) を出す。位置の字のぶん、シークバーは上を空けておく (フォーカスしてもバーの高さが変わらないように)
  */
 @Composable
 fun ProgressLine(
@@ -338,7 +338,7 @@ fun ProgressLine(
     duration: Long,
     chapters: List<ChapterMark> = emptyList(),
     focus: FocusRequester? = null,
-    /** 下で合わせる先 (操作の列の最初。近いものに合うと、真ん中のボタンに飛んでしまう) */
+    /** 下でフォーカスする先 (操作の列の最初。近いものにフォーカスすると、真ん中のボタンに飛んでしまう) */
     down: FocusRequester? = null,
     /** シークバーで押した上キーで閉じる (操作バーのいちばん上の列なので) */
     onUp: (() -> Unit)? = null,
@@ -406,7 +406,7 @@ private fun clockLabel(ms: Long): String = position(ms)
 private val LINE_HEIGHT = 16.dp
 private val SEEK_LABEL_HEIGHT = 26.dp
 
-/** 合っているシークバーの丸 (半径)、その明るい azure の縁の太さ、丸と位置の字の間 */
+/** フォーカスがあるシークバーの丸 (半径)、その明るい azure の縁の太さ、丸と位置の字の間 */
 private val KNOB_RADIUS = 10.dp
 private val KNOB_RING = 3.dp
 private val KNOB_GAP = 2.dp

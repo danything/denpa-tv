@@ -28,7 +28,7 @@ import java.net.URI
 
 /**
  * 画面が使う denpa の窓口。一覧は画面をまたいで使うので (ライブの局の切り替え・録画を開く) ここに控える。
- * トークンがあれば API・絵・映像のどれにも付ける
+ * トークンがあれば API・画像・映像のどれにも付ける
  */
 class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     val api = DenpaApi { token }
@@ -39,7 +39,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     val recordings: List<Recording> get() = list.items
 
-    /** 録画を読み直す (全部)。読めたら「続きを視聴」も合わせる (消えた・観終えた録画を消し、ほかの端末で観た位置に直す) */
+    /** 録画を読み直す (全部)。読めたら「続きを視聴」もそろえる (消えた・観終えた録画を消し、ほかの端末で観た位置に直す) */
     suspend fun refreshRecordings() {
         val fetchedAt = System.currentTimeMillis()
         list.refresh()
@@ -76,12 +76,12 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     var servicesStale = false
 
     /**
-     * メニューの画面に戻ったら、左のメニュー (「ライブ」) に合わせる。ライブから戻ったとき — 戻るでいちばん上のメニューへ
-     * (録画の一覧のカードに合わせると、ライブに戻るにも左へ行き直すことになる)
+     * メニューの画面に戻ったら、左のメニュー (「ライブ」) にフォーカスする。ライブから戻ったとき — 戻るでいちばん上のメニューへ
+     * (録画の一覧のカードにフォーカスすると、ライブに戻るにも左へ行き直すことになる)
      */
     var menuOnReturn = false
 
-    /** 録画の一覧に戻ったとき合わせる先 (再生の画面で消したときの隣) */
+    /** 録画の一覧に戻ったときフォーカスする先 (再生の画面で消したときの隣) */
     var focusOnReturn: Long? = null
 
     /** 消した録画を手元の一覧から抜く。隣の id を返す */

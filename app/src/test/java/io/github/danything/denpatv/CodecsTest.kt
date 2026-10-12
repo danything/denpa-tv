@@ -9,7 +9,7 @@ import org.junit.Test
 
 class CodecsTest {
     @Test
-    fun ライブの既定は_MPEG2_をハードで解ければ低遅延_そうでなければ_H264() {
+    fun ライブの既定は_MPEG2_をハードでデコードできれば低遅延_そうでなければ_H264() {
         val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
         assertEquals(LiveQuality.Raw, LiveQuality.choose(null, tv))
         val stick = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = false, mpeg2Hardware = false)

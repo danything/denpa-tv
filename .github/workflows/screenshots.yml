@@ -1,10 +1,10 @@
 name: Screenshots
 
-# 画面の絵を撮る (README・docs/ の絵と、PR に貼る絵)。PR の CI には入れない (手で走らせるか、shots/ の枝に積んだときだけ)。
+# スクリーンショットを撮る (README・docs/ の画像と、PR に貼る画像)。PR の CI には入れない (手で走らせるか、shots/ のブランチに積んだときだけ)。
 # 縮めた APK を API 36・1080p の Android TV エミュレータで開き、作り物の録画・局・番組を返す偽の denpa に繋いで撮る
-# (smoke/ の Screenshots、scripts/shots-run.sh)。絵は artifact (shots) に PNG と webp (1280 幅、docs/images/ と同じ) で上げる。
-# README の頭の動く絵 (navigation.webp。854 幅) は navigation/ のこまを繋いで作る。docs/images/ を撮り直すときは、
-# artifact の webp のうち docs/images/ にある名前のものを上書きする (docs/development.md の「画面の絵」)
+# (smoke/ の Screenshots、scripts/shots-run.sh)。画像は artifact (shots) に PNG と webp (1280 幅、docs/images/ と同じ) で上げる。
+# README の頭のアニメーション (navigation.webp。854 幅) は navigation/ のコマを繋いで作る。docs/images/ を撮り直すときは、
+# artifact の webp のうち docs/images/ にある名前のものを上書きする (docs/development.md の「スクリーンショット」)
 on:
   workflow_dispatch:
   push:
@@ -31,7 +31,7 @@ jobs:
         with:
           # CI の流れのキャッシュを読むだけ (ここからは書かない)
           cache-read-only: true
-      # 設定の絵で「最新です」と出るように、いちばん新しいリリースの版でビルドする (開発版だと「開発版はアップデートしません」)
+      # 設定の画面で「最新です」と出るように、いちばん新しいリリースの版でビルドする (開発版だと「開発版はアップデートしません」)
       - name: Build APKs
         env:
           GH_TOKEN: ${{ github.token }}
@@ -79,7 +79,7 @@ jobs:
             [ -e "$png" ] || continue
             cwebp -quiet -q 85 -resize 1280 0 "$png" -o "${png%.png}.webp"
           done
-          # 動く絵: こまの名前 (<番号>-<見せるミリ秒>.png) の順に繋ぐ
+          # アニメーション: コマの名前 (<番号>-<見せるミリ秒>.png) の順に繋ぐ
           frames=()
           for png in shots/navigation/*.png; do
             [ -e "$png" ] || continue

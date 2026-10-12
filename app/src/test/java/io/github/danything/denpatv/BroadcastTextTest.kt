@@ -71,9 +71,9 @@ class BroadcastTextTest {
         assertEquals(listOf(emptyList<String>()), broadcastParts(broadcastPrefix("番組表にいまの番組がありません", "ＮＨＫ")))
     }
 
-    /** 操作バーを出している間の知らせは、題の2行目の後ろに (1行の題なら2行目に)。何行かの知らせは1行に繋ぐ。放送の字の印は残る */
+    /** 操作バーを出している間の知らせは、タイトルの2行目の後ろに (1行のタイトルなら2行目に)。何行かの知らせは1行に繋ぐ。放送の字の印は残る */
     @Test
-    fun 帯の題の2行目に知らせを添える() {
+    fun 操作バーのタイトルの2行目に知らせを添える() {
         val title = buildAnnotatedString {
             appendBroadcast("番組")
             append("\n0:01:00 / 0:30:00")
@@ -83,14 +83,14 @@ class BroadcastTextTest {
         assertEquals(listOf(listOf("番組"), emptyList()), broadcastParts(shown))
         // 知らせのところだけ色を変える
         assertEquals(listOf("CM 飛ばし オン"), shown.spanStyles.map { shown.text.substring(it.start, it.end) })
-        // 1行の題
+        // 1行のタイトル
         assertEquals(listOf("最後まで観ました", "CM を飛ばしました"), withNotice("最後まで観ました", "CM を飛ばしました").splitLines().map { it.text })
-        // 何行かの知らせ・3行目のある題
+        // 何行かの知らせ・3行目のあるタイトル
         assertEquals(
             listOf("一時停止", "0:01:00   局   番組", "手引き"),
             withNotice("一時停止\n0:01:00\n手引き", "局\n番組").splitLines().map { it.text },
         )
-        // 知らせが無ければ題のまま
+        // 知らせが無ければタイトルのまま
         assertEquals(title, withNotice(title, null))
         assertEquals(title, withNotice(title, ""))
     }

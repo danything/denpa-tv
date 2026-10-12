@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 
 /**
- * denpa の `GET /api/services` の1件 (denpa の docs/api.md)。URL は denpa の根からの相対 (`api/…`)
+ * denpa の `GET /api/services` の1件 (denpa の docs/api.md)。URL は denpa のルートからの相対 (`api/…`)
  */
 @Immutable
 @Serializable
@@ -100,14 +100,14 @@ data class Recording(
     /** 続きの位置 (ミリ秒)。無い・null なら頭から */
     val resumeMs: Long? = null,
     /**
-     * 末尾まで観た時刻 (ミリ秒)。まだなら `JsonNull` (`unwatched`)。形は問わない (版のずれで一覧ごと読めなくならないように)
+     * 末尾まで観た時刻 (ミリ秒)。まだなら `JsonNull` (`unwatched`)。形式は問わない (版のずれで一覧ごと読めなくならないように)
      */
     val watchedAt: JsonElement = JsonNull,
     /** 予定の終わり (UNIX ミリ秒)。追っかけで観た位置を預けるときの尺に使う */
     val endAt: Long? = null,
     /** いま録っている。`files` は伸びている元のTSだけなので、`chase` で観る */
     val recording: Boolean = false,
-    /** 追っかけ再生の口 (`api/recordings/<id>/chase`)。元のTSがある間だけ */
+    /** 追っかけ再生のエンドポイント (`api/recordings/<id>/chase`)。元のTSがある間だけ */
     val chase: String? = null,
     /** CM 飛ばしを観はじめに入れてよいか (ロゴでの判定に失敗した録画は false)。無ければ入れてよい */
     val cmReliable: Boolean = true,
@@ -115,7 +115,7 @@ data class Recording(
     val audios: List<DenpaAudio> = emptyList(),
 )
 
-/** 追っかけで観るか (録画中で、追っかけの口がある) */
+/** 追っかけで観るか (録画中で、追っかけのエンドポイントがある) */
 val Recording.chasing: Boolean get() = recording && chase != null
 
 /** 観た割合 (0..1)。続きの位置か長さが分からなければ null */

@@ -51,7 +51,7 @@ fun Modifier.closeOnUp(onClose: (() -> Unit)?): Modifier = if (onClose == null) 
  * リモコン・端末 (キーの繰り返しを切ってある、離すまで何も送らない BT のリモコン) では、長く押しても離したときに短押し
  * (再生) になっていた。決定のキーはここで受けてしまい (カードには渡さない)、繰り返しの印か、押したまま
  * `CenterPress.LONG_PRESS_MS` たったら `onLongClick`、その前に離したら `onClick`。
- * 合いが外れた・`enabled` が替わった (映像の上に操作バーやメニューが開いた・閉じた) ら押しを忘れる。`enabled` でない間は受けない
+ * フォーカスが外れた・`enabled` が替わった (映像の上に操作バーやメニューが開いた・閉じた) ら押しを忘れる。`enabled` でない間は受けない
  */
 fun Modifier.centerPresses(onClick: () -> Unit, onLongClick: () -> Unit, enabled: Boolean = true): Modifier = composed {
     val center = remember { CenterPress() }

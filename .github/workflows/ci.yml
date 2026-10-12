@@ -60,7 +60,7 @@ jobs:
           fi
           files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename')
           echo "$files"
-          # 文書・アプリの外の台本 (入れ方)・Renovate の設定だけなら、アプリは変わらない
+          # 文書・アプリの外のスクリプト (インストール用)・Renovate の設定だけなら、アプリは変わらない
           code=$(echo "$files" | grep -Ev '(\.md$|^docs/|^LICENSE$|^scripts/install\.(sh|ps1)$|^renovate\.json$)' > /dev/null && echo true || echo false)
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
 

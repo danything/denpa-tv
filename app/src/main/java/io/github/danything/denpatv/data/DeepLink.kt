@@ -20,7 +20,7 @@ sealed interface DeepLink {
     companion object {
         /**
          * `denpa://live`・`denpa://live/<局>`・`denpa://recordings`・`denpa://recording/<id>` を読む。
-         * 局の名前は % で符号化してもしなくてもよい。ほかの形は null
+         * 局の名前は % で符号化してもしなくてもよい。ほかの形式は null
          */
         fun parse(uri: String?): DeepLink? {
             val s = uri?.trim() ?: return null
@@ -63,6 +63,6 @@ fun findService(services: List<Service>, query: String): Service? {
     return preferred.firstOrNull { normalizeName(it.name).startsWith(n) }
 }
 
-/** 名前を比べる形に: NFKC (全角英数を半角に) ・小文字・空白を抜く */
+/** 名前を比べるために正規化する: NFKC (全角英数を半角に) ・小文字・空白を抜く */
 internal fun normalizeName(name: String): String =
     Normalizer.normalize(name, Normalizer.Form.NFKC).lowercase().filterNot { it.isWhitespace() }

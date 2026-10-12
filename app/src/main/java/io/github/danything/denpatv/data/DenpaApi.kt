@@ -14,13 +14,13 @@ import java.io.IOException
 import java.net.URI
 
 /**
- * denpa の外向けの口 (denpa の docs/api.md) を叩く。
+ * denpa の外向けの API (denpa の docs/api.md) を呼ぶ。
  *
  * **家の LAN からはトークン無しで通る** (denpa の TRUSTED_NETWORKS)。家の外の denpa (OIDC でログインする構成) では、
  * テレビを denpa に登録して受け取ったトークンを `Authorization: Bearer` で付ける (`token`、docs/pairing.md)
  */
 class DenpaApi(
-    /** 答えの形が思っていたのと違うとき (denpa の版のずれ)。止めずに言うだけ */
+    /** 答えの形式が思っていたのと違うとき (denpa の版のずれ)。止めずに言うだけ */
     private val warn: (String) -> Unit = { Log.w(TAG, it) },
     /** 後ろに置く (`DenpaApi { token }` と書けるように) */
     private val token: () -> String? = { null },
@@ -81,7 +81,7 @@ class DenpaApi(
     /**
      * 番組表の番組の中身 (`GET api/programs/<id>`。ライブの詳細)。`id` は局の `now.id`。
      * 番組表から消えた (404)・届かない・読めないは `Missing` (呼ぶ側は `now` のぶんだけを出す)。
-     * 形がずれていても読めるところは読む (`parseProgramInfo`)
+     * 形式がずれていても読めるところは読む (`parseProgramInfo`)
      */
     suspend fun program(base: URI, id: Long): ProgramLookup = withContext(Dispatchers.IO) {
         val res = call(base, "api/programs/$id")?.takeIf { it.ok } ?: return@withContext ProgramLookup.Missing
@@ -98,7 +98,7 @@ class DenpaApi(
     }
 
     /**
-     * 録画を何で観られるか (`GET api/recordings/<id>/playback`)。観られない (404。録画中・ファイルが無い・口の無い古い denpa) は `Missing`、
+     * 録画を何で観られるか (`GET api/recordings/<id>/playback`)。観られない (404。録画中・ファイルが無い・このエンドポイントの無い古い denpa) は `Missing`、
      * 届かない・読めないは `Failed`
      */
     suspend fun playback(base: URI, id: Long): PlaybackLookup = withContext(Dispatchers.IO) {
@@ -137,7 +137,7 @@ class DenpaApi(
         res.ok || res.code == 404
     }
 
-    /** 鍵を付けて頼む。URL を組めない・届かなければ null。401 は `Unauthorized` */
+    /** 鍵を付けてリクエストする。URL を組めない・届かなければ null。401 は `Unauthorized` */
     private fun call(base: URI, path: String, method: String = "GET"): Http.Response? {
         val url = BaseUrl.resolve(base, path) ?: return null
         val res = try {
@@ -152,7 +152,7 @@ class DenpaApi(
     /**
      * トークン無しで中に入れるか (局の一覧を引いてみる)。入れれば true (家の LAN = TRUSTED_NETWORKS)、
      * 断られれば false。denpa は家の外からのトークン無しを 401 で断る。認証を置いていない denpa や
-     * 一部の口は 403 を返すことがあるので、それも「入れない」と読む
+     * 一部のエンドポイントは 403 を返すことがあるので、それも「入れない」と読む
      */
     suspend fun openWithoutToken(base: URI): Boolean = withContext(Dispatchers.IO) {
         val url = BaseUrl.resolve(base, "api/services") ?: throw IOException("URL を組み立てられません")
@@ -226,7 +226,7 @@ private data class DeviceTokenRequest(val deviceCode: String)
 @Serializable
 private data class DeviceToken(val token: String)
 
-/** `api/device/code` の答え。URL は denpa の根からの相対 */
+/** `api/device/code` の答え。URL は denpa のルートからの相対 */
 @Serializable
 data class DeviceCode(
     val deviceCode: String,
@@ -259,7 +259,7 @@ fun parseRecordingState(body: String, warn: (String) -> Unit = {}): RecordingSta
     val json = runCatching { lenientJson.parseToJsonElement(body).jsonObject }.getOrNull()
     val state = json?.get("state")?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }
     if (state == null) {
-        warn("録画の状態の形が違います (denpa の版が違う?): ${body.take(200)}")
+        warn("録画の状態の形式が違います (denpa の版が違う?): ${body.take(200)}")
         return null
     }
     val duration = json?.get("durationMs")?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
@@ -271,7 +271,7 @@ data class DenpaHealth(val version: String?)
 
 /**
  * `api/health` の返事を読む。denpa らしくなければ null。denpa は初めから `{"ok":true,…}` を返す。**JSON のオブジェクトで `ok` が true のものだけ**
- * (同じ機械の 80・3000 に居るほかのもの — NAS やルータの画面の HTML、Grafana の `{"database":"ok"}`、素の `OK` — を選ばない)
+ * (同じ機械の 80・3000 で動いているほかのもの — NAS やルータの画面の HTML、Grafana の `{"database":"ok"}`、素の `OK` — を選ばない)
  */
 fun parseDenpaHealth(body: String): DenpaHealth? {
     val json = runCatching { lenientJson.parseToJsonElement(body.removePrefix("\uFEFF")).jsonObject }.getOrNull() ?: return null

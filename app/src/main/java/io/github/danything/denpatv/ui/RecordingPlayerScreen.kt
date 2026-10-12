@@ -98,7 +98,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         is PlaybackLookup.Failed -> Centered("再生できません: ${found.message}")
         is PlaybackLookup.Found -> {
             val choice = remember(found.info) { pickPlayback(found.info, repo.app.decoders) }
-            if (choice == null) Centered("この端末で再生できる形がありません")
+            if (choice == null) Centered("この端末で再生できる形式がありません")
             else RecordingPlayback(repo, recording, found.info, choice, onLeave, onUnauthorized)
         }
     }
@@ -108,9 +108,9 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
  * **録画の位置を、録画の時刻 (`playback` の物差し) で数える。**
  *
  * - ファイル (`stream` が null) は、プレーヤーがシークする。位置もプレーヤーのまま
- * - denpa に流してもらう (`stream`) ときは流しっぱなしの1本なので、**位置を変えるたびに `from` を変えて頼み直す** (`request`)。
- *   流れは頼んだ位置ちょうどからは始まらない (変換は 1 秒手前から) ので、位置は読み手が頭を 0 に寄せた幅から録画の時刻に戻す
- *   (`settle`・`StreamClock`)。戻せるまでは頼んだ位置から数える。左右を続けて押したぶんは、まとめて頼む (`pending`)
+ * - denpa に流してもらう (`stream`) ときは流しっぱなしの1本なので、**位置を変えるたびに `from` を変えてリクエストし直す** (`request`)。
+ *   流れはリクエストした位置ちょうどからは始まらない (変換は 1 秒手前から) ので、位置は読み手が頭を 0 に寄せた幅から録画の時刻に戻す
+ *   (`settle`・`StreamClock`)。戻せるまではリクエストした位置から数える。左右を続けて押したぶんは、まとめてリクエストする (`pending`)
  */
 @Stable
 internal class RecordingTimeline(
@@ -122,11 +122,11 @@ internal class RecordingTimeline(
     /** 位置を読むプレーヤー (繋ぎ直しの決まりがこの `request` を使うので、プレーヤーより先に作って後から渡す) */
     lateinit var player: ExoPlayer
 
-    /** 頼んだ位置 (流れ) */
+    /** リクエストした位置 (流れ) */
     var from by mutableLongStateOf(clamp(startMs))
         private set
 
-    /** 頼んだ回数 (流れ)。増えたら頼み直す */
+    /** リクエストした回数 (流れ)。増えたらリクエストし直す */
     var requests by mutableIntStateOf(0)
         private set
 
@@ -134,7 +134,7 @@ internal class RecordingTimeline(
     var baseMs by mutableStateOf<Long?>(if (stream == null) 0L else null)
         private set
 
-    /** 左右で動かしている途中の行き先 (流れ。止まってからまとめて頼む) */
+    /** 左右で動かしている途中の行き先 (流れ。止まってからまとめてリクエストする) */
     var pending by mutableStateOf<Long?>(null)
 
     /** いまの位置 (録画の時刻) */
@@ -144,13 +144,13 @@ internal class RecordingTimeline(
     fun durationMs(): Long =
         if (stream == null) player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: lengthMs else lengthMs
 
-    /** `at` へ動く。ファイルはシーク、流れは頼み直す */
+    /** `at` へ動く。ファイルはシーク、流れはリクエストし直す */
     fun seekTo(at: Long) {
         pending = null
         if (stream == null) player.seekTo(at) else request(at)
     }
 
-    /** 流れを `at` から頼み直す (位置を変えた・音声を替えた・繋ぎ直す・裏から戻った) */
+    /** 流れを `at` からリクエストし直す (位置を変えた・音声を替えた・繋ぎ直す・裏から戻った) */
     fun request(at: Long) {
         pending = null
         from = clamp(at)
@@ -169,12 +169,12 @@ internal class RecordingTimeline(
     }
 
     /**
-     * 流れで、`at` が尻 (もう流すものが無いところ) か。そこを頼んでも denpa は何も流せないので、頼まずに最後まで観たことにする
+     * 流れで、`at` が尻 (もう流すものが無いところ) か。そこをリクエストしても denpa は何も流せないので、リクエストせずに最後まで観たことにする
      * (終わりの CM を飛ぶ・尻まで送る)。尺が分からなければ false
      */
     fun reachesEnd(at: Long): Boolean = stream != null && lengthMs > 0 && at >= lengthMs - END_TOLERANCE_MS
 
-    /** 頼む位置にそろえる (0 から尺まで。尺が分からなければ上は抑えない) */
+    /** リクエストする位置にそろえる (0 から尺まで。尺が分からなければ上は抑えない) */
     private fun clamp(at: Long): Long = if (lengthMs > 0) at.coerceIn(0, lengthMs) else at.coerceAtLeast(0)
 
     /** 録画の時刻 `at` が、いまの流れのプレーヤーの位置でいつか (CM の頭で飛ぶ見張りを置くところ)。まだ決まっていなければ null */
@@ -192,9 +192,9 @@ private fun RecordingPlayback(
     onUnauthorized: () -> Unit,
 ) {
     val stream = choice as? PlayChoice.Stream
-    /** 元の TS を流してもらう (字幕は字幕の口から、音声は全部入っているので端末で選ぶ) */
+    /** 元の TS を流してもらう (字幕は字幕のエンドポイントから、音声は全部入っているので端末で選ぶ) */
     val raw = stream?.codec == "mpeg2"
-    /** denpa が変換した fMP4 (音声は denpa に頼んで選ぶ) */
+    /** denpa が変換した fMP4 (音声は denpa にリクエストして選ぶ) */
     val baked = stream != null && !raw
     val lengthMs = (info.duration * 1000).toLong()
     val clock = remember { TsClock(mp4 = stream != null) }
@@ -202,7 +202,7 @@ private fun RecordingPlayback(
     /*
      * ファイルは、回線が切れたときだけいまの位置から読み直す (`prepare` し直すと、Media3 は止まった位置から続ける)。
      * Media3 が中で読み直したうえでの失敗なので、何度か (`Reconnect.FEW`) まで。中身が読めない・デコードできないのは繋ぎ直しても同じなので出して止める。
-     * 流してもらうときは追っかけと同じく、切れた・止まったら居た場所から頼み直す
+     * 流してもらうときは追っかけと同じく、切れた・止まったらいた位置からリクエストし直す
      */
     val (player, error, dualMono, recovery) = rememberPlayer(
         repo,
@@ -221,7 +221,7 @@ private fun RecordingPlayback(
     val flasher = rememberFlash()
     val (overlay, flash) = flasher
     val scope = rememberCoroutineScope()
-    /** 飛んだ回数。元の TS の字幕を、飛んだ先から頼み直す。CM 飛ばしの見張りも置き直す */
+    /** 飛んだ回数。元の TS の字幕を、飛んだ先からリクエストし直す。CM 飛ばしの見張りも置き直す */
     var seeks by remember { mutableIntStateOf(0) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -232,9 +232,9 @@ private fun RecordingPlayback(
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
     }
-    /** 動かした回数。ファイルはシークの回数、流れは頼み直した回数 (最初の1回は数えない) */
+    /** 動かした回数。ファイルはシークの回数、流れはリクエストし直した回数 (最初の1回は数えない) */
     val moves = if (stream == null) seeks else timeline.requests
-    // 字幕は denpa から受け取る。元の TS は字幕の口、そのほかは文字の配置まるごと (`captions.json`。録画の時刻で引く)
+    // 字幕は denpa から受け取る。元の TS は字幕のエンドポイント、そのほかは文字の配置まるごと (`captions.json`。録画の時刻で引く)
     val captions = if (raw) {
         rememberRawCaptions(
             repo,
@@ -250,7 +250,7 @@ private fun RecordingPlayback(
     }
     // デュアルモノの主・副は、元の TS のときだけ配り直す (エンコード済みの録画は denpa が主・副の2本に割ってある。変換は denpa が選んだ1つだけ)
     val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { raw }.orEmpty())
-    // 変換した流れの音声は denpa に頼んで選ぶ (`?audio=<id>`)。替えたら、いまの位置から頼み直す
+    // 変換した流れの音声は denpa にリクエストして選ぶ (`?audio=<id>`)。替えたら、いまの位置からリクエストし直す
     val bakedAudio = rememberBakedAudio(repo, if (baked) streamAudios(info, recording.audios) else emptyList(), key = recording.id) { label ->
         timeline.request(timeline.position())
         flash(label)
@@ -293,12 +293,12 @@ private fun RecordingPlayback(
     var ended by remember { mutableStateOf(false) }
     /** 消した (閉じるときに観た位置を預けない) */
     var deleted by remember { mutableStateOf(false) }
-    /** 止めたとき。流してもらっているときに長く止めたら、動かすときに頼み直す (止めている間に繋がりが切れるので) */
+    /** 止めたとき。流してもらっているときに長く止めたら、動かすときにリクエストし直す (止めている間に繋がりが切れるので) */
     var pausedAt by remember { mutableLongStateOf(0L) }
     val delete = rememberTwoPress()
     val speed by repo.app.settings.playbackSpeed.collectAsState(initial = 1f)
     // 速さは録画だけ (ライブは追いつくための 1.05 倍を自分で回す)。CM 飛ばしと観た位置は再生位置で見るので速さに関わらない
-    // 観ている途中で変えたら、今の位置に飛び直して音と映像を新しい速さで流し直す (`resyncAfterSpeedChange`。流れは頼み直す)
+    // 観ている途中で変えたら、今の位置に飛び直して音と映像を新しい速さで流し直す (`resyncAfterSpeedChange`。流れはリクエストし直す)
     LaunchedEffect(player, speed) {
         val from = player.playbackParameters.speed
         player.setPlaybackSpeed(speed)
@@ -309,8 +309,8 @@ private fun RecordingPlayback(
     var chapters by remember { mutableStateOf(emptyList<ChapterMark>()) }
     val skipped = remember { mutableSetOf<Long>() }
     /**
-     * CM を飛ぶときに、CM の終わりからどれだけ先を頼むか。元の TS から流してもらう (元の TS をそのまま・元の TS から変換) と、
-     * denpa は頼んだ位置の 1 秒手前の映像から流す (denpa の docs/api.md「録画を流す」) ので、そのぶん先を頼んで CM の尻を映さない
+     * CM を飛ぶときに、CM の終わりからどれだけ先をリクエストするか。元の TS から流してもらう (元の TS をそのまま・元の TS から変換) と、
+     * denpa はリクエストした位置の 1 秒手前の映像から流す (denpa の docs/api.md「録画を流す」) ので、そのぶん先をリクエストして CM の尻を映さない
      */
     val hopLead = if (raw || (baked && info.axis == "ts")) TS_STREAM_LEAD_MS else 0L
 
@@ -333,10 +333,10 @@ private fun RecordingPlayback(
             player.load(url, MimeTypes.VIDEO_MATROSKA, recording.resumeMs ?: 0L)
         }
     } else {
-        /** 裏から戻ったときに、止めたまま頼み直すか (止めていたなら止めたまま) */
+        /** 裏から戻ったときに、止めたままリクエストし直すか (止めていたなら止めたまま) */
         var playOnLoad by remember { mutableStateOf(true) }
-        // 頼み直すたび (位置を変えた・音声を替えた・繋ぎ直す)。変換した流れは、覚えている音声の側を読み終えてから
-        // 元の TS は音声を頼まないので、覚えている側を読み終えても頼み直さない
+        // リクエストし直すたび (位置を変えた・音声を替えた・繋ぎ直す)。変換した流れは、覚えている音声の側を読み終えてから
+        // 元の TS は音声をリクエストしないので、覚えている側を読み終えてもリクエストし直さない
         val audioKey = if (baked) bakedAudio.audio?.id to bakedAudio.ready else null
         LaunchedEffect(timeline.requests, audioKey) {
             if (baked && !bakedAudio.ready) return@LaunchedEffect
@@ -346,7 +346,7 @@ private fun RecordingPlayback(
             recovery.requested()
             player.load(url, stream.mime)
             if (!playOnLoad) {
-                // 止めたまま頼み直した (裏から戻った)。動かすときにもう一度頼み直さないよう、止めた時刻をいまにする
+                // 止めたままリクエストし直した (裏から戻った)。動かすときにもう一度リクエストし直さないよう、止めた時刻をいまにする
                 player.playWhenReady = false
                 pausedAt = System.nanoTime()
             }
@@ -364,7 +364,7 @@ private fun RecordingPlayback(
                 return@LaunchedEffect onUnauthorized()
             }
         }
-        // 続けて押した左右は、止まってから1度だけ頼み直す
+        // 続けて押した左右は、止まってから1度だけリクエストし直す
         LaunchedEffect(timeline.pending) {
             val target = timeline.pending ?: return@LaunchedEffect
             delay(STEP_SETTLE_MS)
@@ -372,7 +372,7 @@ private fun RecordingPlayback(
         }
         /*
          * **裏に回ったら止めて denpa から降り、観た位置を預ける** (変換していれば denpa の変換の枠も空く)。
-         * 流しっぱなしの1本なので、戻ったら止めた位置から頼み直す (止めていたなら止めたまま)
+         * 流しっぱなしの1本なので、戻ったら止めた位置からリクエストし直す (止めていたなら止めたまま)
          */
         var stoppedAt by remember { mutableStateOf<Long?>(null) }
         OnBackground(
@@ -396,7 +396,7 @@ private fun RecordingPlayback(
     /**
      * **最後まで観た。** すぐ終わりの位置を預ける。終わりの CM を飛ばして終わると、閉じるまで預けないうちは
      * denpa が観終えたと分からない (ブラウザの denpa の `finished()` と同じ)。末尾の位置を渡せば denpa が続きを消し、観終えた印 (`watchedAt`) を付ける。
-     * 流してもらっているときに尻を頼まずに終えたなら、流れも止めて denpa から降りる
+     * 流してもらっているときに尻をリクエストせずに終えたなら、流れも止めて denpa から降りる
      */
     fun finish() {
         if (ended) return
@@ -410,7 +410,7 @@ private fun RecordingPlayback(
             repo.positionSaved()
         }
     }
-    /** `to` へ動く。流してもらっているときに尻 (もう流すものが無いところ) なら、頼まずに最後まで観たことにする */
+    /** `to` へ動く。流してもらっているときに尻 (もう流すものが無いところ) なら、リクエストせずに最後まで観たことにする */
     fun go(to: Long) {
         if (timeline.reachesEnd(to)) finish() else timeline.seekTo(to)
     }
@@ -423,13 +423,13 @@ private fun RecordingPlayback(
 
             /*
              * **最後まで来たら、すぐ終わりの位置を預ける** (`finish`)。
-             * 流してもらっているときは、尻より手前で終わったのは切れた (denpa の入れ替え・変換が止まった) ので、居た場所から頼み直す
+             * 流してもらっているときは、尻より手前で終わったのは切れた (denpa の入れ替え・変換が止まった) ので、いた位置からリクエストし直す
              */
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != Player.STATE_ENDED || ended) return
                 val here = timeline.position()
                 if (stream != null && here < timeline.durationMs() - STREAM_END_MARGIN_MS) {
-                    // 映したあとに終わったのは入れ替え。映る前に終わったのは、何度か頼んでもだめなら終わりとみなす
+                    // 映したあとに終わったのは入れ替え。映る前に終わったのは、何度かリクエストしてもだめなら終わりとみなす
                     val verdict = if (recovery.pictured) Reconnect.Verdict.Retry else Reconnect.Verdict.RetryFew
                     if (recovery.retry("ended 流れが終わった (位置 ${here / 1000} 秒 / ${timeline.durationMs() / 1000} 秒、映して ${recovery.playedSeconds()} 秒)", verdict)) return
                 }
@@ -443,9 +443,9 @@ private fun RecordingPlayback(
      * **CM の頭の少し手前 (`CM_LEAD_MS`) で終わりまで飛ぶ。** 入ってから見つけて飛ぶと、見つけるまでの CM のコマが映る。
      * 飛ぶところは ExoPlayer に預ける (`PlayerMessage`。流している位置がそこに来たら、再生の糸で呼ばれる)。
      * 呼ばれたら主の糸の列の先頭に割り込んで飛ぶ (列の後ろに並ぶと、そのぶん遅れて CM のコマが出ることがある)。
-     * 飛んでいる間は前の絵 (本編の末尾) が残る。速いほど先に来るので、手前の幅も速さに合わせる。
+     * 飛んでいる間は前の映像 (本編の末尾) が残る。速いほど先に来るので、手前の幅も速さに合わせる。
      * 飛んだ・戻した・送ったら (`moves`) 預け直す。開いた・飛んだ先が CM の中なら、すぐ飛ぶ (映る前に。止めていれば動かしたら)。
-     * 流してもらっているときは、預ける位置はプレーヤーの位置 (録画の時刻から戻したもの。決まるまで待つ) で、飛ぶのは頼み直し
+     * 流してもらっているときは、預ける位置はプレーヤーの位置 (録画の時刻から戻したもの。決まるまで待つ) で、飛ぶのは再リクエスト
      *
      * **続きの位置が CM の中だったときは、飛んでも「CM を飛ばしました」と言わない** (ブラウザの denpa と同じ。開いたときの
      * 「続きから」だけを残す — 観る人にとっては続きから始まっただけ)。CM の判定はチャプターが届いてから
@@ -455,7 +455,7 @@ private fun RecordingPlayback(
         if (!skipCm || chapters.none { it.isCm } || timeline.baseMs == null) return@LaunchedEffect
         val lead = (CM_LEAD_MS * speed).toLong()
         fun hop(cm: ChapterMark) {
-            // 左右で動かしている途中 (まとめて頼む前)。押した行き先を捨てない
+            // 左右で動かしている途中 (まとめてリクエストする前)。押した行き先を捨てない
             if (timeline.pending != null) return
             skipped += cm.startMs
             go(cm.endMs + hopLead)
@@ -525,10 +525,10 @@ private fun RecordingPlayback(
         )
     }
 
-    /** 消して一覧へ戻る。一覧からも抜き、隣に合わせる */
+    /** 消して一覧へ戻る。一覧からも抜き、隣にフォーカスする */
     fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; ui.leave() }
     /**
-     * 止める・動かす。**止めたら操作の列を開いて「再生」に合わせる** (決定でそのまま動かせる)。
+     * 止める・動かす。**止めたら操作の列を開いて「再生」にフォーカスする** (決定でそのまま動かせる)。
      * 動かしたら操作バーを閉じて何も出さない (映像を観たいだけなので)。操作バーを閉じて止めたままなら位置のバーを出す
      */
     fun togglePause() {
@@ -545,7 +545,7 @@ private fun RecordingPlayback(
     }
     /**
      * 10 秒ずつ戻す・送る (左右とシークバー)。戻して CM を観に行ったなら、そこは飛ばさない。
-     * 流してもらっているときは、続けて押したぶんをまとめて頼む (`pending`)
+     * 流してもらっているときは、続けて押したぶんをまとめてリクエストする (`pending`)
      */
     fun step(direction: Int): Long {
         val total = timeline.durationMs()
@@ -592,7 +592,7 @@ private fun RecordingPlayback(
         if (ended) {
             ControlBar(
                 "最後まで観ました",
-                // 観終えたものは消すことが多いので、最初は削除に合わせる (2回押しなので、1回では消えない)
+                // 観終えたものは消すことが多いので、最初は削除にフォーカスする (2回押しなので、1回では消えない)
                 listOf("" to listOf(Control(BACK_TO_LIST, icon = R.drawable.ic_back) { ui.leave() }, deleteControl.copy(initial = true))),
             )
         } else if (bar == null && !playing) {
@@ -663,16 +663,16 @@ private fun saveAt(repo: Repository, recording: Recording, atMs: Long, lengthSec
 /** 流してもらっているときに、尻からこれより手前で流れが終わったら切れたとみなす (ミリ秒。追っかけと同じ) */
 private const val STREAM_END_MARGIN_MS = 30_000L
 
-/** 続けて押した左右を、止まってからまとめて頼むまで (ミリ秒。追っかけと同じ) */
+/** 続けて押した左右を、止まってからまとめてリクエストするまで (ミリ秒。追っかけと同じ) */
 private const val STEP_SETTLE_MS = 700L
 
-/** 流してもらっているときに、これより長く止めていたら動かすときに頼み直す (ナノ秒。追っかけと同じ 10 秒) */
+/** 流してもらっているときに、これより長く止めていたら動かすときにリクエストし直す (ナノ秒。追っかけと同じ 10 秒) */
 private const val LONG_PAUSE_NS = 10_000_000_000L
 
-/** 元の TS から流してもらうとき、denpa が頼んだ位置より手前から流しはじめる幅 (ミリ秒。denpa の docs/api.md「録画を流す」) */
+/** 元の TS から流してもらうとき、denpa がリクエストした位置より手前から流しはじめる幅 (ミリ秒。denpa の docs/api.md「録画を流す」) */
 private const val TS_STREAM_LEAD_MS = 1_000L
 
-/** 録画・追っかけの操作バーをどこに合わせて開いたか。下キーならシークバー、上キー・Menu なら操作の列 */
+/** 録画・追っかけの操作バーをどこにフォーカスして開いたか。下キーならシークバー、上キー・Menu なら操作の列 */
 internal enum class Bar { SeekBar, Actions }
 
 /**
@@ -687,7 +687,7 @@ internal class PlayerBar(private val onLeave: () -> Unit) {
     var touched by mutableLongStateOf(0L)
     /** 番組の詳しいところを開いているか (決定の長押し) */
     var details by mutableStateOf(false)
-    /** 一覧へ戻るところ (映像に合いを取り返させない。戻った先の一覧が開いた録画に合わせるので) */
+    /** 一覧へ戻るところ (映像にフォーカスを取り返させない。戻った先の一覧が開いた録画にフォーカスするので) */
     var leaving by mutableStateOf(false)
         private set
 
@@ -719,7 +719,7 @@ internal fun rememberPlayerBar(onLeave: () -> Unit, playing: Boolean): PlayerBar
 
 /**
  * 止める・動かすのボタン (録画・追っかけ)。**塗らない** (塗るのはオン・オフのボタンでオンのものだけ。「一時停止」がオンのように見える)。
- * 操作バーを開いたときはここに合わせる (`initial`。止めて開いた操作バーは決定でそのまま動かせる)
+ * 操作バーを開いたときはここにフォーカスする (`initial`。止めて開いた操作バーは決定でそのまま動かせる)
  */
 internal fun playControl(playing: Boolean, onClick: () -> Unit) =
     Control(if (playing) "一時停止" else "再生", icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, initial = true, onClick = onClick)
@@ -747,8 +747,8 @@ internal const val BACK_TO_LIST = "一覧へ戻る"
 
 /**
  * 速さのボタン (録画・追っかけ)。1つのボタンで送る (`stepSpeed`)。列を短くして、押す回数も少なく。
- * **等速ならメーターの印だけの丸、速めている間は数字だけ (「1.25」)** — ブラウザの denpa の速さの口と同じ。
- * ふだん (等速) はボタンに数字が居座らず、速めているときは数字そのものが「速めている」の印になる (塗るのも同じとき)。
+ * **等速ならメーターの印だけの丸、速めている間は数字だけ (「1.25」)** — ブラウザの denpa の速さのボタンと同じ。
+ * ふだん (等速) はボタンに数字が出たままにならず、速めているときは数字そのものが「速めている」の印になる (塗るのも同じとき)。
  * ボタンの上では × を付けない (速さのボタンだと分かっている)。読み上げは速さも読む (`speedDescription`)
  */
 internal fun speedControl(speed: Float, onClick: () -> Unit) =
@@ -768,5 +768,5 @@ internal fun CoroutineScope.stepSpeed(repo: Repository, speed: Float): String {
 /** 録画・追っかけのキーの手引き */
 internal const val SEEK_HINT = "下でシークバー・上でメニュー"
 
-/** 流してもらっているときに、尺のこれだけ手前より先は尻とみなす (ミリ秒)。そこを頼んでも流すものがほとんど無い */
+/** 流してもらっているときに、尺のこれだけ手前より先は尻とみなす (ミリ秒)。そこをリクエストしても流すものがほとんど無い */
 private const val END_TOLERANCE_MS = 2_000L

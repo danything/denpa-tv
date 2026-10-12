@@ -20,7 +20,7 @@ import org.junit.Test
 
 class ChaseTest {
     @Test
-    fun 頼む位置は録れた長さの手前まで() {
+    fun リクエストする位置は録れた長さの手前まで() {
         val recorded = Chase.recordedMs(startAt = 1_000_000, now = 1_000_000 + 600_000)
         assertEquals(600_000L, recorded)
         assertEquals(590_000L, Chase.clamp(700_000, recorded))

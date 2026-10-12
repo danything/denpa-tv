@@ -89,22 +89,22 @@ fun UpdateState.notice(): String? = when (this) {
     else -> null
 }
 
-/** 許可の画面へ送ったあとに開き直したとき、覚えておいた頼み (`InstallRequest`) をどうするか */
+/** 許可の画面へ送ったあとに開き直したとき、覚えておいたリクエスト (`InstallRequest`) をどうするか */
 enum class Resume {
-    /** 頼まれた版を入れられる (許可が見えなくても続けて入れてみる) */
+    /** リクエストされた版を入れられる (許可が見えなくても続けて入れてみる) */
     Start,
     /**
-     * まだ分からない (確かめられなかった・裏で取れなかった)。頼みは残し、期限で切れる。
+     * まだ分からない (確かめられなかった・裏で取れなかった)。リクエストは残し、期限で切れる。
      * 取ってきている・入れている (開き直してから押された・設定で確かめている) ときは、そちらが入れる
      * (開き直したときの裏の取り込みは確かめの中で取り終えるので、ここでは取ってきている途中にならない)
      */
     Wait,
-    /** 古い頼み・ほかの版になった (もっと新しい版が出た)。忘れる */
+    /** 古いリクエスト・ほかの版になった (もっと新しい版が出た)。忘れる */
     Forget,
 }
 
 /**
- * 開き直して確かめ終えたときの `state` で、頼み `request` をどうするか。**確かめられなかったときに頼みを捨てない**
+ * 開き直して確かめ終えたときの `state` で、リクエスト `request` をどうするか。**確かめられなかったときにリクエストを捨てない**
  * (許可の画面にいる間に閉じられ、開き直したときにたまたま届かなくても、次に開いたときに続けられるように)
  */
 fun resumePlan(state: UpdateState, request: InstallRequest, now: Long): Resume {
@@ -219,7 +219,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * 許可の画面へ送ったあと、アプリが閉じられて開き直した (テレビによっては許可の画面にいる間・許可したときに閉じられる)。
-     * 頼まれた版がまだ新しく、頼んでから間もなければ、続けて入れる。許可が見えなくても入れてみる (本当に無ければ OS が尋ねる。`installStep`)
+     * リクエストされた版がまだ新しく、リクエストしてから間もなければ、続けて入れる。許可が見えなくても入れてみる (本当に無ければ OS が尋ねる。`installStep`)
      */
     private suspend fun resumeRequest() {
         val request = app.settings.installRequest() ?: return
@@ -227,9 +227,9 @@ class Updater(private val app: DenpaApp) {
         if (asked == null) asked = request
         val state = _state.value
         val plan = resumePlan(state, request, System.currentTimeMillis())
-        Log.i(TAG, "開き直しました。v${request.version} を頼まれていました: $plan (${permissionReport()})")
+        Log.i(TAG, "開き直しました。v${request.version} をリクエストされていました: $plan (${permissionReport()})")
         when (plan) {
-            // 許可が見えなくても入れてみる (頼まれた版で間もないので、`start` の `installStep` は Install になる)
+            // 許可が見えなくても入れてみる (リクエストされた版で間もないので、`start` の `installStep` は Install になる)
             // 拒否のままなら、開くたびに許可の画面へ飛ばさない。案内だけ出して押すのを待つ (押せば許可の画面を開く)
             Resume.Start -> {
                 val (update, file) = when (state) {
@@ -244,7 +244,7 @@ class Updater(private val app: DenpaApp) {
                 }
             }
             Resume.Wait -> Unit
-            // 確かめている間に押されて新しい頼みを覚えていたら、それは消さない
+            // 確かめている間に押されて新しいリクエストを覚えていたら、それは消さない
             Resume.Forget -> if (asked == request) remember(null)
         }
     }
@@ -255,7 +255,7 @@ class Updater(private val app: DenpaApp) {
         app.scope.launch(requestWriter) { app.settings.setInstallRequest(request) }
     }
 
-    /** 書いておいた頼みだけ消す (`asked` は残す) */
+    /** 書いておいたリクエストだけ消す (`asked` は残す) */
     private fun forgetSaved() {
         app.scope.launch(requestWriter) { app.settings.setInstallRequest(null) }
     }
@@ -384,7 +384,7 @@ class Updater(private val app: DenpaApp) {
             askPermission(update, downloaded, denied(appop))
             return
         }
-        // 入れはじめたので、開き直したときに勝手に始めないよう覚えた頼みは消す。ただ許可が見えないまま入れるときは、
+        // 入れはじめたので、開き直したときに勝手に始めないよう覚えたリクエストは消す。ただ許可が見えないまま入れるときは、
         // このプロセスの中では覚えておく (確認の画面を閉じて押し直しても、許可の画面へ戻さない)
         if (allowed) remember(null) else forgetSaved()
         // 続けて押されても2本取らないよう、先に「取ってきている」にする
@@ -465,7 +465,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * 許可の画面を開いて「許可を待つ」にする (許可して戻れば続けて入れる)。アプリが閉じられても開き直したときに続けられるよう、
-     * 先に頼みを覚えておく。`denied` (はっきり拒否) なら、拒否になっていることと切り直すことを添える
+     * 先にリクエストを覚えておく。`denied` (はっきり拒否) なら、拒否になっていることと切り直すことを添える
      */
     private fun askPermission(update: Update, downloaded: File?, denied: Boolean) {
         remember(InstallRequest(update.version, System.currentTimeMillis()))
@@ -543,7 +543,7 @@ class Updater(private val app: DenpaApp) {
             abandon(installer, id)
             if (session == id) session = NO_SESSION
             _state.value = if (e is SecurityException && !allowedToInstall()) {
-                // セッションを作れない・渡せない: 許可が無いせい。次に押すと許可の画面を開き直す (頼みを忘れて AskPermission に)
+                // セッションを作れない・渡せない: 許可が無いせい。次に押すと許可の画面を開き直す (リクエストを忘れて AskPermission に)
                 remember(null)
                 UpdateState.Failed(update, "インストールの許可がありません。もう一度押して許可してください ($RETOGGLE)", file)
             } else {

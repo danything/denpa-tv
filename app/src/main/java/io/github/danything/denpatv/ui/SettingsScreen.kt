@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(repo: Repository) {
     val app = repo.app
     val scope = rememberCoroutineScope()
-    // 開いたら (メニューで選んだとき・ライブから戻ったとき) ボタンに合わせる。どこにも合っていないとリモコンが空振りする
+    // 開いたら (メニューで選んだとき・ライブから戻ったとき) ボタンにフォーカスする。どこにもフォーカスが無いとリモコンが空振りする
     val button = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         withFrameNanos { }

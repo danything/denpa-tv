@@ -59,7 +59,7 @@ internal fun rememberCoverReport(skipTop: Dp): (IntSize) -> Unit {
 }
 
 /**
- * 字幕の層が読む、下に重ねたものの高さ (px)。**出したときは同じこまで上へ** (重なるこまを作らない)、**閉じたときは滑らかに下ろす**。
+ * 字幕の層が読む、下に重ねたものの高さ (px)。**出したときは同じフレームで上へ** (重なるフレームを作らない)、**閉じたときは滑らかに下ろす**。
  * 読むのは配置の段 (`liftCaptions`) だけなので、操作バーを開け閉めしても組み直さない
  */
 @Composable
@@ -82,7 +82,7 @@ private val CAPTION_GAP = 12.dp
 
 /**
  * 字幕の層を、下に重ねたもの (`inset`、px) の上へ持ち上げる。`span(height)` は層の高さに対する字幕の上の端と下の端 (px)。
- * どちらもこま (配置) のたびに読むので、操作バーの開け閉め・字幕の替わりで組み直さない
+ * どちらもフレーム (配置) のたびに読むので、操作バーの開け閉め・字幕の替わりで組み直さない
  */
 fun Modifier.liftCaptions(inset: () -> Float, span: (Int) -> Pair<Float, Float>): Modifier = layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)

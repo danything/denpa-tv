@@ -11,7 +11,7 @@ import androidx.media3.datasource.HttpEngineDataSource
 import java.util.concurrent.Executors
 
 /**
- * OS の HttpEngine で映像を取る口。**`HttpEngine` の型はこの中から外へ出さない。**
+ * OS の HttpEngine で映像を取る部分。**`HttpEngine` の型はこの中から外へ出さない。**
  *
  * `HttpEngine?` 型の値をほかのところで持つと、null でも型の確かめ (check-cast) で
  * ART がクラスを引きにいき、HttpEngine の無い端末で NoClassDefFoundError になる

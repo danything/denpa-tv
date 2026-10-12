@@ -26,9 +26,9 @@ class SetupServerTest {
         assertNull(parseRequest("POST / HTTP/1.1\r\nContent-Length: 999999\r\n\r\n".byteInputStream()))
     }
 
-    /** 道を知らなければ 404。知っていればフォームが出て、送った URL がテレビに届く */
+    /** パスを知らなければ 404。知っていればフォームが出て、送った URL がテレビに届く */
     @Test
-    fun 推測できない道でだけ応える() {
+    fun 推測できないパスでだけ応える() {
         var submitted: String? = null
         SetupServer { submitted = it; "<p>ok</p>" }.use { server ->
             val base = "http://127.0.0.1:${server.port}"

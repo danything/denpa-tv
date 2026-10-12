@@ -17,7 +17,7 @@ mkdir -p "$out"
 
 # CI (`SMOKE_STOP_EMULATOR=1`) では、終わったらエミュレータもここで止める。API 28 の像では、エミュレータが閉じても
 # その子の crashpad_handler が出力を握ったまま残り、android-emulator-runner がその終わりを待ったまま手順の上限まで固まった
-# (ほかの API では一緒に閉じる)。頼んで 30 秒待ち、閉じなければ qemu を殺し、残った crashpad_handler も殺す
+# (ほかの API では一緒に閉じる)。リクエストして 30 秒待ち、閉じなければ qemu を殺し、残った crashpad_handler も殺す
 # (スナップショットは保存しない手順なので、殺しても困らない)
 stop_emulator() {
     [ "${SMOKE_STOP_EMULATOR:-}" = 1 ] || return 0
@@ -64,7 +64,7 @@ if grep -q '^OK ([1-9]' "$out/instrument.txt"; then
     exit 0
 fi
 [ "$finished" -eq 0 ] && echo "am instrument が ${SMOKE_TIMEOUT:-480} 秒で終わりませんでした" | tee -a "$out/instrument.txt"
-# 止まったところの画面と、画面の部品の木 (どこで待っているかの手掛かり)。adb が応えないこともあるので、どれも待ちすぎない
+# 止まったところの画面と、画面の部品のツリー (どこで待っているかの手掛かり)。adb が応えないこともあるので、どれも待ちすぎない
 timeout 30 adb exec-out screencap -p > "$out/screen.png" || true
 timeout 30 adb exec-out uiautomator dump /dev/tty > "$out/window.xml" 2>/dev/null || true
 timeout 30 adb shell dumpsys activity activities > "$out/activities.txt" 2>&1 || true

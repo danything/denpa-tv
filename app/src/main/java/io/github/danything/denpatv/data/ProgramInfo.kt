@@ -44,7 +44,7 @@ data class Genre(val lv1: Int, val lv2: Int)
 data class ProgramAudio(val componentType: Int, val langs: List<String> = emptyList(), val text: String? = null)
 
 /**
- * `api/programs/<id>` の答えを読む。**形がずれていても読めるところは読む** (denpa を新しくした・古いままのずれ)。
+ * `api/programs/<id>` の答えを読む。**形式がずれていても読めるところは読む** (denpa を新しくした・古いままのずれ)。
  * 型の違う鍵はその鍵だけ捨てて `warn` に言う。オブジェクトでなければ null
  */
 fun parseProgramInfo(text: String, warn: (String) -> Unit): ProgramInfo? {
@@ -65,14 +65,14 @@ fun parseProgramInfo(text: String, warn: (String) -> Unit): ProgramInfo? {
             val genre = item as? JsonObject
             val lv1 = genre?.get("lv1")?.let(::number)?.toInt()
             val lv2 = genre?.get("lv2")?.let(::number)?.toInt()
-            if (lv1 == null) warn("genre_detail の形が違います: $item")
+            if (lv1 == null) warn("genre_detail の形式が違います: $item")
             lv1?.let { Genre(it, lv2 ?: -1) }
         }.orEmpty(),
         audios = read.array("audios")?.mapNotNull { item ->
             val audio = item as? JsonObject
             val type = audio?.get("componentType")?.let(::number)?.toInt()
             if (type == null) {
-                warn("audios の形が違います: $item")
+                warn("audios の形式が違います: $item")
                 return@mapNotNull null
             }
             ProgramAudio(
@@ -93,7 +93,7 @@ private class Fields(private val root: JsonObject, private val warn: (String) ->
 
     private fun <T> typed(key: String, pick: (JsonElement) -> T?): T? {
         val value = field(key) ?: return null
-        return pick(value) ?: run { warn("番組の $key の形が違います (denpa の版のずれ?): $value"); null }
+        return pick(value) ?: run { warn("番組の $key の形式が違います (denpa の版のずれ?): $value"); null }
     }
 
     fun string(key: String) = typed(key) { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
@@ -103,10 +103,10 @@ private class Fields(private val root: JsonObject, private val warn: (String) ->
     fun array(key: String) = typed(key) { it as? JsonArray }
 }
 
-/** 数 (文字の "3" は数とみなさない — 形のずれ) */
+/** 数 (文字の "3" は数とみなさない — 形式のずれ) */
 private fun number(value: JsonElement): Long? = (value as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
 
-/** 番組の口を引いた結果 (`DenpaApi.program`) */
+/** 番組のエンドポイントを引いた結果 (`DenpaApi.program`) */
 sealed interface ProgramLookup {
     data class Found(val info: ProgramInfo) : ProgramLookup
     /** 番組表に無い (終わって消えた)・届かない・読めない。`now` のぶんだけを出す */

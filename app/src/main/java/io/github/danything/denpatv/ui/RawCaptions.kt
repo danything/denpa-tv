@@ -49,7 +49,7 @@ import java.net.URI
  *
  * Media3 の TsExtractor は、最初の PTS を 0 に寄せた時刻でサンプルを出す。寄せ幅は渡した `TimestampAdjuster` が持って
  * いるので、**読み手を作るところで自分の `TimestampAdjuster` を渡して控えておく**。中身は `DefaultExtractorsFactory` と
- * 同じ作り方の TsExtractor (ほかの形はそのまま)。映像を頼み直すたびに読み手も作り直されるので、最後に作ったものを見る。
+ * 同じ作り方の TsExtractor (ほかの形式はそのまま)。映像をリクエストし直すたびに読み手も作り直されるので、最後に作ったものを見る。
  *
  * `mp4` なら、fragmented MP4 の読み手にも同じように渡す (録画を denpa に流してもらうとき。denpa は塊の時刻を録画の時刻のまま書くので、
  * 寄せた幅から録画の時刻に戻せる。`StreamClock`)。応答の `X-Denpa-Origin` (元の TS の流れで、録画の時刻の 0 にあたる PTS) も控える
@@ -84,7 +84,7 @@ class TsClock(
         return swap(inner.createExtractors(uri, responseHeaders))
     }
 
-    /** 頼み直す前に、前の流れの寄せ幅と origin を捨てる (新しい流れを読みはじめるまで、前のもので数えないように) */
+    /** リクエストし直す前に、前の流れの寄せ幅と origin を捨てる (新しい流れを読みはじめるまで、前のもので数えないように) */
     fun reset() {
         adjuster = null
         origin = null
@@ -117,7 +117,7 @@ class TsClock(
     }
 
     /**
-     * 読み手の候補は形ごとに1つずつ並んで来て、中身を嗅いだ1つだけが使われる。**どれに渡す `TimestampAdjuster` も同じ1つにする**
+     * 読み手の候補は形式ごとに1つずつ並んで来て、中身を嗅いだ1つだけが使われる。**どれに渡す `TimestampAdjuster` も同じ1つにする**
      * (使われたものの幅が控えに残るように)
      */
     private fun swap(extractors: Array<Extractor>): Array<Extractor> {
@@ -161,7 +161,7 @@ class TsClock(
 }
 
 /**
- * denpa から受け取る字幕 (Media3 は ARIB の字幕を読まない) の、画面に出すぶん。元の TS の字幕の口
+ * denpa から受け取る字幕 (Media3 は ARIB の字幕を読まない) の、画面に出すぶん。元の TS の字幕のエンドポイント
  * (`rememberRawCaptions`) と、エンコード済みの録画の `captions.json` (`rememberCaptionPages`)。描くのは `CaptionLayer`
  */
 class CaptionState(
@@ -181,12 +181,12 @@ class CaptionState(
  *
  * - 字幕のオン・オフはエンコード済みの録画の字幕と同じ設定 (端末ごと)。オフにしてある間も、選べる字幕があるかだけは訊く
  *   (ボタンを出すため。分かったら切る)
- * - **映像が流れはじめてから頼む** — TS の読み手が最初の PTS を読むまで時計が無く、ライブは映像の口が
- *   開いていないと字幕の口が 404 を返す (denpa は字幕のためにチューナーを使わない)
- * - `generation` が変わったら (局を替えた・頼み直した・シークした) 頼み直す。録画は頼むときの位置 (`fromMs`) から読ませる
+ * - **映像が流れはじめてからリクエストする** — TS の読み手が最初の PTS を読むまで時計が無く、ライブは映像のエンドポイントが
+ *   開いていないと字幕のエンドポイントが 404 を返す (denpa は字幕のためにチューナーを使わない)
+ * - `generation` が変わったら (局を替えた・リクエストし直した・シークした) リクエストし直す。録画はリクエストするときの位置 (`fromMs`) から読ませる
  * - ライブは切れたら繋ぎ直す。録画は読み切ったら終わり
  *
- * @param path 字幕の口 (denpa の根からの相対、`?from=` は付けない)。null なら生ではないので何もしない
+ * @param path 字幕のエンドポイント (denpa のルートからの相対、`?from=` は付けない)。null なら元の TS ではないので何もしない
  * @param fromMs 録画で読ませる位置 (ミリ秒、頭から)。ライブは null
  */
 @OptIn(UnstableApi::class)
@@ -204,7 +204,7 @@ fun rememberRawCaptions(
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
 
     LaunchedEffect(path, generation, enabled) {
-        // 選べる字幕は局 (録画) ごと。頼み直し・シークでは消さない (ボタンがちらつく)
+        // 選べる字幕は局 (録画) ごと。再リクエスト・シークでは消さない (ボタンがちらつく)
         if (state.key != path) {
             state.key = path
             state.available = false
@@ -214,10 +214,10 @@ fun rememberRawCaptions(
         if (path == null) return@LaunchedEffect
         // オフにしてあって、選べる字幕があるかはもう分かっている
         if (!enabled && state.available) return@LaunchedEffect
-        /** 続けて断られた回数。元のTSが無い・映像が開かないままのときに頼み続けない */
+        /** 続けて断られた回数。元のTSが無い・映像が開かないままのときにリクエストし続けない */
         var refused = 0
         while (true) {
-            // 映像が流れはじめる (頼み直した映像を TS の読み手が読みはじめる) まで待つ。
+            // 映像が流れはじめる (リクエストし直した映像を TS の読み手が読みはじめる) まで待つ。
             // 局を替えた直後は前の読み手の時計が残っているので、流れているかも見る
             delay(WAIT_MS)
             while (clock.offsetUs() == null || !player.isPlaying) delay(WAIT_MS)
@@ -231,15 +231,15 @@ fun rememberRawCaptions(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: CaptionFeed.Refused) {
-                // 404 (映像の口がまだ開いていない・繋ぎ直しの間)。少し待って頼み直す。
-                // 続くなら、録画はやめる (元のTSが無い)。ライブは間を空けて頼み続ける (チューナーの立ち上がりが遅いこともある)
+                // 404 (映像のエンドポイントがまだ開いていない・繋ぎ直しの間)。少し待ってリクエストし直す。
+                // 続くなら、録画はやめる (元のTSが無い)。ライブは間を空けてリクエストし続ける (チューナーの立ち上がりが遅いこともある)
                 if (++refused >= MAX_REFUSED) {
                     if (fromMs != null) return@LaunchedEffect
                     delay(SLOW_RETRY_MS)
                 }
                 false
             } catch (_: Exception) {
-                // 読みの途切れ。少し待って頼み直す
+                // 読みの途切れ。少し待ってリクエストし直す
                 refused = 0
                 false
             }
@@ -264,7 +264,7 @@ fun rememberRawCaptions(
             val cue = state.timeline.at(Pts.broadcast(player.currentPosition, offset))
             if (cue === shown) continue
             /*
-             * **1こま続いてから出す。** 頼み直した直後は頼んだ位置の手前のぶんがまとめて届き、そのままだと
+             * **2回 (`TICK_MS` ごと) 続けて同じなら出す。** リクエストし直した直後はリクエストした位置の手前のぶんがまとめて届き、そのままだと
              * 過ぎた字幕が1つずつ一瞬ずつ映る (届いた順に「いまの1枚」が入れ替わる)
              */
             if (cue !== candidate) {
@@ -280,7 +280,7 @@ fun rememberRawCaptions(
 
 /**
  * **エンコード済みの録画の字幕を、文字の配置で丸ごと受け取る** (`GET api/recordings/<id>/captions.json`)。再生位置を追い越していない
- * 中の最後の1枚を出す (シークしても頼み直さない)。字幕を持たない録画は 404 で、そのときは何もしない。
+ * 中の最後の1枚を出す (シークしてもリクエストし直さない)。字幕を持たない録画は 404 で、そのときは何もしない。
  * `positionMs` は録画の時刻 (`playback` の物差し)。ファイルはプレーヤーの位置そのもの、denpa に流してもらうときは物差しに戻したもの
  */
 @Composable
@@ -334,7 +334,7 @@ fun rememberCaptionPages(
 }
 
 /**
- * 字幕の口を読み続ける。きれいに閉じたら true。`keepGoing` が false を返す間 (字幕をオフにしてある) は、
+ * 字幕のエンドポイントを読み続ける。きれいに閉じたら true。`keepGoing` が false を返す間 (字幕をオフにしてある) は、
  * 選べる字幕が分かったところでやめる
  */
 private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGoing: () -> Boolean): Boolean = coroutineScope {
@@ -391,17 +391,17 @@ private const val TICK_MS = 33L
 /** 映像が流れはじめるのを待つ刻み (ミリ秒) */
 private const val WAIT_MS = 200L
 
-/** 続けて断られたらやめる (ライブは間を空ける) 回数 (頼み直しの間と掛けて 15 秒ほど) */
+/** 続けて断られたらやめる (ライブは間を空ける) 回数 (再リクエストの間と掛けて 15 秒ほど) */
 private const val MAX_REFUSED = 5
 
-/** ライブで断られ続けたときの頼み直しの間 (ミリ秒) */
+/** ライブで断られ続けたときの再リクエストの間 (ミリ秒) */
 private const val SLOW_RETRY_MS = 30_000L
 
 /** 先読みして持っておく字幕の枚数の上限 */
 private const val MAX_AHEAD = 200
 
-/** 頼み直すまでの間 (ミリ秒) */
+/** リクエストし直すまでの間 (ミリ秒) */
 private const val RETRY_MS = 3_000L
 
-/** `captions.json` を頼む回数 (繋がらなかったときだけ頼み直す) */
+/** `captions.json` をリクエストする回数 (繋がらなかったときだけリクエストし直す) */
 private const val PAGES_TRIES = 3

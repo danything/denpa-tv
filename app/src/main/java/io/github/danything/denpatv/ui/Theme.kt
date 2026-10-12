@@ -33,10 +33,10 @@ import androidx.tv.material3.darkColorScheme
  *
  * - 地は slate-950、面 (カード・ボタン) は slate-850 / 800、線は slate-700
  * - 主の色は azure ひとつ。**塗る (主のボタン・オンのボタン・選んだ行き先)** のは濃い #0172AD (白い字が読める)、
- *   **光る (合わせた縁・進み・見出し)** のは明るい #01AAFF (暗い地で目に入る)
+ *   **光る (フォーカスした縁・進み・見出し)** のは明るい #01AAFF (暗い地で目に入る)
  * - 状態の色は録画中の赤と予約の琥珀だけ (ブラウザと同じく、塗るのは「いま動いているもの」だけ)
  * - シークバーの CM は琥珀 (`#FFB300` を 80%。ブラウザの denpa のシークバーも同じ色)
- * - 映像の上の暗い板で白より一段落とす字 (題の2行目から下・ボタンの組や局の列の名前) は灰 (`OnScrimMuted`)
+ * - 映像の上の暗いパネルで白より一段落とす字 (タイトルの2行目から下・ボタンの組や局の列の名前) は灰 (`OnScrimMuted`)
  */
 object Palette {
     val Background = Color(0xFF13171F)
@@ -96,8 +96,8 @@ fun DenpaTheme(broadcastFonts: BroadcastFonts?, content: @Composable () -> Unit)
     CompositionLocalProvider(LocalBroadcastFont provides broadcastFonts) { MaterialTheme(colorScheme = Colors, typography = Type, content = content) }
 
 /**
- * **合わせたものの見せ方 (アプリ全体で同じ)。** Google TV と同じく、合わせたものは少し膨らみ (カードは 1.05、ボタンは 1.1。
- * tv-material の既定の幅)、**azure の縁と淡い光** を付ける。ボタンは白く塗って字を地の色にする (離れても、どれに合っているか分かる)
+ * **フォーカスしたものの見せ方 (アプリ全体で同じ)。** Google TV と同じく、フォーカスしたものは少し膨らみ (カードは 1.05、ボタンは 1.1。
+ * tv-material の既定の幅)、**azure の縁と淡い光** を付ける。ボタンは白く塗って字を地の色にする (離れても、どれにフォーカスがあるか分かる)
  */
 object Focus {
     /** カード (録画・局) の膨らみ。格子で隣と重ならない程度 */
@@ -105,14 +105,14 @@ object Focus {
 
     fun border(shape: Shape, width: Float = 3f) = Border(BorderStroke(width.dp, Palette.AccentBright), inset = 0.dp, shape = shape)
 
-    /** 合わせたものの下の淡い光 (影の色を azure にしたもの。色の付いた影は Android 9 から。それより前は影だけ) */
+    /** フォーカスしたものの下の淡い光 (影の色を azure にしたもの。色の付いた影は Android 9 から。それより前は影だけ) */
     val glow = Glow(elevationColor = Palette.AccentBright.copy(alpha = 0.45f), elevation = 12.dp)
 }
 
 /**
  * 形。Android TV のデザインの指針 ([ボタン](https://developer.android.com/design/ui/tv/guides/components/buttons)) どおり、
- * **文字・印のボタンは丸いボタン (両端が半円)**、**幅いっぱいのボタン (設定の行) と絵のカードは角 12dp の四角**。
- * 押せないラベル (ジャンル・形・音声などの情報) は角の小さな四角にして、押せるボタンと見分ける (`TagShape`)
+ * **文字・印のボタンは丸いボタン (両端が半円)**、**幅いっぱいのボタン (設定の行) と画像のカードは角 12dp の四角**。
+ * 押せないラベル (ジャンル・形式・音声などの情報) は角の小さな四角にして、押せるボタンと見分ける (`TagShape`)
  */
 val PillShape = RoundedCornerShape(percent = 50)
 val CardShape = RoundedCornerShape(12.dp)
@@ -120,8 +120,8 @@ val TagShape = RoundedCornerShape(4.dp)
 
 /**
  * ボタン。`primary` は主な操作・決める操作 (azure で塗る。「続きから再生」「録画」)、そうでなければ枠だけ
- * (並べる二の次の操作。「最初から」「閉じる」、戻せない「削除」も塗らない)。**合わせると白く塗り、azure の縁と光** (`Focus`)。
- * 入れ替えても合いが外れないよう、どちらも同じ部品 (OutlinedButton) の色だけ変える
+ * (並べる二の次の操作。「最初から」「閉じる」、戻せない「削除」も塗らない)。**フォーカスすると白く塗り、azure の縁と光** (`Focus`)。
+ * 入れ替えてもフォーカスが外れないよう、どちらも同じ部品 (OutlinedButton) の色だけ変える
  */
 @Composable
 fun DenpaButton(
@@ -159,7 +159,7 @@ fun DenpaButton(
 
 /**
  * 幅いっぱいのボタン (設定の行)。角 12dp の四角に、見出しと、その下に小さく今の様子 (`supporting`)。
- * 合わせ方はボタンと同じ (白く塗り、azure の縁と光)。幅が広いので膨らみは小さく
+ * フォーカスの見せ方はボタンと同じ (白く塗り、azure の縁と光)。幅が広いので膨らみは小さく
  */
 @Composable
 fun WideButton(

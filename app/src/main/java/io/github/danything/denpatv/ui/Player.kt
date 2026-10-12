@@ -106,9 +106,9 @@ enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val after
 val LiveQuality.buffering: Buffering get() = if (this == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
 
 /**
- * 映像を取る道。**Media3 のネットワーク スタックの頁の勧めどおり**: Android 14 からは OS の
+ * 映像を取得する経路。**Media3 のネットワーク スタックのページの勧めどおり**: Android 14 からは OS の
  * HttpEngine (アプリで1つ)、それより前は DefaultHttpDataSource (OS の HttpURLConnection)。
- * どちらも `DefaultDataSource.Factory` で包む (http(s) 以外も同じ口で開けるように)。docs/libraries.md
+ * どちらも `DefaultDataSource.Factory` で包む (http(s) 以外も同じ仕組みで開けるように)。docs/libraries.md
  */
 @OptIn(UnstableApi::class)
 @SuppressLint("NewApi") // EngineHttp は hasHttpEngine() が通ったときしか作られない (DenpaApp.engineHttp)
@@ -198,14 +198,14 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
  * **決定 (OK) は短押しと長押しを分けて `onCenter` に渡す** (録画・追っかけ・ライブとも長押しで番組の詳しいところ。情報キーの無いリモコンが多いので)。
  * 長押しは繰り返しの印でも、押したままの長さでも決まる (`CenterPress`)。
  *
- * 上に重ねたもの (ライブのメニュー・操作バー) を閉じたら、**必ず映像にキーを戻す** — 閉じたものに合っていたまま
- * 消えると、どこにも合わずリモコンが効かなくなる。`active` の間は**映像そのものに合っているか見張り、外れていたら
+ * 上に重ねたもの (ライブのメニュー・操作バー) を閉じたら、**必ず映像にキーを戻す** — 閉じたものにフォーカスがあったまま
+ * 消えると、どこにもフォーカスが無くなりリモコンが効かなくなる。`active` の間は**映像そのものにフォーカスがあるか見張り、外れていたら
  * 取り戻す** (閉じたものが消える間・操作バーが勝手に消えたとき・端末によって遅れて合いが外れる場合も)。
- * 開いている間と、画面を離れるとき (一覧に戻る間に一覧が合いを取るので、取り返さない) は `active = false`
+ * 開いている間と、画面を離れるとき (一覧に戻る間に一覧がフォーカスを取るので、取り返さない) は `active = false`
  *
  * **字幕 (`captions`) は、下に重ねたもの (知らせ・`above` の操作バーやメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
  *
- * **`above` が操作バーを出している間 (`covered`) は、下の端の知らせを出さない** (どちらも下の端の板なので重なる)。知らせとエラーは
+ * **`above` が操作バーを出している間 (`covered`) は、下の端の知らせを出さない** (どちらも下の端のパネルなので重なる)。知らせとエラーは
  * 操作バーのタイトルの2行目に添える (`LocalBarNotice`。`ControlBar` が読む)。操作バーの中で押したもの (CM 飛ばし・画質) の返事もそこに出る
  */
 @OptIn(UnstableApi::class)
@@ -217,7 +217,7 @@ fun PlayerFrame(
     /** 映像がキーを受けるか。上に重ねたもの (メニュー・操作バー) が開いている間は false。閉じたら映像に戻す */
     active: Boolean = true,
     onKey: (KeyEvent) -> Boolean,
-    /** キーを離したとき (ライブの局の切り替えは、離してから待って頼む) */
+    /** キーを離したとき (ライブの局の切り替えは、離してから待ってリクエストする) */
     onKeyUp: (KeyEvent) -> Unit = {},
     onCenter: (CenterPress.Action) -> Unit = {},
     /** 知らせの下に出す進み (ライブの番組の進み)。null なら出さない */
@@ -226,7 +226,7 @@ fun PlayerFrame(
     captions: CaptionState,
     /** 映るまでの間に出す、何をしているか (ライブは「選局しています」)。流れが届いたら「映像を待っています」に替わる */
     busyLabel: String = "読み込んでいます",
-    /** 繋ぎ直しの様子 (`rememberPlayer` の `recovery`)。繋ぎ直している間は前の絵を残して「繋ぎ直しています」 */
+    /** 繋ぎ直しの様子 (`rememberPlayer` の `recovery`)。繋ぎ直している間は前の映像を残して「繋ぎ直しています」 */
     recovery: Recovery,
     /** `above` が操作バーを出しているか。出している間は、知らせを下の端に出さずに操作バーのタイトルに添える */
     covered: Boolean = false,
@@ -234,14 +234,14 @@ fun PlayerFrame(
 ) {
     val loading = rememberLoading(player)
     val focus = remember { FocusRequester() }
-    /** 映像そのものに合っているか */
+    /** 映像そのものにフォーカスがあるか */
     var focused by remember { mutableStateOf(false) }
     /** 下に重ねたものの高さ。字幕をその上へ逃がす */
     val insets = remember { OverlayInsets() }
     val inset = rememberCaptionInset(insets)
     LaunchedEffect(active) {
         if (!active) return@LaunchedEffect
-        // 閉じたものが消えるのを1こま待ってから合わせ、その後も外れたら取り戻す
+        // 閉じたものが消えるのを1フレーム待ってからフォーカスし、その後も外れたら取り戻す
         while (true) {
             withFrameNanos { }
             if (!focused) runCatching { focus.requestFocus() }
@@ -253,7 +253,7 @@ fun PlayerFrame(
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(focus)
-            // 開いていたものが閉じて合いがどこにも無くなったら、映像に戻す
+            // 開いていたものが閉じてフォーカスがどこにも無くなったら、映像に戻す
             .onFocusChanged { focused = it.isFocused }
             // 上に重ねたものが開いている間は受けない (そちらのキーがここまで上がってくるので)
             .centerPresses({ onCenter(CenterPress.Action.Short) }, { onCenter(CenterPress.Action.Long) }, enabled = active)
@@ -299,18 +299,18 @@ private fun BoxScope.Notice(text: CharSequence?, progress: Pair<Long, Long>?) {
     }
 }
 
-/** 操作バー (`ControlBar`) の題の2行目に添える知らせ。`PlayerFrame` が操作バーを出している間 (`covered`) だけ渡す */
+/** 操作バー (`ControlBar`) のタイトルの2行目に添える知らせ。`PlayerFrame` が操作バーを出している間 (`covered`) だけ渡す */
 val LocalBarNotice = compositionLocalOf<CharSequence?> { null }
 
-/** 映像に合っているか見張る間 (ミリ秒) */
+/** 映像にフォーカスがあるか見張る間 (ミリ秒) */
 private const val FOCUS_WATCH_MS = 250L
 
 /**
  * 映るまでの様子 (`rememberLoading`)。**ブラウザの denpa の幕 (`PlayerVeil`) にあたる。**
  *
- * - `busy` … 動かすつもりで読み込んでいる (選局・頼み直し・シークの直後)
- * - `arrived` … 流れが届きはじめた (中身の形が分かった)。届くまでは「選局しています」、届いたら「映像を待っています」
- * - `pictured` … 一度でも絵を出したか。出していれば、次が映るまで**前の絵が画面に残っている** (Media3 は替えるときに面を消さない)
+ * - `busy` … 動かすつもりで読み込んでいる (選局・再リクエスト・シークの直後)
+ * - `arrived` … 流れが届きはじめた (中身の形式が分かった)。届くまでは「選局しています」、届いたら「映像を待っています」
+ * - `pictured` … 一度でも映像を出したか。出していれば、次が映るまで**前の映像が画面に残っている** (Media3 は替えるときに面を消さない)
  * - `since` … `busy` になったとき (uptime ミリ秒)
  */
 @Stable
@@ -324,7 +324,7 @@ class LoadingState {
 }
 
 /**
- * プレーヤーから映るまでの様子を拾う。`awake` は**動いている間は画面を点けたままにする**か (スクリーンセーバーを出さない)。
+ * プレーヤーから映るまでの様子を取得する。`awake` は**動いている間は画面を点けたままにする**か (スクリーンセーバーを出さない)。
  * 止めた・終わった・止まった (`stop`) ら離す
  */
 @Composable
@@ -356,9 +356,9 @@ private fun rememberLoading(player: ExoPlayer): LoadingState {
 /**
  * 読み込んでいる間の幕。**決まりはブラウザの denpa (`PlayerVeil`) と同じ:**
  *
- * - 前の絵が残っている間は塗り潰さず、回るものは `SPINNER_DELAY_MS` 待ってから出す (局替えはたいてい1秒前後で終わるので、
- *   すぐ出すとちらつくだけ。テレビと同じく前の絵のまま止めておく)
- * - 前の絵を残すのは `HOLD_MOST_MS` まで。それを過ぎたら暗くする (選局に失敗したのに前の局が止まって見えるのがいちばん悪い)
+ * - 前の映像が残っている間は塗り潰さず、回るものは `SPINNER_DELAY_MS` 待ってから出す (局替えはたいてい1秒前後で終わるので、
+ *   すぐ出すとちらつくだけ。テレビと同じく前の映像のまま止めておく)
+ * - 前の映像を残すのは `HOLD_MOST_MS` まで。それを過ぎたら暗くする (選局に失敗したのに前の局が止まって見えるのがいちばん悪い)
  * - まだ何も映していなければ (開いた直後)、すぐ回るものを出す
  *
  * 回るものの下に、いま何をしているかを1行 (「選局しています」→「映像を待っています」。切れて繋ぎ直している間は「繋ぎ直しています」)
@@ -417,10 +417,10 @@ private fun Spinner() {
     }
 }
 
-/** 前の絵を残したまま回るものを出すまで (ミリ秒)。ブラウザの denpa の `PlayerVeil` と同じ 1.5 秒 */
+/** 前の映像を残したまま回るものを出すまで (ミリ秒)。ブラウザの denpa の `PlayerVeil` と同じ 1.5 秒 */
 private const val SPINNER_DELAY_MS = 1_500L
 
-/** 前の絵を残しておく上限 (ミリ秒)。ブラウザの denpa の `HOLD_MOST` と同じ 6 秒 */
+/** 前の映像を残しておく上限 (ミリ秒)。ブラウザの denpa の `HOLD_MOST` と同じ 6 秒 */
 private const val HOLD_MOST_MS = 6_000L
 
 /**
@@ -448,7 +448,7 @@ fun OnBackground(onStop: () -> Unit, onStart: () -> Unit) {
 
 /**
  * 何秒かだけ出して消える文字 (`rememberFlash`)。放送から来た字 (番組名・局名) は `appendBroadcast` で印を付けた AnnotatedString で渡す (`TitleLines`)。
- * `val (overlay, flash) = …` で、いま出している文と出す口を受けられる
+ * `val (overlay, flash) = …` で、いま出している文と出す関数を受けられる
  */
 @Stable
 class Flash internal constructor() {
@@ -486,7 +486,7 @@ fun rememberFlash(): Flash {
 
 /**
  * `rememberPlayer` が返すもの。`val (player, error) = …` で受けられる。`dualMono` はデュアルモノの配り直し (`rememberTracks` に渡す)、
- * `recovery` は繋ぎ直しの様子 (`PlayerFrame` に渡す。頼み直すたびに `requested` を呼ぶ)
+ * `recovery` は繋ぎ直しの様子 (`PlayerFrame` に渡す。リクエストし直すたびに `requested` を呼ぶ)
  */
 data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono: DualMonoProcessor, val recovery: Recovery)
 
@@ -494,7 +494,7 @@ data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono:
  * ExoPlayer を画面の寿命に合わせる。エラーは文にして返す。
  * `clock` は元の TS の字幕の時計 (`rememberRawCaptions` と同じものを渡す)。
  *
- * `reconnect` の決まりで、**切れた・止まったら繋ぎ直す** (`Recovery`)。繋ぎ直している間はエラーを出さず、前の絵を残して幕が
+ * `reconnect` の決まりで、**切れた・止まったら繋ぎ直す** (`Recovery`)。繋ぎ直している間はエラーを出さず、前の映像を残して幕が
  * 「繋ぎ直しています」を出す。諦めたとき (直らないもの・回数を使い切った) だけエラーを返す
  */
 @OptIn(UnstableApi::class)
@@ -519,7 +519,7 @@ fun rememberPlayer(
             override fun onPlayerError(e: PlaybackException) {
                 val http = e.cause as? HttpDataSource.InvalidResponseCodeException
                 val code = http?.responseCode
-                // 変換の枠が埋まって断られた (503 の言い分で見分ける)。何度かだけ頼み直し、諦めたら「サーバが混んでいます」
+                // 変換の枠が埋まって断られた (503 の言い分で見分ける)。何度かだけリクエストし直し、諦めたら「サーバが混んでいます」
                 val busy = isBusyAnswer(code, http?.responseBody)
                 val verdict = Reconnect.verdict(e.errorCode, code, busy)
                 // トークンが外された・期限切れ。繋ぐ画面へ
@@ -590,7 +590,7 @@ fun rememberPlayer(
 const val PLAYBACK_ERROR_PREFIX = "再生できません: "
 
 /**
- * `url` を頼んで流しはじめる。`startMs` は頭からの位置 (録画の続き)。流しっぱなしのもの (ライブ・追っかけ) は渡さない
+ * `url` をリクエストして流しはじめる。`startMs` は頭からの位置 (録画の続き)。流しっぱなしのもの (ライブ・追っかけ) は渡さない
  */
 fun ExoPlayer.load(url: String, mime: String, startMs: Long? = null) {
     val item = MediaItem.Builder().setUri(url).setMimeType(mime).build()
