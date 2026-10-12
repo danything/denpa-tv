@@ -130,6 +130,19 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     var chaseLoads by remember { mutableIntStateOf(0) }
     /** いま追っかけを観ているなら、その譲り。局を替えたら (別の局を映すなら) 観ない */
     val chasing = yielded?.takeIf { it.serviceId == playing?.id && !returning }
+    /**
+     * 頼み直しが映らずに終わった。蹴られたあと・「ライブに戻る」の頼み直しなら、譲った録画の追っかけへ切り替えて true。
+     * そうでなければ false (いつもどおり頼み直す)。繋ぎ直しの番 (`Recovery`) と、繋ぎ直さずに止まったとき (404 など) の両方から
+     */
+    fun giveWay(): Boolean {
+        val service = playing ?: return false
+        val to = YieldPlan.fallback(trying, returning, yielded?.recording, kicked?.takeIf { it.serviceId == service.id }?.recording) ?: return false
+        yielded = Yielded(service.id, to, refused = returning)
+        returning = false
+        trying = false
+        kicked = null
+        return true
+    }
     /*
      * **切れた・終わった・止まったら、同じ局を頼み直す** (`Recovery`。ブラウザのライブの `reconnect` と同じく何度でも、待ちを倍々に)。
      * 頼み直すのは裏から戻ったときと同じ口 (`returns`)。頼み直しが映らずに終わったのが蹴られたあと・「ライブに戻る」なら、
@@ -143,18 +156,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         if (chasing != null) {
             ReconnectPlan("live 局 ${playing?.id} の代わりの追っかけ 録画 ${chasing.recording.id}", stream = true) { chaseLoads++ }
         } else {
-            ReconnectPlan("live 局 ${playing?.id}", stream = true, endedIsLost = true) {
-                val service = playing
-                val to = YieldPlan.fallback(trying, returning, yielded?.recording, kicked?.takeIf { it.serviceId == service?.id }?.recording)
-                if (service != null && to != null) {
-                    yielded = Yielded(service.id, to, refused = returning)
-                    returning = false
-                    trying = false
-                    kicked = null
-                } else {
-                    returns++
-                }
-            }
+            ReconnectPlan("live 局 ${playing?.id}", stream = true, endedIsLost = true) { if (!giveWay()) returns++ }
         },
     )
     val flasher = rememberFlash()
@@ -294,6 +296,19 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         repo.events.collect { event ->
             if (event is DenpaEvent.Yielded && event.serviceId == playing?.id && yielded?.serviceId != event.serviceId) kicked = event
         }
+    }
+    // 頼み直しが繋ぎ直さずに止まった (404 など理由を出して止めるもの) ときも、譲っていたなら追っかけへ戻る (エラーで行き止まりにしない)
+    LaunchedEffect(error) {
+        if (error != null) giveWay()
+    }
+    /*
+     * 知らせは、閉じた流れの頼み直しが映ったあとに届くこともある (そのときは使わない)。残しておくと、ずっと後の別の頼み直しで
+     * 古い録画へ切り替えかねないので、しばらくしたら忘れる
+     */
+    LaunchedEffect(kicked) {
+        if (kicked == null) return@LaunchedEffect
+        delay(KICKED_FOR_MS)
+        if (!trying) kicked = null
     }
     // 局を替えたら、前の局の譲りは忘れる (戻ってきたら、追っかけではなくライブを頼む)
     LaunchedEffect(playing?.id) {
@@ -572,6 +587,9 @@ private fun yieldNotice(yielded: Yielded): AnnotatedString = buildAnnotatedStrin
     append("\n")
     append(if (yielded.refused) YieldPlan.refused(yielded.recording.endAt) else YIELD_HINT)
 }
+
+/** 譲った録画の知らせを、頼み直しに使うまで覚えておく長さ (ミリ秒)。蹴られてから頼み直しが映らずに終わるまで (数秒〜十数秒) より十分長く */
+private const val KICKED_FOR_MS = 60_000L
 
 /** 譲っている間の知らせの2行目。メニューを開くと「ライブに戻る」に合う */
 private const val YIELD_HINT = "決定でメニュー → 「${YieldPlan.BACK_TO_LIVE}」"
