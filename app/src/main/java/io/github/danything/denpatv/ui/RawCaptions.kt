@@ -20,6 +20,7 @@ import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
+import androidx.media3.extractor.mp4.FragmentedMp4Extractor
 import androidx.media3.extractor.ts.TsExtractor
 import io.github.danything.denpatv.data.CaptionCue
 import io.github.danything.denpatv.data.CaptionFeed
@@ -29,6 +30,7 @@ import io.github.danything.denpatv.data.CaptionPages
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.CueTimeline
 import io.github.danything.denpatv.data.Http
+import io.github.danything.denpatv.data.ORIGIN_HEADER
 import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.Unauthorized
 import kotlinx.coroutines.Dispatchers
@@ -47,22 +49,46 @@ import java.net.URI
  *
  * Media3 の TsExtractor は、最初の PTS を 0 に寄せた時刻でサンプルを出す。寄せ幅は渡した `TimestampAdjuster` が持って
  * いるので、**読み手を作るところで自分の `TimestampAdjuster` を渡して控えておく**。中身は `DefaultExtractorsFactory` と
- * 同じ作り方の TsExtractor (ほかの形はそのまま)。映像を頼み直すたびに読み手も作り直されるので、最後に作ったものを見る
+ * 同じ作り方の TsExtractor (ほかの形はそのまま)。映像を頼み直すたびに読み手も作り直されるので、最後に作ったものを見る。
+ *
+ * `mp4` なら、fragmented MP4 の読み手にも同じように渡す (録画を denpa に流してもらうとき。denpa は塊の時刻を録画の時刻のまま書くので、
+ * 寄せた幅から録画の時刻に戻せる。`StreamClock`)。応答の `X-Denpa-Origin` (元の TS の流れで、録画の時刻の 0 にあたる PTS) も控える
  */
 @OptIn(UnstableApi::class, ExperimentalApi::class)
-class TsClock(private val inner: DefaultExtractorsFactory = DefaultExtractorsFactory()) : ExtractorsFactory {
+class TsClock(
+    private val mp4: Boolean = false,
+    private val inner: DefaultExtractorsFactory = DefaultExtractorsFactory(),
+) : ExtractorsFactory {
     @Volatile
     private var adjuster: TimestampAdjuster? = null
+
+    /** 最後の応答の `X-Denpa-Origin` (90kHz)。無ければ null */
+    @Volatile
+    var origin: Long? = null
+        private set
     private var subtitleParserFactory: SubtitleParser.Factory = DefaultSubtitleParserFactory()
     private var transcoding = true
+    /** `DefaultExtractorsFactory` の既定と同じ (H.264・H.265 は GOP の中の参照を読む)。fragmented MP4 の読み手に渡す */
+    private var gopCodecs = C.VIDEO_CODEC_FLAG_H264 or C.VIDEO_CODEC_FLAG_H265
+    private var parseHagc = true
 
     /** いまの寄せ幅 (マイクロ秒)。まだ PTS を1つも読んでいなければ null */
     fun offsetUs(): Long? = adjuster?.timestampOffsetUs?.takeIf { it != C.TIME_UNSET }
 
     override fun createExtractors(): Array<Extractor> = swap(inner.createExtractors())
 
-    override fun createExtractors(uri: Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> =
-        swap(inner.createExtractors(uri, responseHeaders))
+    override fun createExtractors(uri: Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> {
+        origin = responseHeaders.entries
+            .firstOrNull { (name, _) -> name.equals(ORIGIN_HEADER, ignoreCase = true) }
+            ?.value?.firstOrNull()?.trim()?.toLongOrNull()
+        return swap(inner.createExtractors(uri, responseHeaders))
+    }
+
+    /** 頼み直す前に、前の流れの寄せ幅と origin を捨てる (新しい流れを読みはじめるまで、前のもので数えないように) */
+    fun reset() {
+        adjuster = null
+        origin = null
+    }
 
     override fun setSubtitleParserFactory(subtitleParserFactory: SubtitleParser.Factory): ExtractorsFactory {
         this.subtitleParserFactory = subtitleParserFactory
@@ -79,22 +105,50 @@ class TsClock(private val inner: DefaultExtractorsFactory = DefaultExtractorsFac
     }
 
     override fun experimentalSetCodecsToParseWithinGopSampleDependencies(codecsToParseWithinGopSampleDependencies: Int): ExtractorsFactory {
+        gopCodecs = codecsToParseWithinGopSampleDependencies
         inner.experimentalSetCodecsToParseWithinGopSampleDependencies(codecsToParseWithinGopSampleDependencies)
         return this
     }
 
     override fun setParseHagcMetadata(parseHagcMetadata: Boolean): ExtractorsFactory {
+        parseHagc = parseHagcMetadata
         inner.setParseHagcMetadata(parseHagcMetadata)
         return this
     }
 
-    private fun swap(extractors: Array<Extractor>): Array<Extractor> =
-        extractors.map { if (it is TsExtractor) ts() else it }.toTypedArray()
-
-    /** `DefaultExtractorsFactory` の TS と同じ作り。違うのは `TimestampAdjuster` を控えることだけ */
-    private fun ts(): TsExtractor {
+    /**
+     * 読み手の候補は形ごとに1つずつ並んで来て、中身を嗅いだ1つだけが使われる。**どれに渡す `TimestampAdjuster` も同じ1つにする**
+     * (使われたものの幅が控えに残るように)
+     */
+    private fun swap(extractors: Array<Extractor>): Array<Extractor> {
         val made = TimestampAdjuster(0)
         adjuster = made
+        return extractors.map {
+            when {
+                it is TsExtractor -> ts(made)
+                mp4 && it is FragmentedMp4Extractor -> fragmentedMp4(made)
+                else -> it
+            }
+        }.toTypedArray()
+    }
+
+    /**
+     * `DefaultExtractorsFactory` の fragmented MP4 と同じ作り。違うのは `TimestampAdjuster` を渡すことと、MFRA (シークの索引) を読まないこと
+     * (流しっぱなしの流れには無い)
+     */
+    private fun fragmentedMp4(made: TimestampAdjuster) = FragmentedMp4Extractor(
+        subtitleParserFactory,
+        FragmentedMp4Extractor.codecsToParseWithinGopSampleDependenciesAsFlags(gopCodecs) or
+            (if (transcoding) 0 else FragmentedMp4Extractor.FLAG_EMIT_RAW_SUBTITLE_DATA) or
+            (if (parseHagc) 0 else FragmentedMp4Extractor.FLAG_DISABLE_HAGC_METADATA),
+        made,
+        null,
+        emptyList(),
+        null,
+    )
+
+    /** `DefaultExtractorsFactory` の TS と同じ作り。違うのは `TimestampAdjuster` を控えることだけ */
+    private fun ts(made: TimestampAdjuster): TsExtractor {
         return TsExtractor(
             TsExtractor.MODE_SINGLE_PMT,
             if (transcoding) 0 else TsExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
@@ -226,10 +280,17 @@ fun rememberRawCaptions(
 
 /**
  * **エンコード済みの録画の字幕を、文字の配置で丸ごと受け取る** (`GET api/recordings/<id>/captions.json`)。再生位置を追い越していない
- * 中の最後の1枚を出す (シークしても頼み直さない)。字幕を持たない録画は 404 で、そのときは何もしない
+ * 中の最後の1枚を出す (シークしても頼み直さない)。字幕を持たない録画は 404 で、そのときは何もしない。
+ * `positionMs` は録画の時刻 (`playback` の物差し)。ファイルはプレーヤーの位置そのもの、denpa に流してもらうときは物差しに戻したもの
  */
 @Composable
-fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUnauthorized: () -> Unit = {}): CaptionState {
+fun rememberCaptionPages(
+    repo: Repository,
+    player: ExoPlayer,
+    path: String,
+    onUnauthorized: () -> Unit = {},
+    positionMs: () -> Long = { player.currentPosition },
+): CaptionState {
     val state = remember { CaptionState(repo.app.denpaFont) }
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
     var pages by remember { mutableStateOf<CaptionPages?>(null) }
@@ -265,7 +326,7 @@ fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUn
         }
         // 同じ1枚なら置き直しても描き直さない (State は同じものの代入では知らせない)
         while (true) {
-            state.page = all.at(player.currentPosition)
+            state.page = all.at(positionMs())
             delay(TICK_MS)
         }
     }

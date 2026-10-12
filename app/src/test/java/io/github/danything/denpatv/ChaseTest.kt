@@ -3,6 +3,8 @@ package io.github.danything.denpatv
 import io.github.danything.denpatv.data.AudioTrack
 import io.github.danything.denpatv.data.Chase
 import io.github.danything.denpatv.data.Decoders
+import io.github.danything.denpatv.data.PlayOffer
+import io.github.danything.denpatv.data.PlaybackInfo
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingFile
 import io.github.danything.denpatv.data.audioTrack
@@ -73,24 +75,32 @@ class ChaseTest {
         assertNull(rememberedAudio(bare, "音声 2 (日本語)"))
     }
 
-    /** エンコードが終わった録画をファイルの再生へ渡すのは、録り終えていて開けるファイルがあるときだけ (一覧が追いついていなければ待つ) */
+    /**
+     * エンコードが終わった録画をファイルの再生へ渡すのは、録り終えていて、録画の再生 (`pickPlayback`) がエンコード済みのファイルを開くときだけ
+     * (一覧が追いついていなければ待つ)
+     */
     @Test
     fun エンコードが終わったらファイルの再生へ渡す() {
         val decoders = Decoders(av1 = false, h264 = true, mpeg2 = false)
-        val encoded = Recording(
+        val finished = Recording(
             id = 12, title = "番組", startAt = 0,
             files = listOf(RecordingFile("encoded", "h264", "api/recordings/12/file?source=encoded")),
         )
-        assertTrue(Chase.handOff(encoded, decoders))
-        // 一覧がまだ録画中のまま・ファイルが無い・開けるファイルが無い・一覧から消えた
-        assertFalse(Chase.handOff(encoded.copy(recording = true, chase = "api/recordings/12/chase"), decoders))
-        assertFalse(Chase.handOff(encoded.copy(files = emptyList()), decoders))
-        assertFalse(Chase.handOff(encoded.copy(files = listOf(RecordingFile("encoded", "av1", "x"))), decoders))
-        assertFalse(Chase.handOff(null, decoders))
+        val encoded = PlaybackInfo(
+            duration = 1800.0,
+            axis = "encoded",
+            offers = listOf(PlayOffer("h264", "file", "encoded"), PlayOffer("av1", "stream"), PlayOffer("mpeg2", "raw")),
+        )
+        assertTrue(Chase.handOff(finished, encoded, decoders))
+        // 一覧がまだ録画中のまま・一覧から消えた・観方が読めない
+        assertFalse(Chase.handOff(finished.copy(recording = true, chase = "api/recordings/12/chase"), encoded, decoders))
+        assertFalse(Chase.handOff(null, encoded, decoders))
+        assertFalse(Chase.handOff(finished, null, decoders))
+        // エンコード済みのファイルをこの端末でデコードできない (AV1 だけ。録画の再生は変換して流してもらう)
+        val av1Only = encoded.copy(offers = listOf(PlayOffer("av1", "file", "encoded"), PlayOffer("h264", "stream")))
+        assertFalse(Chase.handOff(finished, av1Only, decoders))
         // 元の TS だけ (「エンコードしない」設定・エンコード待ち) は渡さない。MPEG-2 をデコードできても
-        val ts = encoded.copy(files = listOf(RecordingFile("ts", "mpeg2", "api/recordings/12/file?source=ts")))
-        assertFalse(Chase.handOff(ts, Decoders(av1 = false, h264 = true, mpeg2 = true)))
-        // エンコード済みと元の TS があれば、エンコード済みを開くので渡す
-        assertTrue(Chase.handOff(ts.copy(files = encoded.files + ts.files), decoders))
+        val ts = PlaybackInfo(duration = 1800.0, axis = "ts", offers = listOf(PlayOffer("h264", "stream"), PlayOffer("mpeg2", "raw")))
+        assertFalse(Chase.handOff(finished, ts, Decoders(av1 = false, h264 = true, mpeg2 = true, mpeg2Hardware = true)))
     }
 }

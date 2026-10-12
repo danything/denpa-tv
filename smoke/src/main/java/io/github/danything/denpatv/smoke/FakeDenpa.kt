@@ -110,7 +110,7 @@ class FakeDenpa(
         val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file|poster)").matchEntire(path)
         val live = Regex("/api/services/(\\d+)/live").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
-            path == "/api/health" -> json(out, """{"ok":true,"version":"v1.50.0"}""")
+            path == "/api/health" -> json(out, """{"ok":true,"version":"v1.55.0"}""")
             path == "/api/services" -> json(out, services())
             // 局の切り替えの行き先も同じ映像を流す
             live == SERVICE_ID || live == NEXT_SERVICE_ID ->
@@ -132,7 +132,17 @@ class FakeDenpa(
             path == "/api/events" -> events(out)
             recording != null && method == "POST" -> respond(out, 204, "text/plain", ByteArray(0))
             recording?.groupValues?.get(2) == "detail" -> json(out, """{"description":"$RECORDING_DESCRIPTION","extended":{}}""")
+            // 録画の観方。エンコード済みのファイル (H.264) をそのまま開く
+            path == "/api/recordings/$RECORDING_ID/playback" ->
+                json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"}]}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
+            // エンコード前の録画: ファイルは元の TS だけなので、変換して流してもらう (エミュレータは MPEG-2 をデコードできない)。
+            // 流れはライブと同じ fMP4 (塊の時刻は 0 から)。CM は 4〜6 秒 (CM 飛ばしで頼み直す)
+            path == "/api/recordings/$RAW_ID/playback" ->
+                json(out, """{"duration":10,"axis":"ts","audios":[],"offers":[{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"av1","way":"stream"},{"codec":"mpeg2","way":"raw"}]}""")
+            path == "/api/recordings/$RAW_ID/chapters" ->
+                json(out, """{"chapters":[{"start":0,"end":4,"title":"本編"},{"start":4,"end":6,"title":"CM"},{"start":6,"end":10,"title":"本編"}]}""")
+            path == "/api/recordings/$RAW_ID/stream" -> media(out, "live.mp4", "video/mp4", range)
             // エンコード済みの録画の字幕 (文字の配置)
             path == "/api/recordings/$RECORDING_ID/captions.json" -> json(out, FakeCaptions.smoke)
             // 追っかけはライブと同じエンコード方式の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリは居た場所から頼み直す)
@@ -144,7 +154,18 @@ class FakeDenpa(
                 }
             // 録画の状態 (追っかけの画面がエンコードが終わったかを聞く)
             path == "/api/recordings/$CHASE_ID" ->
-                json(out, if (chaseEncoded.get()) """{"id":$CHASE_ID,"encoded":true,"state":"available"}""" else """{"id":$CHASE_ID,"encoded":false,"state":"recording"}""")
+                json(
+                    out,
+                    if (chaseEncoded.get()) """{"id":$CHASE_ID,"encoded":true,"state":"available","durationMs":10000}"""
+                    else """{"id":$CHASE_ID,"encoded":false,"state":"recording","durationMs":null}""",
+                )
+            // 録画の観方。エンコードが終わっていればファイル (H.264) をそのまま開ける。録画中は 404 (denpa と同じ)
+            path == "/api/recordings/$CHASE_ID/playback" ->
+                if (chaseEncoded.get()) {
+                    json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"}]}""")
+                } else {
+                    respond(out, 404, "text/plain", "not found".toByteArray())
+                }
             // エンコードが終わったあとのファイル (録画と同じ映像。色で移ったのが分かる)。録画中に戻したあとの読み足しでも映せるよう、いつでも返す
             path == "/api/recordings/$CHASE_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
             else -> respond(out, 404, "text/plain", "not found".toByteArray())
@@ -158,7 +179,7 @@ class FakeDenpa(
     private fun showcaseRoute(method: String, path: String, range: String?, out: OutputStream): Boolean {
         val (serviceId, servicePart) = Regex("/api/services/(\\d+)/(live|logo|record)").matchEntire(path)?.destructured
             ?.takeIf { (id, _) -> Showcase.hasService(id.toLong()) }?.let { (id, part) -> id.toLong() to part } ?: (null to null)
-        val (recordingId, recordingPart) = Regex("/api/recordings/(\\d+)/(detail|file|poster|chase|captions\\.json)").matchEntire(path)?.destructured
+        val (recordingId, recordingPart) = Regex("/api/recordings/(\\d+)/(detail|file|poster|chase|playback|captions\\.json)").matchEntire(path)?.destructured
             ?.takeIf { method == "GET" }?.let { (id, part) -> id.toLong() to part } ?: (null to null)
         val program = Regex("/api/programs/(\\d+)").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
@@ -183,6 +204,8 @@ class FakeDenpa(
                 "poster" -> respond(out, 200, "image/jpeg", Showcase.poster(recordingId))
                 "file" -> media(out, "showcase.mkv", "video/x-matroska", range)
                 "chase" -> paced(out, Showcase.liveAsset(recordingId))
+                // どの録画も、エンコード済みのファイル (H.264。showcase.mkv) をそのまま開く
+                "playback" -> json(out, """{"duration":30,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"}]}""")
                 else -> json(out, FakeCaptions.showcase)
             }
         }
@@ -198,7 +221,10 @@ class FakeDenpa(
         return "[${service(SERVICE_ID, SERVICE_NAME, 1, PROGRAM_TITLE)},${service(NEXT_SERVICE_ID, NEXT_SERVICE_NAME, 2, NEXT_PROGRAM_TITLE)}]"
     }
 
-    /** 録り終えた録画と、録っている最中の録画 (追っかけ。1時間後まで録る)。後者はエンコードが終わっていれば (`encodeChase`)、ファイルを持つ録り終えた録画 */
+    /**
+     * 録り終えた録画と、録っている最中の録画 (追っかけ。1時間後まで録る)。後者はエンコードが終わっていれば (`encodeChase`)、ファイルを持つ録り終えた録画。
+     * エンコード前の録画 [RAW_ID] は [RECORDING_ID] の1時間あと (一覧はいちばん古い録画に合わせて開くので、[RECORDING_ID] をいちばん古いままにする)
+     */
     private fun recordings(): String {
         val now = System.currentTimeMillis()
         val start = now - 86_400_000
@@ -209,7 +235,9 @@ class FakeDenpa(
         }
         return """[{"id":$RECORDING_ID,"title":"$RECORDING_TITLE","serviceName":"$SERVICE_NAME","startAt":$start,"durationMs":10000,"watchedAt":null,
             "files":[{"source":"encoded","codec":"h264","url":"api/recordings/$RECORDING_ID/file"}]},
-            {"id":$CHASE_ID,"title":"$CHASE_TITLE","serviceName":"$SERVICE_NAME","startAt":${now - 120_000},"endAt":${now + 3_600_000},$chase}]"""
+            {"id":$CHASE_ID,"title":"$CHASE_TITLE","serviceName":"$SERVICE_NAME","startAt":${now - 120_000},"endAt":${now + 3_600_000},$chase},
+            {"id":$RAW_ID,"title":"$RAW_TITLE","serviceName":"$SERVICE_NAME","startAt":${start + 3_600_000},"durationMs":10000,"watchedAt":null,
+            "files":[{"source":"ts","codec":"mpeg2","url":"api/recordings/$RAW_ID/file?source=ts"}]}]"""
     }
 
     /**
@@ -358,6 +386,9 @@ class FakeDenpa(
         /** 録っている最中の録画 (追っかけで観る) */
         const val CHASE_ID = 2L
         const val CHASE_TITLE = "偽の録画中"
+        /** エンコード前の録画 (元の TS だけ。denpa に変換して流してもらう) */
+        const val RAW_ID = 3L
+        const val RAW_TITLE = "偽のエンコード前"
         /** 黙っている長さ (アプリが見張りで気付いて頼み直すより十分長く) */
         private const val STALL_HOLD_MS = 60_000L
         /** 画面の絵のライブ・追っかけの映像の長さ (`scripts/smoke-media.sh` の showcase-live) と、先に送るぶん・送る間 */

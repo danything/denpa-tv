@@ -26,16 +26,26 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.RecordingCenter
 import io.github.danything.denpatv.data.recordingCenter
 import io.github.danything.denpatv.data.ChapterMark
+import io.github.danything.denpatv.data.PlayChoice
+import io.github.danything.denpatv.data.PlaybackInfo
+import io.github.danything.denpatv.data.PlaybackLookup
+import io.github.danything.denpatv.data.PlaybackPaths
+import io.github.danything.denpatv.data.Reconnect
 import io.github.danything.denpatv.data.Recording
+import io.github.danything.denpatv.data.StreamClock
+import io.github.danything.denpatv.data.Unauthorized
+import io.github.danything.denpatv.data.pickPlayback
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.skipCmAtStart
+import io.github.danything.denpatv.data.streamAudios
 import io.github.danything.denpatv.data.RecordingCommand
 import io.github.danything.denpatv.data.resyncAfterSpeedChange
 import io.github.danything.denpatv.data.nextSpeed
@@ -47,7 +57,6 @@ import io.github.danything.denpatv.data.cmHopPoints
 import io.github.danything.denpatv.data.cmRunAt
 import io.github.danything.denpatv.data.cmSkipTarget
 import io.github.danything.denpatv.data.nextChapter
-import io.github.danything.denpatv.data.pickFile
 import io.github.danything.denpatv.data.previousChapter
 import io.github.danything.denpatv.data.resumedInCm
 import kotlinx.coroutines.CoroutineScope
@@ -57,7 +66,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * 録画を観る。デコードできる中でいちばん軽いファイルを開き (AV1 → H.264 → 元の TS)、
+ * 録画を観る。何で観るかは denpa に聞いて (`GET api/recordings/<id>/playback`)、端末がデコードできるものから選ぶ (`pickPlayback`):
+ * エンコード済みのファイルがデコードできればそのまま開き、無ければ denpa に流してもらう (`stream`。元の TS をそのまま、または変換)。
  * **続きの位置があればそこから** (denpa の `resumeMs`)。
  *
  * - 左右で 10 秒戻す・送る、決定で止める・動かす (キーの割り当ては data/Remote.kt と docs/controls.md)
@@ -66,34 +76,152 @@ import kotlinx.coroutines.launch
  *   **CM 飛ばし** (既定でオン。ロゴで CM を判定できなかった録画はオフで始まる)、**字幕**・**音声** (あれば)、**削除** (2回押し)。ブラウザの denpa の再生と同じく、観ながら変えて端末ごとに覚える。
  *   5 秒触らなければ閉じる (止めている間も)。戻るでも閉じる。緑のボタンは速さを1段送る
  * - リモコンの次へ・前へでチャプター送り
- * - CM 飛ばしがオンなら CM の頭の少し手前で終わりまで飛ぶ (CM のコマは映さない)。区切りは動画に入っているチャプター (`CM` / `本編`)
+ * - CM 飛ばしがオンなら CM の頭の少し手前で終わりまで飛ぶ (CM のコマは映さない)。区切りはチャプター (`CM` / `本編`)。ファイルは動画に入っているもの、
+ *   denpa に流してもらうときは `api/recordings/<id>/chapters`
  *
+ * 位置・尺・チャプター・続きの位置は、どれも録画の時刻 (`playback` の物差し) で数える (`RecordingTimeline`)。
  * 観た位置は denpa に預ける (15 秒ごとと、閉じるとき)。ブラウザで続きから観られる
  */
-@OptIn(UnstableApi::class)
 @Composable
 fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
-    val file = remember { pickFile(recording.files, repo.app.decoders) }
-    if (file == null) {
-        Centered("この端末で再生できる形のファイルがありません")
-        return
+    var lookup by remember { mutableStateOf<PlaybackLookup?>(null) }
+    LaunchedEffect(recording.id) {
+        lookup = try {
+            repo.api.playback(repo.base, recording.id)
+        } catch (_: Unauthorized) {
+            return@LaunchedEffect onUnauthorized()
+        }
     }
-    val clock = remember { TsClock() }
+    when (val found = lookup) {
+        null -> Centered("読み込んでいます")
+        PlaybackLookup.Missing -> Centered("この録画を開けません (ファイルが無いか、denpa が古いため)")
+        is PlaybackLookup.Failed -> Centered("再生できません: ${found.message}")
+        is PlaybackLookup.Found -> {
+            val choice = remember(found.info) { pickPlayback(found.info, repo.app.decoders) }
+            if (choice == null) Centered("この端末で再生できる形がありません")
+            else RecordingPlayback(repo, recording, found.info, choice, onLeave, onUnauthorized)
+        }
+    }
+}
+
+/**
+ * **録画の位置を、録画の時刻 (`playback` の物差し) で数える。**
+ *
+ * - ファイル (`stream` が null) は、プレーヤーがシークする。位置もプレーヤーのまま
+ * - denpa に流してもらう (`stream`) ときは流しっぱなしの1本なので、**位置を変えるたびに `from` を変えて頼み直す** (`request`)。
+ *   流れは頼んだ位置ちょうどからは始まらない (変換は 1 秒手前から) ので、位置は読み手が頭を 0 に寄せた幅から録画の時刻に戻す
+ *   (`settle`・`StreamClock`)。戻せるまでは頼んだ位置から数える。左右を続けて押したぶんは、まとめて頼む (`pending`)
+ */
+@Stable
+internal class RecordingTimeline(
+    private val clock: TsClock,
+    val stream: PlayChoice.Stream?,
+    startMs: Long,
+    private val lengthMs: Long,
+) {
+    /** 位置を読むプレーヤー (繋ぎ直しの決まりがこの `request` を使うので、プレーヤーより先に作って後から渡す) */
+    lateinit var player: ExoPlayer
+
+    /** 頼んだ位置 (流れ) */
+    var from by mutableLongStateOf(clamp(startMs))
+        private set
+
+    /** 頼んだ回数 (流れ)。増えたら頼み直す */
+    var requests by mutableIntStateOf(0)
+        private set
+
+    /** プレーヤーの位置 0 が、録画の何ミリ秒か。ファイルは 0、流れは読みはじめるまで null */
+    var baseMs by mutableStateOf<Long?>(if (stream == null) 0L else null)
+        private set
+
+    /** 左右で動かしている途中の行き先 (流れ。止まってからまとめて頼む) */
+    var pending by mutableStateOf<Long?>(null)
+
+    /** いまの位置 (録画の時刻) */
+    fun position(): Long = pending ?: if (stream == null) player.currentPosition else baseMs?.let { it + player.currentPosition } ?: from
+
+    /** 尺 (ミリ秒)。ファイルはプレーヤーが読めばそれ、流れは `playback` の尺 */
+    fun durationMs(): Long =
+        if (stream == null) player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: lengthMs else lengthMs
+
+    /** `at` へ動く。ファイルはシーク、流れは頼み直す */
+    fun seekTo(at: Long) {
+        pending = null
+        if (stream == null) player.seekTo(at) else request(at)
+    }
+
+    /** 流れを `at` から頼み直す (位置を変えた・音声を替えた・繋ぎ直す・裏から戻った) */
+    fun request(at: Long) {
+        pending = null
+        from = clamp(at)
+        baseMs = null
+        // 新しい流れを読みはじめるまで、前の流れの幅で数えない
+        clock.reset()
+        requests++
+    }
+
+    /** 流れを読みはじめていれば、プレーヤーの 0 が録画の何ミリ秒かを決める。決まれば true */
+    fun settle(): Boolean {
+        if (stream == null || baseMs != null) return true
+        val offset = clock.offsetUs() ?: return false
+        baseMs = if (stream.codec == "mpeg2") clock.origin?.let { StreamClock.tsBaseMs(offset, it) } ?: from else StreamClock.mp4BaseMs(offset)
+        return true
+    }
+
+    /**
+     * 流れで、`at` が尻 (もう流すものが無いところ) か。そこを頼んでも denpa は何も流せないので、頼まずに最後まで観たことにする
+     * (終わりの CM を飛ぶ・尻まで送る)。尺が分からなければ false
+     */
+    fun reachesEnd(at: Long): Boolean = stream != null && lengthMs > 0 && at >= lengthMs - END_TOLERANCE_MS
+
+    /** 頼む位置にそろえる (0 から尺まで。尺が分からなければ上は抑えない) */
+    private fun clamp(at: Long): Long = if (lengthMs > 0) at.coerceIn(0, lengthMs) else at.coerceAtLeast(0)
+
+    /** 録画の時刻 `at` が、いまの流れのプレーヤーの位置でいつか (CM の頭で飛ぶ見張りを置くところ)。まだ決まっていなければ null */
+    fun playerPosition(at: Long): Long? = baseMs?.let { at - it }
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+private fun RecordingPlayback(
+    repo: Repository,
+    recording: Recording,
+    info: PlaybackInfo,
+    choice: PlayChoice,
+    onLeave: () -> Unit,
+    onUnauthorized: () -> Unit,
+) {
+    val stream = choice as? PlayChoice.Stream
+    /** 元の TS を流してもらう (字幕は字幕の口から、音声は全部入っているので端末で選ぶ) */
+    val raw = stream?.codec == "mpeg2"
+    /** denpa が変換した fMP4 (音声は denpa に頼んで選ぶ) */
+    val baked = stream != null && !raw
+    val lengthMs = (info.duration * 1000).toLong()
+    val clock = remember { TsClock(mp4 = stream != null) }
+    val timeline = remember { RecordingTimeline(clock, stream, recording.resumeMs ?: 0L, lengthMs) }
     /*
-     * 録画のファイルは、回線が切れたときだけいまの位置から読み直す (`prepare` し直すと、Media3 は止まった位置から続ける)。
-     * Media3 が中で読み直したうえでの失敗なので、何度か (`Reconnect.FEW`) まで。中身が読めない・デコードできないのは繋ぎ直しても同じなので出して止める
+     * ファイルは、回線が切れたときだけいまの位置から読み直す (`prepare` し直すと、Media3 は止まった位置から続ける)。
+     * Media3 が中で読み直したうえでの失敗なので、何度か (`Reconnect.FEW`) まで。中身が読めない・デコードできないのは繋ぎ直しても同じなので出して止める。
+     * 流してもらうときは追っかけと同じく、切れた・止まったら居た場所から頼み直す
      */
     val (player, error, dualMono, recovery) = rememberPlayer(
         repo,
         Buffering.Recording,
         onUnauthorized,
         clock,
-        ReconnectPlan("recording 録画 ${recording.id}", stream = false) { it.prepare() },
+        if (stream == null) {
+            ReconnectPlan("recording 録画 ${recording.id}", stream = false) { it.prepare() }
+        } else {
+            ReconnectPlan("recording 録画 ${recording.id} (${stream.codec} を流す)", stream = true) {
+                timeline.request(timeline.position())
+            }
+        },
     )
+    timeline.player = player
     val flasher = rememberFlash()
     val (overlay, flash) = flasher
     val scope = rememberCoroutineScope()
-    /** 飛んだ回数。元の TS の字幕を、飛んだ先から頼み直す */
+    /** 飛んだ回数。元の TS の字幕を、飛んだ先から頼み直す。CM 飛ばしの見張りも置き直す */
     var seeks by remember { mutableIntStateOf(0) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -104,22 +232,29 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
     }
-    // 字幕は denpa から受け取る。元の TS は字幕の口、エンコード済みの録画は文字の配置まるごと (`captions.json`)。ファイルは開いている間替わらない
-    val captions = if (file.source == "ts") {
+    /** 動かした回数。ファイルはシークの回数、流れは頼み直した回数 (最初の1回は数えない) */
+    val moves = if (stream == null) seeks else timeline.requests
+    // 字幕は denpa から受け取る。元の TS は字幕の口、そのほかは文字の配置まるごと (`captions.json`。録画の時刻で引く)
+    val captions = if (raw) {
         rememberRawCaptions(
             repo,
             player,
             clock,
             path = CaptionPaths.recording(recording.id),
-            generation = seeks,
-            fromMs = { player.currentPosition },
+            generation = moves,
+            fromMs = { timeline.position() },
             onUnauthorized = onUnauthorized,
         )
     } else {
-        rememberCaptionPages(repo, player, CaptionPaths.recordingText(recording.id), onUnauthorized)
+        rememberCaptionPages(repo, player, CaptionPaths.recordingText(recording.id), onUnauthorized) { timeline.position() }
     }
-    // デュアルモノの主・副は、元の TS のときだけ配り直す (エンコード済みの録画は denpa が主・副の2本に割ってある)
-    val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { file.source == "ts" }.orEmpty())
+    // デュアルモノの主・副は、元の TS のときだけ配り直す (エンコード済みの録画は denpa が主・副の2本に割ってある。変換は denpa が選んだ1つだけ)
+    val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { raw }.orEmpty())
+    // 変換した流れの音声は denpa に頼んで選ぶ (`?audio=<id>`)。替えたら、いまの位置から頼み直す
+    val bakedAudio = rememberBakedAudio(repo, if (baked) streamAudios(info, recording.audios) else emptyList(), key = recording.id) { label ->
+        timeline.request(timeline.position())
+        flash(label)
+    }
     /**
      * CM 飛ばし。観はじめはブラウザと同じく、覚えている設定に従うが、ロゴで CM を判定できなかった録画は切って始める
      * (`skipCmAtStart`)。切り替えは、判定できた録画なら覚え、できなかった録画ではこの録画だけ
@@ -140,7 +275,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     // 操作バーを開いている間と止めている間 (止めると位置のバーを出す) は、位置を取り直す
     LaunchedEffect(bar, playing) {
         while (bar != null || !playing) {
-            at = player.currentPosition
+            at = timeline.position()
             playing = player.playWhenReady
             delay(500)
         }
@@ -158,25 +293,30 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     var ended by remember { mutableStateOf(false) }
     /** 消した (閉じるときに観た位置を預けない) */
     var deleted by remember { mutableStateOf(false) }
+    /** 止めたとき。流してもらっているときに長く止めたら、動かすときに頼み直す (止めている間に繋がりが切れるので) */
+    var pausedAt by remember { mutableLongStateOf(0L) }
     val delete = rememberTwoPress()
     val speed by repo.app.settings.playbackSpeed.collectAsState(initial = 1f)
     // 速さは録画だけ (ライブは追いつくための 1.05 倍を自分で回す)。CM 飛ばしと観た位置は再生位置で見るので速さに関わらない
-    // 観ている途中で変えたら、今の位置に飛び直して音と映像を新しい速さで流し直す (`resyncAfterSpeedChange`)
+    // 観ている途中で変えたら、今の位置に飛び直して音と映像を新しい速さで流し直す (`resyncAfterSpeedChange`。流れは頼み直す)
     LaunchedEffect(player, speed) {
         val from = player.playbackParameters.speed
         player.setPlaybackSpeed(speed)
         val flowing = started && player.playbackState != Player.STATE_ENDED
-        if (resyncAfterSpeedChange(from, speed, flowing)) player.seekTo(player.currentPosition)
+        if (resyncAfterSpeedChange(from, speed, flowing)) timeline.seekTo(timeline.position())
     }
-    fun length() = player.duration.takeIf { it != C.TIME_UNSET }?.div(1000.0) ?: 0.0
+    fun length() = timeline.durationMs() / 1000.0
     var chapters by remember { mutableStateOf(emptyList<ChapterMark>()) }
     val skipped = remember { mutableSetOf<Long>() }
+    /**
+     * CM を飛ぶときに、CM の終わりからどれだけ先を頼むか。元の TS から流してもらう (元の TS をそのまま・元の TS から変換) と、
+     * denpa は頼んだ位置の 1 秒手前の映像から流す (denpa の docs/api.md「録画を流す」) ので、そのぶん先を頼んで CM の尻を映さない
+     */
+    val hopLead = if (raw || (baked && info.axis == "ts")) TS_STREAM_LEAD_MS else 0L
 
-    LaunchedEffect(file) {
-        val url = repo.url(file.url) ?: return@LaunchedEffect
-        val mime = if (file.source == "ts") MimeTypes.VIDEO_MP2T else MimeTypes.VIDEO_MATROSKA
+    // 観はじめの知らせ (番組名・続きから・速さ)
+    LaunchedEffect(Unit) {
         val resume = recording.resumeMs ?: 0L
-        player.load(url, mime, resume)
         val pace = repo.app.settings.playbackSpeed.first().takeIf { it != 1f }?.let { "  速さ ${speedLabel(it)}" } ?: ""
         flash(
             buildAnnotatedString {
@@ -186,26 +326,114 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
             },
         )
     }
+    if (stream == null) {
+        LaunchedEffect(choice) {
+            val file = choice as PlayChoice.File
+            val url = repo.url(PlaybackPaths.file(recording.id, file.source)) ?: return@LaunchedEffect
+            player.load(url, MimeTypes.VIDEO_MATROSKA, recording.resumeMs ?: 0L)
+        }
+    } else {
+        /** 裏から戻ったときに、止めたまま頼み直すか (止めていたなら止めたまま) */
+        var playOnLoad by remember { mutableStateOf(true) }
+        // 頼み直すたび (位置を変えた・音声を替えた・繋ぎ直す)。変換した流れは、覚えている音声の側を読み終えてから
+        // 元の TS は音声を頼まないので、覚えている側を読み終えても頼み直さない
+        val audioKey = if (baked) bakedAudio.audio?.id to bakedAudio.ready else null
+        LaunchedEffect(timeline.requests, audioKey) {
+            if (baked && !bakedAudio.ready) return@LaunchedEffect
+            val url = repo.url(
+                PlaybackPaths.stream(recording.id, stream.codec, timeline.from, bakedAudio.audio.takeIf { baked }),
+            ) ?: return@LaunchedEffect
+            recovery.requested()
+            player.load(url, stream.mime)
+            if (!playOnLoad) {
+                // 止めたまま頼み直した (裏から戻った)。動かすときにもう一度頼み直さないよう、止めた時刻をいまにする
+                player.playWhenReady = false
+                pausedAt = System.nanoTime()
+            }
+            playOnLoad = true
+        }
+        // 読みはじめたら、プレーヤーの 0 が録画の何ミリ秒かを決める
+        LaunchedEffect(timeline.requests) {
+            while (!timeline.settle()) delay(100)
+        }
+        // チャプターは denpa から (流れには入っていない)
+        LaunchedEffect(Unit) {
+            chapters = try {
+                repo.api.chapters(repo.base, recording.id)
+            } catch (_: Unauthorized) {
+                return@LaunchedEffect onUnauthorized()
+            }
+        }
+        // 続けて押した左右は、止まってから1度だけ頼み直す
+        LaunchedEffect(timeline.pending) {
+            val target = timeline.pending ?: return@LaunchedEffect
+            delay(STEP_SETTLE_MS)
+            timeline.request(target)
+        }
+        /*
+         * **裏に回ったら止めて denpa から降り、観た位置を預ける** (変換していれば denpa の変換の枠も空く)。
+         * 流しっぱなしの1本なので、戻ったら止めた位置から頼み直す (止めていたなら止めたまま)
+         */
+        var stoppedAt by remember { mutableStateOf<Long?>(null) }
+        OnBackground(
+            onStop = {
+                if (ended) return@OnBackground
+                val here = timeline.position()
+                stoppedAt = here
+                playOnLoad = player.playWhenReady
+                playing = false
+                if (here > 0 && !deleted) saveAt(repo, recording, here, length())
+                player.stop()
+            },
+            onStart = {
+                val here = stoppedAt ?: return@OnBackground
+                stoppedAt = null
+                playing = playOnLoad
+                timeline.request(here)
+            },
+        )
+    }
+    /**
+     * **最後まで観た。** すぐ終わりの位置を預ける。終わりの CM を飛ばして終わると、閉じるまで預けないうちは
+     * denpa が観終えたと分からない (ブラウザの denpa の `finished()` と同じ)。末尾の位置を渡せば denpa が続きを消し、観終えた印 (`watchedAt`) を付ける。
+     * 流してもらっているときに尻を頼まずに終えたなら、流れも止めて denpa から降りる
+     */
+    fun finish() {
+        if (ended) return
+        ended = true
+        bar = null
+        if (stream != null && player.playbackState != Player.STATE_ENDED) player.stop()
+        val length = length()
+        repo.app.scope.launch {
+            repo.api.saveResume(repo.base, recording.id, length, length)
+            repo.watchNext(recording, (length * 1000).toLong(), (length * 1000).toLong(), finished = true)
+            repo.positionSaved()
+        }
+    }
+    /** `to` へ動く。流してもらっているときに尻 (もう流すものが無いところ) なら、頼まずに最後まで観たことにする */
+    fun go(to: Long) {
+        if (timeline.reachesEnd(to)) finish() else timeline.seekTo(to)
+    }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) {
-                chaptersOf(tracks).takeIf { it.isNotEmpty() }?.let { chapters = it }
+                // ファイルは動画に入っているチャプター
+                if (stream == null) chaptersOf(tracks).takeIf { it.isNotEmpty() }?.let { chapters = it }
             }
 
             /*
-             * **最後まで来たら、すぐ終わりの位置を預ける。** 終わりの CM を飛ばして終わると、閉じるまで預けないうちは
-             * denpa が観終えたと分からない (ブラウザの denpa の `finished()` と同じ)。末尾の位置を渡せば denpa が続きを消し、観終えた印 (`watchedAt`) を付ける
+             * **最後まで来たら、すぐ終わりの位置を預ける** (`finish`)。
+             * 流してもらっているときは、尻より手前で終わったのは切れた (denpa の入れ替え・変換が止まった) ので、居た場所から頼み直す
              */
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != Player.STATE_ENDED || ended) return
-                ended = true
-                bar = null
-                val length = length()
-                repo.app.scope.launch {
-                    repo.api.saveResume(repo.base, recording.id, length, length)
-                    repo.watchNext(recording, (length * 1000).toLong(), (length * 1000).toLong(), finished = true)
-                    repo.positionSaved()
+                val here = timeline.position()
+                if (stream != null && here < timeline.durationMs() - STREAM_END_MARGIN_MS) {
+                    // 映したあとに終わったのは入れ替え。映る前に終わったのは、何度か頼んでもだめなら終わりとみなす
+                    val verdict = if (recovery.pictured) Reconnect.Verdict.Retry else Reconnect.Verdict.RetryFew
+                    if (recovery.retry("ended 流れが終わった (位置 ${here / 1000} 秒 / ${timeline.durationMs() / 1000} 秒、映して ${recovery.playedSeconds()} 秒)", verdict)) return
                 }
+                finish()
             }
         }
         player.addListener(listener)
@@ -216,31 +444,35 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
      * 飛ぶところは ExoPlayer に預ける (`PlayerMessage`。流している位置がそこに来たら、再生の糸で呼ばれる)。
      * 呼ばれたら主の糸の列の先頭に割り込んで飛ぶ (列の後ろに並ぶと、そのぶん遅れて CM のコマが出ることがある)。
      * 飛んでいる間は前の絵 (本編の末尾) が残る。速いほど先に来るので、手前の幅も速さに合わせる。
-     * 飛んだ・戻した・送ったら (`seeks`) 預け直す。開いた・飛んだ先が CM の中なら、すぐ飛ぶ (映る前に。止めていれば動かしたら)。
+     * 飛んだ・戻した・送ったら (`moves`) 預け直す。開いた・飛んだ先が CM の中なら、すぐ飛ぶ (映る前に。止めていれば動かしたら)。
+     * 流してもらっているときは、預ける位置はプレーヤーの位置 (録画の時刻から戻したもの。決まるまで待つ) で、飛ぶのは頼み直し
      *
      * **続きの位置が CM の中だったときは、飛んでも「CM を飛ばしました」と言わない** (ブラウザの denpa と同じ。開いたときの
-     * 「続きから」だけを残す — 観る人にとっては続きから始まっただけ)。CM の判定は動画のチャプターが届いてから
+     * 「続きから」だけを残す — 観る人にとっては続きから始まっただけ)。CM の判定はチャプターが届いてから
      * (`chapters` が空なら何もしない) で、続きの位置は開くときに渡してある (`load`) ので、頭の CM を見て飛んでから続きへ移ることは無い
      */
-    LaunchedEffect(player, chapters, skipCm, seeks, speed) {
-        if (!skipCm || chapters.none { it.isCm }) return@LaunchedEffect
+    LaunchedEffect(player, chapters, skipCm, moves, speed, timeline.baseMs) {
+        if (!skipCm || chapters.none { it.isCm } || timeline.baseMs == null) return@LaunchedEffect
         val lead = (CM_LEAD_MS * speed).toLong()
         fun hop(cm: ChapterMark) {
+            // 左右で動かしている途中 (まとめて頼む前)。押した行き先を捨てない
+            if (timeline.pending != null) return
             skipped += cm.startMs
-            player.seekTo(cm.endMs)
-            if (!resumedInCm(cm, recording.resumeMs, seeks)) flash("CM を飛ばしました")
+            go(cm.endMs + hopLead)
+            if (!resumedInCm(cm, recording.resumeMs, moves)) flash("CM を飛ばしました")
         }
         val main = Handler(Looper.getMainLooper())
         /** 預け直したあとに、前に預けたぶんが割り込んでこないように */
         var live = true
-        val messages = cmHopPoints(chapters, player.currentPosition, skipped, lead).map { (at, cm) ->
+        val messages = cmHopPoints(chapters, timeline.position(), skipped, lead).mapNotNull { (at, cm) ->
+            val point = timeline.playerPosition(at)?.takeIf { it >= 0 } ?: return@mapNotNull null
             player.createMessage { _, _ -> main.postAtFrontOfQueue { if (live && cm.startMs !in skipped) hop(cm) } }
-                .setPosition(at)
+                .setPosition(point)
                 .send()
         }
         try {
             while (true) {
-                val cm = cmSkipTarget(chapters, player.currentPosition, skipped, lead) ?: break
+                val cm = cmSkipTarget(chapters, timeline.position(), skipped, lead) ?: break
                 if (player.playWhenReady) {
                     hop(cm)
                     break
@@ -257,7 +489,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     LaunchedEffect(player) {
         while (true) {
             delay(15_000)
-            if (player.isPlaying) repo.api.saveResume(repo.base, recording.id, player.currentPosition / 1000.0, length())
+            if (player.isPlaying) repo.api.saveResume(repo.base, recording.id, timeline.position() / 1000.0, length())
         }
     }
     /**
@@ -265,35 +497,33 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
      * (画面の scope だと送る前に取り消される)
      */
     fun saveNow() {
-        val at = player.currentPosition / 1000.0
-        val length = length()
-        if (at > 0 && !deleted) repo.app.scope.launch {
-            repo.api.saveResume(repo.base, recording.id, at, length)
-            repo.watchNext(recording, (at * 1000).toLong(), (length * 1000).toLong(), finished = ended)
-            repo.positionSaved()
-        }
+        if (deleted) return
+        val here = timeline.position()
+        if (here > 0) saveAt(repo, recording, here, length(), finished = ended)
     }
     // 閉じるときに1回。player を畳むのは rememberPlayer の後始末で、こちらが先に走る
     DisposableEffect(Unit) { onDispose { saveNow() } }
     /*
-     * **裏に回ったら止めて、観た位置を預ける** (ホーム・別のアプリ。流しっぱなしにすると裏で進んでしまう)。
-     * 戻ったら、流していたなら続きから流す (止めていたなら止めたまま)
+     * **ファイルは、裏に回ったら止めて、観た位置を預ける** (ホーム・別のアプリ。流しっぱなしにすると裏で進んでしまう)。
+     * 戻ったら、流していたなら続きから流す (止めていたなら止めたまま)。流してもらっているときは上で denpa から降りる
      */
-    var resumeOnReturn by remember { mutableStateOf(false) }
-    OnBackground(
-        onStop = {
-            resumeOnReturn = player.playWhenReady
-            player.pause()
-            playing = false
-            saveNow()
-        },
-        onStart = {
-            if (resumeOnReturn && !ended) {
-                player.play()
-                playing = true
-            }
-        },
-    )
+    if (stream == null) {
+        var resumeOnReturn by remember { mutableStateOf(false) }
+        OnBackground(
+            onStop = {
+                resumeOnReturn = player.playWhenReady
+                player.pause()
+                playing = false
+                saveNow()
+            },
+            onStart = {
+                if (resumeOnReturn && !ended) {
+                    player.play()
+                    playing = true
+                }
+            },
+        )
+    }
 
     /** 消して一覧へ戻る。一覧からも抜き、隣に合わせる */
     fun deleteNow() = scope.deleteFromPlayer(repo, recording.id, flash, onUnauthorized) { deleted = true; ui.leave() }
@@ -302,38 +532,53 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
      * 動かしたら操作バーを閉じて何も出さない (映像を観たいだけなので)。操作バーを閉じて止めたままなら位置のバーを出す
      */
     fun togglePause() {
+        if (player.playWhenReady) {
+            pausedAt = System.nanoTime()
+        } else if (stream != null && System.nanoTime() - pausedAt > LONG_PAUSE_NS) {
+            timeline.request(timeline.position())
+        }
         player.playWhenReady = !player.playWhenReady
         playing = player.playWhenReady
-        at = player.currentPosition
+        at = timeline.position()
         if (!playing) flasher.clear()
         bar = if (playing) null else Bar.Actions
     }
-    /** 10 秒ずつ戻す・送る (左右とシークバー)。戻して CM を観に行ったなら、そこは飛ばさない */
+    /**
+     * 10 秒ずつ戻す・送る (左右とシークバー)。戻して CM を観に行ったなら、そこは飛ばさない。
+     * 流してもらっているときは、続けて押したぶんをまとめて頼む (`pending`)
+     */
     fun step(direction: Int): Long {
-        val end = player.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
-        val to = (player.currentPosition + direction * SEEK_STEP_MS).coerceIn(0, end)
+        val total = timeline.durationMs()
+        val ahead = timeline.position() + direction * SEEK_STEP_MS
+        val to = if (total > 0) ahead.coerceIn(0, total) else ahead.coerceAtLeast(0)
         if (direction < 0) cmRunAt(chapters, to)?.let { skipped += it.startMs }
-        player.seekTo(to)
+        when {
+            stream == null -> player.seekTo(to)
+            timeline.reachesEnd(to) -> finish()
+            else -> timeline.pending = to
+        }
         at = to
         return to
     }
+    fun jump(to: ChapterMark) {
+        if (to.isCm) cmRunAt(chapters, to.startMs)?.let { skipped += it.startMs }
+        go(to.startMs)
+        at = to.startMs
+        flash("${to.title}  ${position(to.startMs)}")
+    }
     // CM を飛ばしているなら、送り先も本編だけ (CM の頭に止まっても、すぐ飛ばされるだけ)
     fun nextChapterNow() {
-        val next = nextChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, player.currentPosition)
+        val next = nextChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, timeline.position())
         if (next == null) flash(if (chapters.isEmpty()) "チャプターがありません" else "最後のチャプターです")
-        else { player.seekTo(next.startMs); at = next.startMs; flash("${next.title}  ${position(next.startMs)}") }
+        else jump(next)
     }
     fun previousChapterNow() {
-        val previous = previousChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, player.currentPosition)
-        if (previous == null) flash("チャプターがありません")
-        else {
-            if (previous.isCm) cmRunAt(chapters, previous.startMs)?.let { skipped += it.startMs }
-            player.seekTo(previous.startMs); at = previous.startMs; flash("${previous.title}  ${position(previous.startMs)}")
-        }
+        val previous = previousChapter(if (skipCm) chapters.filterNot { it.isCm } else chapters, timeline.position())
+        if (previous == null) flash("チャプターがありません") else jump(previous)
     }
     /** 操作バーを開く。開く前の知らせ (開いてすぐの番組名など) は消す (操作バーのタイトルと同じことを言うだけなので、操作バーのタイトルに持ち込まない) */
     fun open(which: Bar) {
-        at = player.currentPosition
+        at = timeline.position()
         playing = player.playWhenReady
         flasher.clear()
         bar = which
@@ -351,10 +596,10 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
                 listOf("" to listOf(Control(BACK_TO_LIST, icon = R.drawable.ic_back) { ui.leave() }, deleteControl.copy(initial = true))),
             )
         } else if (bar == null && !playing) {
-            val total = player.duration.takeIf { it != C.TIME_UNSET }
+            val total = timeline.durationMs().takeIf { it > 0 }
             PausedBar(recording.title, "${position(at)}${total?.let { " / ${position(it)}" } ?: ""}") { ProgressLine(at, total ?: 0, chapters) }
         } else bar?.let { which ->
-            val total = player.duration.takeIf { it != C.TIME_UNSET }
+            val total = timeline.durationMs().takeIf { it > 0 }
             LaunchedEffect(which) { if (which == Bar.SeekBar) runCatching { seekFocus.requestFocus() } }
             ControlBar(
                 buildAnnotatedString {
@@ -376,7 +621,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
                             toggleCm()
                         },
                     ),
-                    "" to tracks.controls(),
+                    "" to tracks.controls() + bakedAudio.controls(),
                     "" to listOf(deleteControl),
                 ),
                 header = { actions ->
@@ -405,6 +650,27 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
 
     if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }
+
+/** 観た位置を預け、「続きを視聴」を直す。画面はもう閉じる・裏に回るので、アプリの寿命で送る */
+private fun saveAt(repo: Repository, recording: Recording, atMs: Long, lengthSeconds: Double, finished: Boolean = false) {
+    repo.app.scope.launch {
+        repo.api.saveResume(repo.base, recording.id, atMs / 1000.0, lengthSeconds)
+        repo.watchNext(recording, atMs, (lengthSeconds * 1000).toLong(), finished = finished)
+        repo.positionSaved()
+    }
+}
+
+/** 流してもらっているときに、尻からこれより手前で流れが終わったら切れたとみなす (ミリ秒。追っかけと同じ) */
+private const val STREAM_END_MARGIN_MS = 30_000L
+
+/** 続けて押した左右を、止まってからまとめて頼むまで (ミリ秒。追っかけと同じ) */
+private const val STEP_SETTLE_MS = 700L
+
+/** 流してもらっているときに、これより長く止めていたら動かすときに頼み直す (ナノ秒。追っかけと同じ 10 秒) */
+private const val LONG_PAUSE_NS = 10_000_000_000L
+
+/** 元の TS から流してもらうとき、denpa が頼んだ位置より手前から流しはじめる幅 (ミリ秒。denpa の docs/api.md「録画を流す」) */
+private const val TS_STREAM_LEAD_MS = 1_000L
 
 /** 録画・追っかけの操作バーをどこに合わせて開いたか。下キーならシークバー、上キー・Menu なら操作の列 */
 internal enum class Bar { SeekBar, Actions }
@@ -501,3 +767,6 @@ internal fun CoroutineScope.stepSpeed(repo: Repository, speed: Float): String {
 
 /** 録画・追っかけのキーの手引き */
 internal const val SEEK_HINT = "下でシークバー・上でメニュー"
+
+/** 流してもらっているときに、尺のこれだけ手前より先は尻とみなす (ミリ秒)。そこを頼んでも流すものがほとんど無い */
+private const val END_TOLERANCE_MS = 2_000L

@@ -36,14 +36,14 @@ object Chase {
     const val NOT_FOUND = "再生できません: 録画が無いか、まだ何も録れていません。少し待ってから開き直してください"
 
     /**
-     * 録り終えた録画をファイルの再生へ渡すか (`fresh` は読み直した一覧の1件)。**エンコードが終わったときだけ** — 追っかけでなく、
-     * 録画の再生が開くファイル (`pickFile`) がエンコード済みのもの (元の TS でない) のとき。
-     * 「エンコードしない」設定の録画 (元の TS だけ) は渡さない (追っかけのまま最後まで観る)。一覧がまだ追いついていなければ、次の知らせを待つ
+     * 録り終えた録画をファイルの再生へ渡すか (`fresh` は読み直した一覧の1件、`playback` はその録画の観方)。**エンコードが終わったときだけ** —
+     * 追っかけでなく、録画の再生が選ぶもの (`pickPlayback`) がエンコード済みのファイルのとき。
+     * 「エンコードしない」設定の録画 (元の TS だけ) や、エンコード済みのファイルをこの端末でデコードできない録画は渡さない (追っかけのまま最後まで観る)。
+     * 一覧がまだ追いついていなければ、次の知らせを待つ
      */
-    fun handOff(fresh: Recording?, decoders: Decoders): Boolean {
-        if (fresh == null || fresh.chasing) return false
-        val file = pickFile(fresh.files, decoders) ?: return false
-        return file.source != "ts"
+    fun handOff(fresh: Recording?, playback: PlaybackInfo?, decoders: Decoders): Boolean {
+        if (fresh == null || fresh.chasing || playback == null) return false
+        return pickPlayback(playback, decoders) is PlayChoice.File
     }
 
     /** `audio` はエンコードするときに頼む音声 (`bakedAudio`)。元の TS では渡さない */

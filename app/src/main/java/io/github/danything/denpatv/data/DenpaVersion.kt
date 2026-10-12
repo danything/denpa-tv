@@ -23,9 +23,9 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 
 /**
  * このアプリが要る denpa の版 (docs/pairing.md の「要る denpa の版」)。いちばん新しく足された口に合わせる:
- * 字幕の文字の配置 (元のTSの字幕の口の 0x22・エンコード済みの録画の `captions.json`) が 1.50.0 から
+ * 録画の観方と流し方 (`api/recordings/<id>/playback`・`stream`) と、録画の状態の `durationMs` が 1.55.0 から
  */
-val MIN_DENPA = DenpaVersion(1, 50, 0)
+val MIN_DENPA = DenpaVersion(1, 55, 0)
 
 /**
  * 繋いだ denpa が古すぎれば、画面に出す1行。足りていれば・分からなければ (`dev` など) null。
