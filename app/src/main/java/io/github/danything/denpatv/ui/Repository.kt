@@ -172,6 +172,8 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
                     }
                 }
             }
+            // ライブの画面が受ける (その局を映していれば)
+            is DenpaEvent.Yielded -> {}
         }
     }
 }

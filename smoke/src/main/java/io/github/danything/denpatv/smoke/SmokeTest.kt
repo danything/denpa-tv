@@ -200,6 +200,50 @@ class SmokeTest {
     }
 
     /**
+     * **ライブが録画にチューナーを譲ったら** (denpa の知らせ `yielded`)、同じ局を頼み直し、映らなかったときだけ譲った録画の追っかけに
+     * 切り替えて知らせを出しっぱなしにする。決定で開くメニューは「ライブに戻る」に合い、押すと頼み直す。まだ入れなければ追っかけに
+     * 戻って「録画が終わるまで…」、入れれば局に戻って知らせが消える
+     */
+    @Test
+    fun liveYield() = watching {
+        shell("logcat -c")
+        // 前のテストの局 (同じ地の色) が映ったままなので、この局を頼んで映すまで待つ (映る前に送らなくすると、頼み直しが譲りより先に尽きる)
+        val opened = denpa.requests.count { it == LIVE_REQUEST }
+        open("denpa://live/${FakeDenpa.SERVICE_ID}")
+        assertTrue("ライブを頼みません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > opened })
+        SystemClock.sleep(PICTURE_WAIT_MS)
+        awaitVideo(LIVE_COLOR)
+        // 譲った: 知らせを流し、ライブの流れが閉じたら (偽のライブは 10 秒で閉じる) 頼み直しには何も送らない (チューナーが空かない)
+        denpa.emptyLive.set(Int.MAX_VALUE)
+        try {
+            val chase = "GET /api/recordings/${FakeDenpa.CHASE_ID}/chase"
+            // 追っかけは前のテスト (chaseReconnect) でも頼んでいるので、数で見る
+            val before = denpa.requests.count { it == chase }
+            denpa.yieldLive()
+            assertTrue("譲った録画の追っかけに切り替わりません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == chase } > before })
+            awaitText { it.startsWith("録画のためチャンネルを切り替えました") && FakeDenpa.CHASE_TITLE in it }
+            awaitVideo(LIVE_COLOR)
+            // メニューは「ライブに戻る」に合う。押すと頼み直し、まだ入れないので追っかけに戻って、いつまでかを言う
+            openMenu()
+            assertTrue("メニューが「ライブに戻る」に合いません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { "ライブに戻る" in focusedTexts() })
+            val asked = denpa.requests.count { it == LIVE_REQUEST }
+            val chased = denpa.requests.count { it == chase }
+            press(KeyEvent.KEYCODE_DPAD_CENTER)
+            assertTrue("「ライブに戻る」で頼み直しません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > asked })
+            assertTrue("戻れないのに追っかけに戻りません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == chase } > chased })
+            awaitText { it.startsWith("録画が終わるまでライブは見られません (") }
+        } finally {
+            denpa.emptyLive.set(0)
+        }
+        // 録画が終わって (denpa が送るようになって) から押せば、局に戻って知らせが消える
+        openMenu()
+        assertTrue("メニューが「ライブに戻る」に合いません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { "ライブに戻る" in focusedTexts() })
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        awaitVideo(LIVE_COLOR)
+        assertTrue("戻っても知らせが消えません: ${texts()}", poll(VIDEO_TIMEOUT_MS) { texts().none { it.startsWith("録画のためチャンネルを切り替えました") } })
+    }
+
+    /**
      * 追っかけも、録り終える前に流れが閉じたら (denpa の入れ替え) 居た場所から頼み直す。録り終えたのかは denpa に聞いて決めるので、
      * 録画の一覧を読み直してから頼み直す。「最後まで観ました」にはしない
      */
@@ -664,6 +708,8 @@ class SmokeTest {
         // CI のエミュレータ (KVM はあるが GPU は無い) は遅いので長めに待つ
         private const val VIDEO_TIMEOUT_MS = 60_000L
         private const val TEXT_TIMEOUT_MS = 30_000L
+        /** 頼んだ映像が映るまで待つ長さ (偽の denpa はすぐ全部送るので、これで足りる) */
+        private const val PICTURE_WAIT_MS = 3_000L
         private const val SETTLE_MS = 3_000L
         private const val POLL_MS = 500L
         private const val MENU_TRIES = 4
