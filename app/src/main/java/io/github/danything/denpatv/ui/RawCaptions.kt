@@ -68,6 +68,9 @@ class TsClock(
         private set
     private var subtitleParserFactory: SubtitleParser.Factory = DefaultSubtitleParserFactory()
     private var transcoding = true
+    /** `DefaultExtractorsFactory` の既定と同じ (H.264・H.265 は GOP の中の参照を読む)。fragmented MP4 の読み手に渡す */
+    private var gopCodecs = C.VIDEO_CODEC_FLAG_H264 or C.VIDEO_CODEC_FLAG_H265
+    private var parseHagc = true
 
     /** いまの寄せ幅 (マイクロ秒)。まだ PTS を1つも読んでいなければ null */
     fun offsetUs(): Long? = adjuster?.timestampOffsetUs?.takeIf { it != C.TIME_UNSET }
@@ -102,11 +105,13 @@ class TsClock(
     }
 
     override fun experimentalSetCodecsToParseWithinGopSampleDependencies(codecsToParseWithinGopSampleDependencies: Int): ExtractorsFactory {
+        gopCodecs = codecsToParseWithinGopSampleDependencies
         inner.experimentalSetCodecsToParseWithinGopSampleDependencies(codecsToParseWithinGopSampleDependencies)
         return this
     }
 
     override fun setParseHagcMetadata(parseHagcMetadata: Boolean): ExtractorsFactory {
+        parseHagc = parseHagcMetadata
         inner.setParseHagcMetadata(parseHagcMetadata)
         return this
     }
@@ -127,10 +132,15 @@ class TsClock(
         }.toTypedArray()
     }
 
-    /** `DefaultExtractorsFactory` の fragmented MP4 と同じ作り。違うのは `TimestampAdjuster` を渡すことだけ */
+    /**
+     * `DefaultExtractorsFactory` の fragmented MP4 と同じ作り。違うのは `TimestampAdjuster` を渡すことと、MFRA (シークの索引) を読まないこと
+     * (流しっぱなしの流れには無い)
+     */
     private fun fragmentedMp4(made: TimestampAdjuster) = FragmentedMp4Extractor(
         subtitleParserFactory,
-        if (transcoding) 0 else FragmentedMp4Extractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
+        FragmentedMp4Extractor.codecsToParseWithinGopSampleDependenciesAsFlags(gopCodecs) or
+            (if (transcoding) 0 else FragmentedMp4Extractor.FLAG_EMIT_RAW_SUBTITLE_DATA) or
+            (if (parseHagc) 0 else FragmentedMp4Extractor.FLAG_DISABLE_HAGC_METADATA),
         made,
         null,
         emptyList(),

@@ -122,6 +122,8 @@ class PlaybackTest {
         assertEquals(3_000L, StreamClock.tsBaseMs(-1_000_000_000, pts - 3 * 90_000))
         // 一周をまたぐ: 頭の PTS が一周の 1 秒あと、録画の 0 は一周の 1 秒前
         assertEquals(2_000L, StreamClock.tsBaseMs(-1_000_000, Pts.WRAP - 90_000))
+        // 録画の 0 より手前から流れる (頭から頼むと 1 秒手前から): 負になる。一周の向きを取り違えない
+        assertEquals(-1_000L, StreamClock.tsBaseMs(-1_000_000_000, pts + 90_000))
     }
 }
 

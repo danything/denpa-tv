@@ -115,7 +115,7 @@ fun parsePlaybackChapters(json: String): List<ChapterMark> =
         .sortedBy { it.startMs }
 
 /**
- * **流れの時刻を物差しに戻す。** 頼んだ位置 (`from`) と流れが実際に始まる位置はずれる (変換は 1 秒手前から、元の TS も 1 秒手前の映像から)
+ * **流れの時刻を物差しに戻す。** 頼んだ位置 (`from`) と流れが実際に始まる位置はずれる (元の TS から変換するときと、元の TS をそのまま流すときは 1 秒手前の映像から)
  * ので、読み手が頭を 0 に寄せた幅 (`TsClock`) から戻す。プレーヤーの位置 0 が、物差しの何ミリ秒にあたるかを返す
  */
 object StreamClock {
@@ -123,9 +123,11 @@ object StreamClock {
     fun mp4BaseMs(offsetUs: Long): Long = Math.floorDiv(-offsetUs, 1000L)
 
     /**
-     * 元の TS。プレーヤーの 0 にあたる PTS (`Pts.broadcast`) から、物差しの 0 にあたる PTS (`X-Denpa-Origin`) を引き、33 ビットの一周の中で取る
+     * 元の TS。プレーヤーの 0 にあたる PTS (`Pts.broadcast`) から、物差しの 0 にあたる PTS (`X-Denpa-Origin`) を引く。
+     * 一周 (33 ビット) の半分の中で**符号付きで**取る — 流れは物差しの 0 より手前から始まることがある (頭から頼むと 1 秒手前から流れる・
+     * 先に来た音声の PTS が映像の頭より小さい) ので、そのときは負になる
      */
-    fun tsBaseMs(offsetUs: Long, origin: Long): Long = Math.floorMod(Pts.broadcast(0, offsetUs) - origin, Pts.WRAP) / 90
+    fun tsBaseMs(offsetUs: Long, origin: Long): Long = Math.floorDiv(Pts.delta(Pts.broadcast(0, offsetUs), origin), 90L)
 }
 
 /** `DenpaApi.playback` の結果 */
