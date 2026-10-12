@@ -386,7 +386,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
      * 途中の局を頼んでしまう。離したのが届かなかったとき (合いが外れたなど) は、最後に押してから `ZAP_HELD_MS` で映す
      */
     var stepping by remember { mutableStateOf<Service?>(null) }
-    /** 局送りのキーを押したまま (離すまで頼まない) */
+    /** 局を切り替えるキーを押したまま (離すまで頼まない) */
     var held by remember { mutableStateOf(false) }
     LaunchedEffect(stepping, held) {
         val target = stepping ?: return@LaunchedEffect
@@ -420,7 +420,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     }
     /**
      * 数字キーで、そのリモコン番号の局へすぐ替える (`remoteKeyService`。同じ番号が何局かあれば、いまの種別の局)。
-     * 局送りの途中なら、その行き先は捨てる
+     * 局の切り替えの途中なら、その行き先は捨てる
      */
     fun tune(key: Int) {
         val target = remoteKeyService(services, key, current.type) ?: return flash("リモコン番号 $key の局がありません")
@@ -619,7 +619,7 @@ private fun describe(service: Service, quality: String): AnnotatedString = build
 private const val LIVE_HINT = "左右で局を切り替え・決定か下でメニュー・上で局の列・決定の長押しで番組"
 
 /**
- * 局送りでキーを離してから映すまで (ミリ秒)。続けて押す間 (キーの繰り返しや、手で続けて押す間) より長く、
+ * 局の切り替えでキーを離してから映すまで (ミリ秒)。続けて押す間 (キーの繰り返しや、手で続けて押す間) より長く、
  * 1回だけ押したときに待たされたと感じない短さ
  */
 private const val ZAP_SETTLE_MS = 500L

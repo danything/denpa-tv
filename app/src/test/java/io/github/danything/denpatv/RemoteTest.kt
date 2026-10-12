@@ -53,7 +53,7 @@ class RemoteTest {
         assertEquals(10, liveChannelKey(KeyEvent.KEYCODE_NUMPAD_0))
         assertNull(liveChannelKey(KeyEvent.KEYCODE_DPAD_CENTER))
         assertNull(liveChannelKey(KeyEvent.KEYCODE_STAR))
-        // 局送り・メニューのキーとは重ならない
+        // 局の切り替え・メニューのキーとは重ならない
         (KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9).forEach { assertNull(liveCommand(it)) }
     }
 

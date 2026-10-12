@@ -99,7 +99,7 @@ class FakeDenpa(
         when {
             path == "/api/health" -> json(out, """{"ok":true,"version":"v1.50.0"}""")
             path == "/api/services" -> json(out, services())
-            // 局送りの行き先も同じ映像を流す
+            // 局の切り替えの行き先も同じ映像を流す
             live == SERVICE_ID || live == NEXT_SERVICE_ID ->
                 // 黙るのが先 (黙らせてから 503 を返し続ける並びを作れるように)
                 if (emptyLive.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) {
@@ -166,7 +166,7 @@ class FakeDenpa(
         return true
     }
 
-    /** 局は2つ (左右の局送りで行き来する)。どちらも放送中 (番組名がある。サブチャンネルとして飛ばされない) */
+    /** 局は2つ (左右の局の切り替えで行き来する)。どちらも放送中 (番組名がある。サブチャンネルとして飛ばされない) */
     private fun services(): String {
         val now = System.currentTimeMillis()
         fun service(id: Long, name: String, key: Int, title: String) =
@@ -311,7 +311,7 @@ class FakeDenpa(
         /** いまの番組の番組 ID (`now.id`。局の id × 10) と、その説明 (`api/programs/<id>`。ライブの詳細に出る) */
         const val PROGRAM_ID = SERVICE_ID * 10
         const val PROGRAM_DESCRIPTION = "偽の番組の説明"
-        /** 局送りで次に来る局 */
+        /** 左右の切り替えで次に来る局 */
         const val NEXT_SERVICE_ID = 3273601032L
         const val NEXT_SERVICE_NAME = "偽の教育"
         const val NEXT_PROGRAM_TITLE = "偽の講座"

@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 import java.net.URI
 
 /**
- * 画面が使う denpa の窓口。一覧は画面をまたいで使うので (ライブの局送り・録画を開く) ここに控える。
+ * 画面が使う denpa の窓口。一覧は画面をまたいで使うので (ライブの局の切り替え・録画を開く) ここに控える。
  * トークンがあれば API・絵・映像のどれにも付ける
  */
 class Repository(val app: DenpaApp, val base: URI, val token: String?) {
