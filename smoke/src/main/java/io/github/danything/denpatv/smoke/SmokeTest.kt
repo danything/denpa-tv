@@ -207,7 +207,11 @@ class SmokeTest {
     @Test
     fun liveYield() = watching {
         shell("logcat -c")
+        // 前のテストの局 (同じ地の色) が映ったままなので、この局を頼んで映すまで待つ (映る前に送らなくすると、頼み直しが譲りより先に尽きる)
+        val opened = denpa.requests.count { it == LIVE_REQUEST }
         open("denpa://live/${FakeDenpa.SERVICE_ID}")
+        assertTrue("ライブを頼みません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > opened })
+        SystemClock.sleep(PICTURE_WAIT_MS)
         awaitVideo(LIVE_COLOR)
         // 譲った: 知らせを流し、ライブの流れが閉じたら (偽のライブは 10 秒で閉じる) 頼み直しには何も送らない (チューナーが空かない)
         denpa.emptyLive.set(Int.MAX_VALUE)
@@ -704,6 +708,8 @@ class SmokeTest {
         // CI のエミュレータ (KVM はあるが GPU は無い) は遅いので長めに待つ
         private const val VIDEO_TIMEOUT_MS = 60_000L
         private const val TEXT_TIMEOUT_MS = 30_000L
+        /** 頼んだ映像が映るまで待つ長さ (偽の denpa はすぐ全部送るので、これで足りる) */
+        private const val PICTURE_WAIT_MS = 3_000L
         private const val SETTLE_MS = 3_000L
         private const val POLL_MS = 500L
         private const val MENU_TRIES = 4
