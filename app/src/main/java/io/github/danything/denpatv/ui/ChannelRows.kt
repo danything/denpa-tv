@@ -127,7 +127,7 @@ fun ChannelRows(
                 // 見えていないカードには合わせられないので、いま映している局が見えるところから並べる
                 val state = states.getOrPut(type) { LazyListState(firstVisibleItemIndex = (at - 1).coerceAtLeast(0)) }
                 Column(Modifier.onFocusChanged { if (it.hasFocus) focusedRow = index }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(label, style = MaterialTheme.typography.labelMedium, color = Color(0xFFD0D0D0))
+                    Text(label, style = MaterialTheme.typography.labelMedium, color = Palette.OnScrimMuted)
                     /*
                      * **横は、合わせたカードの左の端をいつも同じ所 (`KEYLINE`。左に1枚ぶん) に置く。** 送るたびにカードが同じ所に来るので、
                      * どの列でも目の置き場が変わらない。端のカードで送れないときは、送れるところまで

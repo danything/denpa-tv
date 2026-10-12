@@ -4,6 +4,8 @@ import android.os.Handler
 import android.os.Looper
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -20,7 +22,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
@@ -175,9 +176,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         val url = repo.url(file.url) ?: return@LaunchedEffect
         val mime = if (file.source == "ts") MimeTypes.VIDEO_MP2T else MimeTypes.VIDEO_MATROSKA
         val resume = recording.resumeMs ?: 0L
-        player.setMediaItem(MediaItem.Builder().uri(url, mime), resume)
-        player.prepare()
-        player.playWhenReady = true
+        player.load(url, mime, resume)
         val pace = repo.app.settings.playbackSpeed.first().takeIf { it != 1f }?.let { "  速さ ${speedLabel(it)}" } ?: ""
         flash(
             buildAnnotatedString {
@@ -221,7 +220,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
      *
      * **続きの位置が CM の中だったときは、飛んでも「CM を飛ばしました」と言わない** (ブラウザの denpa と同じ。開いたときの
      * 「続きから」だけを残す — 観る人にとっては続きから始まっただけ)。CM の判定は動画のチャプターが届いてから
-     * (`chapters` が空なら何もしない) で、続きの位置は `setMediaItem` で渡してあるので、頭の CM を見て飛んでから続きへ移ることは無い
+     * (`chapters` が空なら何もしない) で、続きの位置は開くときに渡してある (`load`) ので、頭の CM を見て飛んでから続きへ移ることは無い
      */
     LaunchedEffect(player, chapters, skipCm, seeks, speed) {
         if (!skipCm || chapters.none { it.isCm }) return@LaunchedEffect
@@ -352,18 +351,8 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
                 listOf("" to listOf(Control(BACK_TO_LIST, icon = R.drawable.ic_back) { ui.leave() }, deleteControl.copy(initial = true))),
             )
         } else if (bar == null && !playing) {
-            // 止めている間の位置のバー。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳細)
             val total = player.duration.takeIf { it != C.TIME_UNSET }
-            ControlBar(
-                buildAnnotatedString {
-                    append("一時停止  ")
-                    appendBroadcast(recording.title)
-                    append("\n${position(at)}${total?.let { " / ${position(it)}" } ?: ""}  ・決定で再生  $SEEK_HINT")
-                },
-                emptyList(),
-                header = { ProgressLine(at, total ?: 0, chapters) },
-                focusActions = false,
-            )
+            PausedBar(recording.title, "${position(at)}${total?.let { " / ${position(it)}" } ?: ""}") { ProgressLine(at, total ?: 0, chapters) }
         } else bar?.let { which ->
             val total = player.duration.takeIf { it != C.TIME_UNSET }
             LaunchedEffect(which) { if (which == Bar.SeekBar) runCatching { seekFocus.requestFocus() } }
@@ -468,6 +457,24 @@ internal fun rememberPlayerBar(onLeave: () -> Unit, playing: Boolean): PlayerBar
  */
 internal fun playControl(playing: Boolean, onClick: () -> Unit) =
     Control(if (playing) "一時停止" else "再生", icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, initial = true, onClick = onClick)
+
+/**
+ * 止めたまま操作バーが閉じたときに出したままにする位置のバー (録画・追っかけ)。1行目は「一時停止」と番組名、2行目に位置 (`where`) とキーの手引き。
+ * ボタンは無く、キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳細)
+ */
+@Composable
+internal fun BoxScope.PausedBar(title: String, where: String, progress: @Composable ColumnScope.() -> Unit) {
+    ControlBar(
+        buildAnnotatedString {
+            append("一時停止  ")
+            appendBroadcast(title)
+            append("\n$where  ・決定で再生  $SEEK_HINT")
+        },
+        emptyList(),
+        header = { progress() },
+        focusActions = false,
+    )
+}
 
 /** 終わりの操作バーの、一覧へ戻るボタン (ブラウザの denpa と同じ言い方) */
 internal const val BACK_TO_LIST = "一覧へ戻る"

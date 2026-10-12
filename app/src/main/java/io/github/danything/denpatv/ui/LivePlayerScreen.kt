@@ -1,6 +1,7 @@
 package io.github.danything.denpatv.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -21,7 +22,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
-import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
@@ -228,9 +228,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             val url = repo.url(YieldPlan.chaseUrl(chasing.recording.id, quality.codec)) ?: return@LaunchedEffect
             trying = false
             recovery.requested()
-            player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
-            player.prepare()
-            player.playWhenReady = true
+            player.load(url, quality.mime)
             return@LaunchedEffect
         }
         if (!baked.ready) return@LaunchedEffect
@@ -238,9 +236,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         // 蹴られたあと・「ライブに戻る」の頼み直し。映らずに終わったら追っかけへ (`rememberPlayer` に渡した決まり)
         trying = returning || kicked?.serviceId == service.id
         recovery.requested()
-        player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
-        player.prepare()
-        player.playWhenReady = true
+        player.load(url, quality.mime)
         codec.requested(quality)
         if (shown == service.id) return@LaunchedEffect
         shown = service.id
@@ -501,6 +497,13 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     ) {
         menu?.let { start ->
             val now = current.now
+            // 下の局の列 (どちらのメニューにも出す)。選んだらその局に替えて閉じる
+            val channels: @Composable ColumnScope.() -> Unit = {
+                ChannelRows(repo, services, current, currentCard) { picked ->
+                    playing = picked
+                    menu = null
+                }
+            }
             /*
              * 録画に譲っている間のメニューは「ライブに戻る」だけ (開いたらそこに合う)。下の局の列から別の局も選べる。
              * 題は観ている録画の局。何を観ているかは知らせ (題の2行目に添わる) が言う
@@ -516,12 +519,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                     onActivity = { touched = System.nanoTime() },
                     onUp = { menu = null },
                     down = currentCard,
-                    below = {
-                        ChannelRows(repo, services, current, currentCard) { picked ->
-                            playing = picked
-                            menu = null
-                        }
-                    },
+                    below = channels,
                 )
             } else ControlBar(
                 describe(current, codec.label),
@@ -547,12 +545,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 down = currentCard,
                 // 局ロゴ (拾えている局だけ。無ければ題だけ)
                 leading = current.logo?.let { { ChannelLogo(repo, current, Modifier.width(56.dp).height(32.dp)) } },
-                below = {
-                    ChannelRows(repo, services, current, currentCard) { picked ->
-                        playing = picked
-                        menu = null
-                    }
-                },
+                below = channels,
             )
             LaunchedEffect(Unit) {
                 if (start != MenuStart.Channels) return@LaunchedEffect

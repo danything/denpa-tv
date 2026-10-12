@@ -576,5 +576,12 @@ fun rememberPlayer(
 /** 再生のエラーの頭 (画質の切り替えに失敗したときは外して理由だけ出す) */
 const val PLAYBACK_ERROR_PREFIX = "再生できません: "
 
-fun MediaItem.Builder.uri(url: String, mime: String): MediaItem = setUri(url).setMimeType(mime).build()
-
+/**
+ * `url` を頼んで流しはじめる。`startMs` は頭からの位置 (録画の続き)。流しっぱなしのもの (ライブ・追っかけ) は渡さない
+ */
+fun ExoPlayer.load(url: String, mime: String, startMs: Long? = null) {
+    val item = MediaItem.Builder().setUri(url).setMimeType(mime).build()
+    if (startMs == null) setMediaItem(item) else setMediaItem(item, startMs)
+    prepare()
+    playWhenReady = true
+}

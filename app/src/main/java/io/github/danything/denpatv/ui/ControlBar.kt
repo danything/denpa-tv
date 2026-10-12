@@ -166,7 +166,7 @@ fun BoxScope.ControlBar(
             // 空の組 (字幕も音声も無いときの組など) は並べない。間が空きすぎる
             groups.filter { it.second.isNotEmpty() }.forEach { (name, controls) ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (name.isNotEmpty()) Text(name, style = MaterialTheme.typography.labelSmall, color = Color(0xFFD0D0D0))
+                    if (name.isNotEmpty()) Text(name, style = MaterialTheme.typography.labelSmall, color = Palette.OnScrimMuted)
                     controls.forEach { control ->
                         // `initial` のもの、無ければオンのものの1つ目に合わせる (それも無ければいちばん最初)
                         val take = !focused && when {
@@ -228,7 +228,7 @@ fun TitleLines(text: CharSequence, notice: CharSequence? = null) {
         Text(
             line,
             style = if (index == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
-            color = if (index == 0) Color.White else Color(0xFFD0D0D0),
+            color = if (index == 0) Color.White else Palette.OnScrimMuted,
         )
     }
 }
@@ -326,7 +326,7 @@ private fun Chip(control: Control, modifier: Modifier) {
 }
 
 /**
- * 進行バー。`chapters` の CM は色を変えて出す。`onStep` を渡すと合わせられるシークバーになり、
+ * 進行バー。`chapters` の CM は琥珀で塗る (`Palette.Cm`)。`onStep` を渡すと合わせられるシークバーになり、
  * 合っている間は左右で `onStep(-1 / 1)` (呼ぶ側が 10 秒ずつ動かす)。下で操作の列へ、上で `onUp` (操作バーを閉じる。`closeOnUp`)。
  *
  * **合っているのが離れても分かるように**、合っている間はバーを太くし、位置に大きな白い丸を明るい azure の縁で置き、
@@ -381,7 +381,7 @@ fun ProgressLine(
                 if (duration > 0) {
                     fun x(ms: Long) = size.width * (ms.coerceIn(0, duration).toFloat() / duration)
                     chapters.filter { it.isCm }.forEach { cm ->
-                        drawRect(Color(0xCCFFB300), Offset(x(cm.startMs), top), Size(x(cm.endMs) - x(cm.startMs), thick))
+                        drawRect(Palette.Cm, Offset(x(cm.startMs), top), Size(x(cm.endMs) - x(cm.startMs), thick))
                     }
                     drawRoundRect(accent, Offset(0f, top), Size(x(position), thick), radius)
                     if (focused) {

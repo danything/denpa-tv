@@ -35,6 +35,8 @@ import androidx.tv.material3.darkColorScheme
  * - 主の色は azure ひとつ。**塗る (主のボタン・オンのボタン・選んだ行き先)** のは濃い #0172AD (白い字が読める)、
  *   **光る (合わせた縁・進み・見出し)** のは明るい #01AAFF (暗い地で目に入る)
  * - 状態の色は録画中の赤と予約の琥珀だけ (ブラウザと同じく、塗るのは「いま動いているもの」だけ)
+ * - シークバーの CM は琥珀 (`#FFB300` を 80%。ブラウザの denpa のシークバーも同じ色)
+ * - 映像の上の暗い板で白より一段落とす字 (題の2行目から下・ボタンの組や局の列の名前) は灰 (`OnScrimMuted`)
  */
 object Palette {
     val Background = Color(0xFF13171F)
@@ -48,6 +50,8 @@ object Palette {
     val TextMuted = Color(0xFFB0B9D0)
     val Recording = Color(0xFFD93526)
     val Reserved = Color(0xFFFECC63)
+    val Cm = Color(0xCCFFB300)
+    val OnScrimMuted = Color(0xFFD0D0D0)
 }
 
 /** tv-material の色に当てる。部品の既定 (Surface の地・本文の色・進行バー・見出し) がこれで揃う */
