@@ -50,9 +50,9 @@ import kotlinx.coroutines.launch
  * - 最新の近くまで来たら、ライブのようにそのまま観つづける (勝手に飛ばない)。速くして観ていたら等速に戻す。
  *   操作の列の「最新」で最新の少し手前へ
  * - 録り終えて最後まで来たら「最後まで観ました」
- * - **観ている間にエンコードが終わったら、ファイルの再生へ移る** (`onEncoded`。位置は引き継ぐ)。denpa の `recordings` の知らせのたびに
+ * - **観ている間にエンコードが終わったら、ファイルの再生へ移る** (`onEncoded`。位置は引き継ぐ)。denpa の `recordings` の通知のたびに
  *   `GET api/recordings/<id>` の `state` で録り終えたかを聞き、録画の再生がエンコード済みのファイルを開くか (`playback`) を見る (`Chase.handOff`)
- * - **切れたら (エラー・録り終える前に流れが閉じた・10 秒進まない) いた位置からリクエストし直す** (`Recovery`。ライブと同じ決まり)
+ * - **切れたら (エラー・録り終える前にストリームが閉じた・10 秒進まない) いた位置からリクエストし直す** (`Recovery`。ライブと同じ決まり)
  * - H.264 / AV1 を denpa がエンコードできないと (ffmpeg が降りた・録画を読めない)、空の 200 が返る。映る前に終わった・空だったらそう出す
  * - H.264 / AV1 は denpa の変換の枠を使う。埋まっていると 503 で断られる (`Reconnect.Verdict.Busy`)。何度かだけリクエストし直し、
  *   諦めたら「サーバが混んでいます」と出して、MPEG-2 をデコードできる端末なら MPEG-2 を勧める (`withBusyAdvice`)
@@ -82,7 +82,7 @@ fun ChasePlayerScreen(
     /** 左右で動かしている途中の行き先 (まとめてリクエストする) */
     var pending by remember { mutableStateOf<Long?>(null) }
     /*
-     * **切れた・止まったら、いた位置からリクエストし直す** (`Recovery`。ブラウザの追っかけと同じ)。流れが終わったときは、録り終えたのか
+     * **切れた・止まったら、いた位置からリクエストし直す** (`Recovery`。ブラウザの追っかけと同じ)。ストリームが終わったときは、録り終えたのか
      * 切れたのかを denpa に聞いてから (下の `onPlaybackStateChanged`)
      */
     val (player, error, dualMono, recovery) = rememberPlayer(
@@ -122,7 +122,7 @@ fun ChasePlayerScreen(
         repo,
         player,
         clock,
-        // 裏に回っている間は字幕の流れも閉じる
+        // 裏に回っている間は字幕のストリームも閉じる
         path = CaptionPaths.recording(recording.id).takeIf { quality == LiveQuality.Raw && stoppedAt == null },
         generation = from to attempt,
         fromMs = { from + player.currentPosition },
@@ -303,7 +303,7 @@ fun ChasePlayerScreen(
                     // 聞いている間に位置を変えた・閉じた
                     if (ended || asked != (from to attempt)) return@launch
                     val end = chaseEnd(still, at, duration, pictured)
-                    if (end == ChaseEnd.Lost && recovery.retry("ended 流れが終わった (録画中=$still 位置 ${at / 1000} 秒 / ${duration?.div(1000)} 秒、映して $played 秒)")) {
+                    if (end == ChaseEnd.Lost && recovery.retry("ended ストリームが終わった (録画中=$still 位置 ${at / 1000} 秒 / ${duration?.div(1000)} 秒、映して $played 秒)")) {
                         return@launch
                     }
                     ended = true
@@ -331,8 +331,8 @@ fun ChasePlayerScreen(
 
     /*
      * **エンコードが終わったら、ファイルの再生へ移る** (denpa の docs/api.md「録画の状態」)。ファイルなら denpa に変換させずに済み、
-     * CM 飛ばし・チャプターも揃う。`recordings` の知らせ (とその間に切れていた知らせの繋ぎ直し) のたびに聞く — ブラウザの追っかけと同じ。
-     * 知らせは続けて来るので、まとめて1回 (1 秒待つ)。録り終えていたら (`state`) 一覧と観方 (`playback`) を読み直し、録画の再生がエンコード済みのファイルを開くなら受け取る
+     * CM 飛ばし・チャプターも揃う。`recordings` の通知 (とその間に切れていた通知の繋ぎ直し) のたびに聞く — ブラウザの追っかけと同じ。
+     * 通知は続けて来るので、まとめて1回 (1 秒待つ)。録り終えていたら (`state`) 一覧と観方 (`playback`) を読み直し、録画の再生がエンコード済みのファイルを開くなら受け取る
      * (`Chase.handOff`)。`encoded` は見ない (エンコード済みがあっても、この端末でデコードできるとは限らない)
      */
     /** エンコードが終わって、ファイルの再生へ渡す録画。移れる合間 (下) を待っている */
@@ -352,7 +352,7 @@ fun ChasePlayerScreen(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // 一覧が読めない (denpa の入れ替えの最中)。次の知らせで聞き直す
+                // 一覧が読めない (denpa の入れ替えの最中)。次の通知で聞き直す
                 return@collectLatest
             }
             if (Chase.handOff(fresh, playback, repo.app.decoders)) encodedAs = fresh
@@ -406,7 +406,7 @@ fun ChasePlayerScreen(
         }
         playing = player.playWhenReady
     }
-    /** 操作バーを開く。開く前の知らせ (開いてすぐの番組名など) は消す (録画の再生と同じ) */
+    /** 操作バーを開く。開く前の通知 (開いてすぐの番組名など) は消す (録画の再生と同じ) */
     fun open(which: Bar) {
         at = position()
         length = recorded()
@@ -416,7 +416,7 @@ fun ChasePlayerScreen(
     }
     val seekFocus = remember { FocusRequester() }
 
-    // 操作バー (終わり・止めている間・操作の列) を出している間は、知らせを操作バーのタイトルに添える (録画の再生と同じ)
+    // 操作バー (終わり・止めている間・操作の列) を出している間は、通知を操作バーのタイトルに添える (録画の再生と同じ)
     val covered = ended || bar != null || !playing
     val shownError = when {
         refused -> REFUSED
@@ -471,7 +471,7 @@ fun ChasePlayerScreen(
             RecordingCommand.Actions -> { open(Bar.Actions); true }
             RecordingCommand.PlayPause -> { togglePause(); true }
             RecordingCommand.NextSpeed -> { flash(scope.stepSpeed(repo, speed)); true }
-            // 追っかけの流れにはチャプターが無い
+            // 追っかけのストリームにはチャプターが無い
             RecordingCommand.NextChapter, RecordingCommand.PreviousChapter -> { flash("チャプターがありません"); true }
             RecordingCommand.Details -> { ui.details = true; true }
             null -> false

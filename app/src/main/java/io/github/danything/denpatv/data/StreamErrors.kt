@@ -19,7 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * **denpa が 200 を返したのに何も送らずに閉じた。** ライブ・追っかけのエンドポイント (`live` / `chase`) は、流しはじめてから
  * 選局やエンコーダの立ち上げに失敗すると、200 のまま空で閉じる (チューナーの空きが無い・放送休止・ffmpeg が降りた。
- * denpa の `sessionStream`)。Media3 はこれを「どの読み手も読めない」(`ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED`)
+ * denpa の `sessionStream`)。Media3 はこれを「どの Extractor も読めない」(`ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED`)
  * と言うだけで、空だったのか中身が違ったのかが分からないので、ここで見分けて名前を付ける。
  *
  * `ParserException` にするのは、Media3 に中で読み直させないため (読み直しても同じ。繋ぎ直しは `Recovery` が決める)。
@@ -30,7 +30,7 @@ class EmptyStreamException(uri: Uri?) :
     ParserException("denpa が何も送らずに閉じました: $uri", null, false, C.DATA_TYPE_MEDIA)
 
 /**
- * 空の流れの見張り (`EmptyGuardDataSource` の中身)。**長さの分からない流れ (ライブ・追っかけ) を頭からリクエストして、
+ * 空のストリームの見張り (`EmptyGuardDataSource` の中身)。**長さの分からないストリーム (ライブ・追っかけ) を頭からリクエストして、
  * 1バイトも来ないうちに終わった**ときだけ空とみなす。長さの分かるもの (録画のファイル) や、途中からリクエストしたもの
  * (尻に飛んで 0 バイトなのは正しい) は見ない
  */
@@ -53,7 +53,7 @@ class EmptyWatch {
     }
 }
 
-/** 空の流れを `EmptyStreamException` にする部分。ほかは `upstream` にそのまま渡す */
+/** 空のストリームを `EmptyStreamException` にする部分。ほかは `upstream` にそのまま渡す */
 @OptIn(UnstableApi::class)
 class EmptyGuardDataSource(private val upstream: DataSource) : DataSource {
     private val watch = EmptyWatch()
@@ -115,7 +115,7 @@ fun playbackMessage(errorCode: Int, codeName: String, httpStatus: Int?, contentT
     return what?.let { "$it ($codeName)" } ?: codeName
 }
 
-/** denpa が映像を送らずに閉じた (`EmptyStreamException`・映る前に流れが終わった) ときに出す文 */
+/** denpa が映像を送らずに閉じた (`EmptyStreamException`・映る前にストリームが終わった) ときに出す文 */
 const val EMPTY_STREAM_MESSAGE =
     "denpa が映像を送らずに閉じました (チューナーの空きが無い・放送休止・変換できなかったなど)。少し待つか、局か画質を替えてください"
 

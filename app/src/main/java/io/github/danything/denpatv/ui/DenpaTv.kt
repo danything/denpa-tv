@@ -87,9 +87,9 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
     val backStack = rememberNavBackStack(Main())
     val scope = rememberCoroutineScope()
     val repo = remember(base, token) { Repository(app, base, token) }
-    /** トークンが効かなくなった (外された・期限切れ)、または家の外と見なされた。忘れて繋ぐ画面へ */
+    /** アクセストークンが効かなくなった (外された・期限切れ)、または家の外と見なされた。忘れて繋ぐ画面へ */
     val unauthorized: () -> Unit = { scope.launch { app.settings.disconnect() } }
-    // denpa の知らせ (SSE) は、アプリが前に出ている間だけ1本繋ぐ。ここはどの画面より外なので Activity のライフサイクルに沿う
+    // denpa の通知 (SSE) は、アプリが前に出ている間だけ1本繋ぐ。ここはどの画面より外なので Activity のライフサイクルに沿う
     LifecycleStartEffect(repo) {
         val job = scope.launch { repo.listen(unauthorized) }
         onStopOrDispose { job.cancel() }
@@ -197,7 +197,7 @@ private suspend fun refreshQuietly(block: suspend () -> Unit): Boolean =
         false
     }
 
-/** 知らせに入れるリンクの文字の長さ (ほかのアプリから長いものを投げられても1行に収める) */
+/** 通知に入れるリンクの文字の長さ (ほかのアプリから長いものを投げられても1行に収める) */
 private const val NOTICE_MAX = 40
 
 private fun NavBackStack<NavKey>.replaceAll(vararg keys: NavKey) {
@@ -207,7 +207,7 @@ private fun NavBackStack<NavKey>.replaceAll(vararg keys: NavKey) {
     subList(0, old).clear()
 }
 
-/** 1行の知らせ (リンクの局が見つからないなど)。画面をまたいでも出るよう Toast で */
+/** 1行の通知 (リンクの局が見つからないなど)。画面をまたいでも出るよう Toast で */
 private fun notice(context: Context, text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
 
 @Composable

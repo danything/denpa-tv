@@ -14,7 +14,7 @@
 | Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンだけの列) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューの3つのアイコンは Material Symbols、再生の操作ボタンのアイコンは Material Icons (どちらも Apache License 2.0) を vector drawable として置いた (アイコンのライブラリは入れない) |
 | `androidx.tv:tv-foundation` | **使わない** | TV 用の Lazy レイアウトは alpha11 で非推奨、alpha12 で削除済み。普通の Compose の `LazyRow` / `LazyColumn` で足りる (同ノート) |
 | Navigation 3 (`androidx.navigation3`) | 1.2.0 | 戻る履歴をただのリストとして持つ Compose 向けの新しい Navigation。行き先は `@Serializable` のクラス。**minSdk 24 を求める** ので、アプリの minSdk もこれに合わせた |
-| DataStore Preferences | 1.2.1 | 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・アップデートを確かめた時刻を覚える。SharedPreferences の後継 |
+| DataStore Preferences | 1.2.1 | 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・アップデートを確かめた時刻を覚える。SharedPreferences の後継 |
 | Media3 (ExoPlayer) | 1.11.1 | 2026-09-10 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/media3))。minSdk 23。入れるのは `media3-exoplayer` と、映像の面 (`PlayerSurface`) の `media3-ui-compose` だけ (View の `media3-ui` は入れない。字幕は自分で描く) |
 
 ### minSdk 24 (Android 7.0)
@@ -26,22 +26,22 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 
 - **fragmented MP4 (H.264 / AV1)** — denpa のライブ (`api/services/<id>/live`)・追っかけ (`api/recordings/<id>/chase`)・
   録画を流してもらうとき (`api/recordings/<id>/stream`)。ExoPlayer の `FragmentedMp4Extractor` が読む。流しっぱなし (長さ不明) でもそのまま再生できる。
-  録画の流れは、denpa が塊の時刻 (tfdt) を録画の時刻のまま書く。`FragmentedMp4Extractor` にも自分の `TimestampAdjuster` を渡して頭を 0 に寄せ、
+  録画のストリームは、denpa が塊の時刻 (tfdt) を録画の時刻のまま書く。`FragmentedMp4Extractor` にも自分の `TimestampAdjuster` を渡して頭を 0 に寄せ、
   寄せ幅から録画の時刻に戻す (`TsClock` の `mp4`。下の TS の字幕の時計と同じ仕組み。リクエストした位置ちょうどからは始まらないので、リクエストした位置では数えない)
 - **Matroska (.mkv)** — denpa のエンコード済みの録画。`MatroskaExtractor` が読む。字幕 (`S_ARIBSUB`、放送の字幕のまま) は読まないので、
   denpa の `captions.json` (下の文字の配置) で出す
 - **MPEG-TS (MPEG-2)** — 録画の元の TS (`stream?codec=mpeg2`。録画の時刻の 0 にあたる PTS を `X-Denpa-Origin` で受け取る) と、ライブ・追っかけの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
-- **ARIB の字幕は Media3 ではデコードしない。** Media3 に ARIB の字幕の読み手は無く、libaribcaption を NDK で抱えるのは重い。
+- **ARIB の字幕は Media3 ではデコードしない。** Media3 に ARIB の字幕のパーサは無く、libaribcaption を NDK で抱えるのは重い。
   denpa がデコードして置き場所まで決めた**文字の配置** (放送の PTS 付き) を受け取り、android の Canvas で描いて重ねる
   (`ui/RawCaptions.kt`・`ui/TextCaptions.kt`。描き方は denpa のブラウザの `caption-draw.ts` に揃える。字は丸ゴシックを APK に入れて
   `Typeface.createFromAsset` で読む。下の「字幕と放送の字」)。
   時計は **TsExtractor に自分の `TimestampAdjuster` を渡して**控え、寄せ幅 (`getTimestampOffsetUs`) で再生位置を放送の
-  PTS に戻す。読み手は `DefaultExtractorsFactory` と同じ作りで、ほかの形式はそのまま (`TsClock`)。
+  PTS に戻す。Extractor は `DefaultExtractorsFactory` と同じ作りで、ほかの形式はそのまま (`TsClock`)。
   PES を自分で覗いて最初の PTS を読み取る手もあるが、Media3 がどの PES の PTS を 0 にしたかと食い違いうる (映像と音声で数百 ms 違う)。
   寄せ幅そのものを読めばシーク (寄せ直し) も一周 (Media3 は伸ばし続ける) もそのまま合う
 - **チャプター** — Matroska の Chapters を `Chapter` として track の `Metadata` に出す (1.11.0 から。
   [リリースノート](https://github.com/androidx/media/blob/release/RELEASENOTES.md))。エンコード済みのファイルの CM 飛ばしはこれを読むので、
-  自前の EBML 読みは要らない。denpa に流してもらう録画 (エンコード前など) は流れにチャプターが無いので、denpa の `api/recordings/<id>/chapters` を読む
+  自前の EBML 読みは要らない。denpa に流してもらう録画 (エンコード前など) はストリームにチャプターが無いので、denpa の `api/recordings/<id>/chapters` を読む
 - **AV1 のソフトデコードは入れない。** Media3 1.9 から dav1d ベースの `decoder_av1` があるが、
   **Maven には出ておらず、NDK でソースからビルドする決まり** ([decoder_av1 の README](https://github.com/androidx/media/tree/release/libraries/decoder_av1)、
   [Media3 1.9.0 の紹介](https://android-developers.googleblog.com/2025/12/media3-190-whats-new.html))。
@@ -73,13 +73,13 @@ Media3 の [ネットワーク スタックのページ](https://developer.andro
 アプリで1つを使い回す (`DenpaApp.engineHttp`)。
 
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
-読み 30 秒と書いてある)。叩くのは局と録画の一覧・録画の観方とチャプターと状態 (`playback`・`chapters`・`api/recordings/<id>`)・番組の中身 (`detail`・`api/programs/<id>`)・観た位置・いまの番組の録画・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
+読み 30 秒と書いてある)。呼ぶのは局と録画の一覧・録画の観方とチャプターと状態 (`playback`・`chapters`・`api/recordings/<id>`)・番組の中身 (`detail`・`api/programs/<id>`)・観た位置・いまの番組の録画・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
 元の TS の字幕 (`api/…/captions`、長さ付きのフレームが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。エンコード済みの録画の字幕 (`captions.json`) も同じ。
 
 → **アプリの中のアップデート (GitHub のリリースを引く・APK を取る) も HttpURLConnection** (`data/Update.kt`)。入れるのは OS の
 `PackageInstaller` のセッション (`Updater.kt`)。アップデートのライブラリは入れない。
 
-→ **denpa の知らせ (`api/events`、Server-Sent Events) も HttpURLConnection** で読む (`data/Sse.kt`)。EventSource の
+→ **denpa の通知 (`api/events`、Server-Sent Events) も HttpURLConnection** で読む (`data/Sse.kt`)。EventSource の
 ライブラリ (OkHttp の `okhttp-sse` など) は入れない。行の読み分けは数十行で、60 秒何も届かなければ死んだ繋ぎと見なすのは
 読みの時間切れ (`readTimeout`) で足りる。繋ぐのはアプリが前に出ている間だけで、Compose の `LifecycleStartEffect`
 (`androidx.lifecycle:lifecycle-runtime-compose`。Compose UI が既に引いているので依存は増えない) で Activity に沿わせる
@@ -88,7 +88,7 @@ Media3 の [ネットワーク スタックのページ](https://developer.andro
 OkHttp (と Retrofit / Ktor) を採らない理由:
 
 - **denpa は家の LAN の素の HTTP/1.1。** HTTP/2・HTTP/3 が効くのは CDN 越しの適応配信で
-  (同じページもそう書いている)、LAN の1本の流れでは OkHttp でも OS の HTTP でも同じ
+  (同じページもそう書いている)、LAN の1本のストリームでは OkHttp でも OS の HTTP でも同じ
 - 画像のライブラリも入れない (下記) ので、OkHttp を分け合う相手が無い。Media3 の推奨 (HttpEngine) に従うほうが依存が少ない
 
 **キャッシュ (`CacheDataSource`) は使わない。** ライブは流しっぱなしの1本で、溜めても二度と読まない。
@@ -145,13 +145,13 @@ AGP がライブラリの分とまとめ、R8 で縮めた名前に書き換え�
 依存を増やさず、描くのは Compose の Canvas (`ui/QrCodeView.kt`)。各ファイルの頭に元の著作権表示と MIT の許諾文を残してある。
 更新は Renovate では追えないので、上流に直しが入ったら手で写す。
 
-### トークンの置き場: 暗号化しない DataStore
+### アクセストークンの置き場: 暗号化しない DataStore
 
-テレビを denpa に登録して受け取るトークンは、ほかの設定と同じ DataStore (アプリの領域) に置く。
+テレビを denpa に登録して受け取るアクセストークンは、ほかの設定と同じ DataStore (アプリの領域) に置く。
 EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta01 (2025-06) で**全部非推奨**になり、
 「プラットフォームの API と Android Keystore を直に使え」とされている
 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/security))。アプリの領域は他のアプリから読めず、
-トークンは denpa の画面から (またはこのアプリの設定の「接続先」のボタンで) いつでも無効にできるので、暗号化の仕組みは足さない。
+アクセストークンは denpa の画面から (またはこのアプリの設定の「接続先」のボタンで) いつでも無効にできるので、暗号化の仕組みは足さない。
 
 ### ホームの「続きを視聴」: 入れない (OS の `TvContract.WatchNextPrograms`)
 
@@ -166,7 +166,7 @@ EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta0
 素の関数にして単体テストで確かめ (`WatchNextTest`)、ContentResolver に書く所は薄くした。
 
 **ポスターはアプリが取って `content://` で渡す** (`WatchNextPosters`、読むだけの ContentProvider)。denpa のポスターの URL を
-そのまま渡すと、家の外の denpa (トークンが要る) ではホームが読めず、家の LAN でもホームのアプリが素の HTTP を読むとは限らない。
+そのまま渡すと、家の外の denpa (アクセストークンが要る) ではホームが読めず、家の LAN でもホームのアプリが素の HTTP を読むとは限らない。
 ホームが読めるよう exported にしてあり、ほかのアプリからも「続きを視聴」に出ている録画のポスターは読める (出すのはそれだけ)。
 
 ### DI: 入れない (手で渡す)

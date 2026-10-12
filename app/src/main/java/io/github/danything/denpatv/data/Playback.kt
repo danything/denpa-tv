@@ -9,7 +9,7 @@ import kotlin.math.roundToLong
  * 録画を何で観られるか (`GET api/recordings/<id>/playback`。denpa の docs/api.md「録画の観方」)。
  *
  * **時刻は `axis` の物差しで数える** (エンコード済みがあればそのファイルの時刻、無ければ元の TS の頭を 0)。尺・続きの位置・
- * チャプター (`api/recordings/<id>/chapters`)・字幕 (`captions.json`)・`stream?from=` と流れの時刻は、どれもこの物差しの上にある
+ * チャプター (`api/recordings/<id>/chapters`)・字幕 (`captions.json`)・`stream?from=` とストリームの時刻は、どれもこの物差しの上にある
  */
 @Immutable
 @Serializable
@@ -116,8 +116,8 @@ fun parsePlaybackChapters(json: String): List<ChapterMark> =
         .sortedBy { it.startMs }
 
 /**
- * **流れの時刻を物差しに戻す。** リクエストした位置 (`from`) と流れが実際に始まる位置はずれる (元の TS から変換するときと、元の TS をそのまま流すときは 1 秒手前の映像から)
- * ので、読み手が頭を 0 に寄せた幅 (`TsClock`) から戻す。プレーヤーの位置 0 が、物差しの何ミリ秒にあたるかを返す
+ * **ストリームの時刻を物差しに戻す。** リクエストした位置 (`from`) とストリームが実際に始まる位置はずれる (元の TS から変換するときと、元の TS をそのまま流すときは 1 秒手前の映像から)
+ * ので、Extractor が頭を 0 に寄せた幅 (`TsClock`) から戻す。プレーヤーの位置 0 が、物差しの何ミリ秒にあたるかを返す
  */
 object StreamClock {
     /** fMP4。denpa は塊の時刻 (tfdt) を物差しの時刻のまま書くので、寄せた幅を戻すだけ (サンプルの時刻 = 元の時刻 + 幅) */
@@ -125,7 +125,7 @@ object StreamClock {
 
     /**
      * 元の TS。プレーヤーの 0 にあたる PTS (`Pts.broadcast`) から、物差しの 0 にあたる PTS (`X-Denpa-Origin`) を引く。
-     * 一周 (33 ビット) の半分の中で**符号付きで**取る — 流れは物差しの 0 より手前から始まることがある (頭からリクエストすると 1 秒手前から流れる・
+     * 一周 (33 ビット) の半分の中で**符号付きで**取る — ストリームは物差しの 0 より手前から始まることがある (頭からリクエストすると 1 秒手前から流れる・
      * 先に来た音声の PTS が映像の頭より小さい) ので、そのときは負になる
      */
     fun tsBaseMs(offsetUs: Long, origin: Long): Long = Math.floorDiv(Pts.delta(Pts.broadcast(0, offsetUs), origin), 90L)
@@ -159,7 +159,7 @@ data class RecordingState(
 }
 
 /**
- * 元の TS の流れ (`stream?codec=mpeg2`) の応答ヘッダ。**録画の時刻の 0 にあたる PTS** (90kHz、0〜2^33-1)。
+ * 元の TS のストリーム (`stream?codec=mpeg2`) の応答ヘッダ。**録画の時刻の 0 にあたる PTS** (90kHz、0〜2^33-1)。
  * 録画の時刻 = (PTS − これ) を一周の中で取って 90000 で割ったもの (denpa の docs/api.md「録画を流す」)
  */
 const val ORIGIN_HEADER = "X-Denpa-Origin"

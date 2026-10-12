@@ -63,7 +63,7 @@ class SmokeTest {
      * 局の列から上キーを押し続けても操作の列で止まり (閉じない)、**操作の列でもう一度上を押すと閉じて映像に戻る**。決定で操作の列と局の列が開き、「録画」で denpa にいまの番組を予約する。**戻るでメニューだけが閉じ**
      * (画面ごと戻らない。Android 12 以前では戻るキーがフォーカスを外へ出すのに使われ、閉じずにフォーカスだけが抜けていた)、
      * もう一度の戻るでいちばん上のメニューへ (「ライブ」にフォーカス)。流している間は画面を点けたまま (スクリーンセーバーを出さない)、
-     * ホームに出たら流れを閉じ、戻ったらリクエストし直す
+     * ホームに出たらストリームを閉じ、戻ったらリクエストし直す
      */
     @Test
     fun liveMenu() = watching {
@@ -134,7 +134,7 @@ class SmokeTest {
         assertTrue("戻るでメニューが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "地上波" !in texts() })
         awaitVideo(LIVE_COLOR)
 
-        // ホームに出ると流れを閉じ、戻ると同じ局をリクエストし直す
+        // ホームに出るとストリームを閉じ、戻ると同じ局をリクエストし直す
         val asked = denpa.requests.count { it == LIVE_REQUEST }
         press(KeyEvent.KEYCODE_HOME)
         assertTrue("ホームに出ません", poll(TEXT_TIMEOUT_MS) { activeWindow()?.packageName?.toString() != APP })
@@ -151,8 +151,8 @@ class SmokeTest {
     }
 
     /**
-     * **切れたら繋ぎ直す。** 偽の denpa のライブは 10 秒で流れを閉じる (denpa が番組の境目で再エンコードした・入れ替わったのと同じ)。
-     * アプリは同じ局をリクエストし直す。流れが閉じずに黙ったら (チューナーのドライバが止まった)、10 秒進まないのに気付いてリクエストし直す。そこで 503 (入れ替わりの最中) が続いても、Media3 が中で読み直し尽くしたあと、アプリが待って
+     * **切れたら繋ぎ直す。** 偽の denpa のライブは 10 秒でストリームを閉じる (denpa が番組の境目で再エンコードした・入れ替わったのと同じ)。
+     * アプリは同じ局をリクエストし直す。ストリームが閉じずに黙ったら (チューナーのドライバが止まった)、10 秒進まないのに気付いてリクエストし直す。そこで 503 (入れ替わりの最中) が続いても、Media3 が中で読み直し尽くしたあと、アプリが待って
      * リクエストし直し続け、denpa が戻ればまた映す。その間「再生できません」は出さない (`watching`)。繋ぎ直した理由は logcat に1行ずつ (タグ denpa)
      */
     @Test
@@ -160,12 +160,12 @@ class SmokeTest {
         shell("logcat -c")
         open("denpa://live/${FakeDenpa.SERVICE_ID}")
         awaitVideo(LIVE_COLOR)
-        // 流れが閉じたらリクエストし直す。次の流れは途中で黙る (閉じない) ので、10 秒進まないのに気付いてまたリクエストし直す
+        // ストリームが閉じたらリクエストし直す。次のストリームは途中で黙る (閉じない) ので、10 秒進まないのに気付いてまたリクエストし直す
         denpa.stallLive.set(1)
-        assertTrue("流れが閉じてもリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "ended" in appLog() })
+        assertTrue("ストリームが閉じてもリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "ended" in appLog() })
         // 黙ったのに気付いたら、そのリクエストし直しからは 503 (denpa の入れ替わりの最中) を返し続ける
         denpa.failLive.set(Int.MAX_VALUE)
-        assertTrue("流れが黙ってもリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "stall" in appLog() })
+        assertTrue("ストリームが黙ってもリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "stall" in appLog() })
         // 503 が続いて Media3 が諦めても、アプリがリクエストし直す
         assertTrue("503 が続くとリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { "HTTP 503" in appLog() })
         // 繋ぎ直している間は、前の映像の上に回るものと「繋ぎ直しています」
@@ -200,9 +200,9 @@ class SmokeTest {
     }
 
     /**
-     * **ライブが録画にチューナーを譲ったら** (denpa の知らせ `yielded`)、同じ局をリクエストし直し、映らなかったときだけ譲った録画の追っかけに
-     * 切り替えて知らせを出しっぱなしにする。決定で開くメニューは「ライブに戻る」にフォーカスし、押すとリクエストし直す。まだ入れなければ追っかけに
-     * 戻って「録画が終わるまで…」、入れれば局に戻って知らせが消える
+     * **ライブが録画にチューナーを譲ったら** (denpa の通知 `yielded`)、同じ局をリクエストし直し、映らなかったときだけ譲った録画の追っかけに
+     * 切り替えて通知を出しっぱなしにする。決定で開くメニューは「ライブに戻る」にフォーカスし、押すとリクエストし直す。まだ入れなければ追っかけに
+     * 戻って「録画が終わるまで…」、入れれば局に戻って通知が消える
      */
     @Test
     fun liveYield() = watching {
@@ -213,7 +213,7 @@ class SmokeTest {
         assertTrue("ライブをリクエストしません", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > opened })
         SystemClock.sleep(PICTURE_WAIT_MS)
         awaitVideo(LIVE_COLOR)
-        // 譲った: 知らせを流し、ライブの流れが閉じたら (偽のライブは 10 秒で閉じる) リクエストし直しには何も送らない (チューナーが空かない)
+        // 譲った: 通知を流し、ライブのストリームが閉じたら (偽のライブは 10 秒で閉じる) リクエストし直しには何も送らない (チューナーが空かない)
         denpa.emptyLive.set(Int.MAX_VALUE)
         try {
             val chase = "GET /api/recordings/${FakeDenpa.CHASE_ID}/chase"
@@ -235,17 +235,17 @@ class SmokeTest {
         } finally {
             denpa.emptyLive.set(0)
         }
-        // 録画が終わって (denpa が送るようになって) から押せば、局に戻って知らせが消える
+        // 録画が終わって (denpa が送るようになって) から押せば、局に戻って通知が消える
         openMenu()
         assertTrue("メニューが「ライブに戻る」にフォーカスしません: ${focusedTexts()}", poll(TEXT_TIMEOUT_MS) { "ライブに戻る" in focusedTexts() })
         press(KeyEvent.KEYCODE_DPAD_CENTER)
         awaitVideo(LIVE_COLOR)
-        assertTrue("戻っても知らせが消えません: ${texts()}", poll(VIDEO_TIMEOUT_MS) { texts().none { it.startsWith("録画のため局を切り替えました") } })
+        assertTrue("戻っても通知が消えません: ${texts()}", poll(VIDEO_TIMEOUT_MS) { texts().none { it.startsWith("録画のため局を切り替えました") } })
     }
 
     /**
      * **denpa の変換の枠が埋まって断られたら** (503 `{"message":"サーバが混んでいます"}`)、何度かだけリクエストし直して「サーバが混んでいます」と言い、
-     * それ以上はリクエストしない (denpa を叩き続けない)。入れ替えの最中の 503 (`liveReconnect`) とは違って「繋ぎ直しています」のまま回り続けない
+     * それ以上はリクエストしない (denpa を呼び続けない)。入れ替えの最中の 503 (`liveReconnect`) とは違って「繋ぎ直しています」のまま回り続けない
      */
     @Test
     fun chaseBusy() = watching {
@@ -294,7 +294,7 @@ class SmokeTest {
     }
 
     /**
-     * 追っかけも、録り終える前に流れが閉じたら (denpa の入れ替え) いた位置からリクエストし直す。録り終えたのかは denpa に聞いて決めるので、
+     * 追っかけも、録り終える前にストリームが閉じたら (denpa の入れ替え) いた位置からリクエストし直す。録り終えたのかは denpa に聞いて決めるので、
      * 録画の状態 (`api/recordings/<id>`) を聞いてからリクエストし直す。「最後まで観ました」にはしない
      */
     @Test
@@ -304,7 +304,7 @@ class SmokeTest {
         awaitVideo(LIVE_COLOR)
         val chase = "GET /api/recordings/${FakeDenpa.CHASE_ID}/chase"
         val asked = denpa.requests.count { it == chase }
-        assertTrue("追っかけの流れが閉じてもリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == chase } > asked })
+        assertTrue("追っかけのストリームが閉じてもリクエストし直しません: ${appLog()}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == chase } > asked })
         val log = appLog()
         assertTrue("追っかけの繋ぎ直しが logcat にありません: $log", "chase" in log && "ended" in log)
         assertTrue("録っている最中なのに「最後まで観ました」になりました", texts().none { it.startsWith("最後まで観ました") })
@@ -391,7 +391,7 @@ class SmokeTest {
     private fun liveDetailOpen() = windowTexts().let { "閉じる" in it && FakeDenpa.PROGRAM_DESCRIPTION in it }
 
     /**
-     * ライブの詳細を戻るで閉じて、映像に戻ったのを見る。映像だけのライブの窓には字が無い (知らせが消えていれば空) ので、
+     * ライブの詳細を戻るで閉じて、映像に戻ったのを見る。映像だけのライブの窓には字が無い (通知が消えていれば空) ので、
      * 閉じたかは映像の色で見る (詳細が開いたままなら画面の多くを覆っている。画面ごと戻ったならライブの色は出ない)
      */
     private fun closeLiveDetail() {
@@ -608,7 +608,7 @@ class SmokeTest {
             val launch = (instrumentation.context.packageManager.getLeanbackLaunchIntentForPackage(APP) ?: error("$APP が入っていません"))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             /*
-             * pm clear で前の画面ごと消えると、ランチャーが前に出て、あとから自分の知らせの画面 (Google TV の ShowDialogsActivity)
+             * pm clear で前の画面ごと消えると、ランチャーが前に出て、あとから自分の通知の画面 (Google TV の ShowDialogsActivity)
              * をアプリの上に重ねることがある (手元の API 36 で、開いたアプリが隠れたまま「繋ぐ」を待ち切った)。
              * アプリでない窓にフォーカスがあるまま `RELAUNCH_MS` たったら、もう一度前に出す
              */
@@ -630,7 +630,7 @@ class SmokeTest {
             assertTrue("URL を入れられません", field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, text))
             val button = node { it.text?.toString() == "繋ぐ" }?.let(::clickable) ?: error("「繋ぐ」がありません")
             assertTrue("「繋ぐ」を押せません", button.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-            // 繋がると録画の一覧が開き、知らせ (SSE) にも繋ぐ
+            // 繋がると録画の一覧が開き、通知 (SSE) にも繋ぐ
             awaitText { it == FakeDenpa.RECORDING_TITLE }
             assertTrue("api/events に繋ぎません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { "GET /api/events" in denpa.requests })
         }
@@ -699,7 +699,7 @@ class SmokeTest {
 
         /**
          * **画面のツリーを読む前に、毎回アクセシビリティのキャッシュを捨てる。** UiAutomation は読んだ部品をキャッシュし、アプリからの
-         * 「中身が替わった」の知らせで捨てる。Compose の画面では知らせで捨てられない枝が残り、**閉じた操作バー・ダイアログを何十秒も返し続ける**
+         * 「中身が替わった」の通知で捨てる。Compose の画面では通知で捨てられない枝が残り、**閉じた操作バー・ダイアログを何十秒も返し続ける**
          * ことがある (CI の API 31 で、上キーで閉じた操作バーが 30 秒たってもツリーに残り、ダイアログを閉じたあとはアプリの窓が1つも取れなかった。
          * 手元の API 31 でも、古いツリーが返っている間に部品ごとに取り直す (refresh) と閉じていて、キャッシュを捨てると読み直せた)。キャッシュは API 34 からは clearCache() で、
          * それより前は setServiceInfo (中で捨ててから設定する) で捨てる。ダイアログも読むので、アプリの窓を全部取る印も一緒に付ける

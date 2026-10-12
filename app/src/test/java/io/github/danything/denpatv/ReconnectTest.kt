@@ -59,13 +59,13 @@ class ReconnectTest {
         assertFalse(Reconnect.shouldRetry(Verdict.Unauthorized, stream = true, attempts = 0, few = 0))
     }
 
-    /** 変換の枠が埋まって断られた 503 は、ライブ・追っかけでも何度かだけ (何度でもリクエストし直すと denpa を叩き続けるだけ)。ほかの 503 は入れ替えなので何度でも */
+    /** 変換の枠が埋まって断られた 503 は、ライブ・追っかけでも何度かだけ (何度でもリクエストし直すと denpa を呼び続けるだけ)。ほかの 503 は入れ替えなので何度でも */
     @Test
     fun 混んでいて断られたら何度かだけ() {
         val badStatus = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
         assertEquals(Verdict.Busy, Reconnect.verdict(badStatus, 503, busy = true))
         assertEquals(Verdict.Retry, Reconnect.verdict(badStatus, 503, busy = false))
-        // トークンが効かないのが先
+        // アクセストークンが効かないのが先
         assertEquals(Verdict.Unauthorized, Reconnect.verdict(badStatus, 401, busy = true))
         for (stream in listOf(true, false)) {
             assertTrue(Reconnect.shouldRetry(Verdict.Busy, stream, attempts = 0, few = Reconnect.FEW - 1))

@@ -18,5 +18,5 @@
 ## 前提
 
 denpa TV は **家庭内 LAN の denpa に繋ぐ**ことを前提にしています。家の外の denpa に繋ぐときの
-入り方 (OIDC・端末の鍵) は denpa 側の [docs/auth.md](https://github.com/danything/denpa/blob/main/docs/auth.md) を
+入り方 (OIDC・端末のアクセストークン) は denpa 側の [docs/auth.md](https://github.com/danything/denpa/blob/main/docs/auth.md) を
 確認してください。アプリの署名の鍵はリポジトリに置いていません ([docs/release.md](../docs/release.md))。

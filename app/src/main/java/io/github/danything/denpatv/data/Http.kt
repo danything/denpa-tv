@@ -9,7 +9,7 @@ import java.net.URI
 val lenientJson = Json { ignoreUnknownKeys = true }
 
 /**
- * 素の HTTP (denpa の API・GitHub のリリース・小さな画像)。**OS の HttpURLConnection で足りる** — 大きな流れは無く、
+ * 素の HTTP (denpa の API・GitHub のリリース・小さな画像)。**OS の HttpURLConnection で足りる** — 大きなストリームは無く、
  * HTTP/2 も QUIC も効かない (docs/libraries.md)。呼ぶ側が IO の上で呼ぶ
  */
 object Http {
@@ -59,8 +59,8 @@ object Http {
     }
 
     /**
-     * まだ繋いでいない HttpURLConnection (時間切れ・トークン・ヘッダを付けたもの)。流しっぱなしの本文
-     * (知らせ・字幕・APK) は、これで開いて呼ぶ側が読む。閉じる (`disconnect`) のも呼ぶ側
+     * まだ繋いでいない HttpURLConnection (時間切れ・アクセストークン・ヘッダを付けたもの)。流しっぱなしの本文
+     * (通知・字幕・APK) は、これで開いて呼ぶ側が読む。閉じる (`disconnect`) のも呼ぶ側
      */
     fun connection(
         url: URI,
@@ -74,12 +74,12 @@ object Http {
         headers.forEach { (name, value) -> setRequestProperty(name, value) }
     }
 
-    /** Authorization の値。トークンが無ければ null */
+    /** Authorization の値。アクセストークンが無ければ null */
     fun bearer(token: String?): String? = token?.takeIf { it.isNotEmpty() }?.let { "Bearer $it" }
 }
 
 /**
- * denpa に断られた (401)。**トークンが無効になった (外された・期限切れ) か、denpa が家の外と見なした。**
- * 呼ぶ側はトークンを捨てて、繋ぐ画面に戻す
+ * denpa に断られた (401)。**アクセストークンが無効になった (外された・期限切れ) か、denpa が家の外と見なした。**
+ * 呼ぶ側はアクセストークンを捨てて、繋ぐ画面に戻す
  */
 class Unauthorized(url: URI) : IOException("401 $url")

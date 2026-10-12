@@ -52,7 +52,7 @@ sealed interface UpdateState {
     /** 手元でビルドした版 (0.0.0-dev)。リリースと署名が違うので上げない */
     data class DevBuild(val latest: String?) : UpdateState
     data class CheckFailed(val message: String) : UpdateState
-    /** 新しい版がある。裏で取れなかった (取らない) ときの知らせで、押すと取ってきて入れる */
+    /** 新しい版がある。裏で取れなかった (取らない) ときの通知で、押すと取ってきて入れる */
     data class Available(val update: Update) : UpdateState
     /** 新しい版を見つけて、裏で取ってきて照らしている。**録画の一覧の頭には出さない** (設定にだけ進みを出す) */
     data class Preparing(val update: Update, val percent: Int) : UpdateState
@@ -311,7 +311,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * 新しい版 `update` を見つけた (null なら無い)。ほかの版の APK を捨て、照らした APK があればそれで「入れられます」に、
-     * 無ければ裏で取ってきて照らす。取ってきている・入れている・知らせを押したあとは触らない
+     * 無ければ裏で取ってきて照らす。取ってきている・入れている・通知を押したあとは触らない
      */
     private fun prepare(update: Update?, fresh: Boolean, manual: Boolean) {
         // 入れ終えた・もっと新しい版が出た・新しい版が無い: 要らない APK を捨てる
@@ -326,7 +326,7 @@ class Updater(private val app: DenpaApp) {
         }
     }
 
-    /** 知らせを出したり裏で取り始めたりしてよいとき (ほかに何もしていない) */
+    /** 通知を出したり裏で取り始めたりしてよいとき (ほかに何もしていない) */
     private fun settled(state: UpdateState) = state is UpdateState.Idle || state is UpdateState.Checking ||
         state is UpdateState.UpToDate || state is UpdateState.CheckFailed || state is UpdateState.Available || state is UpdateState.Ready
 
@@ -353,7 +353,7 @@ class Updater(private val app: DenpaApp) {
             fallBack(update, manual)
             return
         } catch (e: UpdateRejected) {
-            // SHA256SUMS に名前が無いなど。取り直しても変わらないので知らせを出す (押すと断る文が出る)
+            // SHA256SUMS に名前が無いなど。取り直しても変わらないので通知を出す (押すと断る文が出る)
             Log.w(TAG, "${update.label} は入れられません: ${e.message}")
             _state.value = UpdateState.Available(update)
             return

@@ -133,7 +133,7 @@ class ConnectTest {
         assertEquals("application/json", logout.contentType)
         assertEquals("Bearer denpa_abc", logout.authorization)
 
-        // トークンの無い繋ぎ方では何も付けない
+        // アクセストークンの無い繋ぎ方では何も付けない
         denpa.enqueue("[]")
         DenpaApi().services(base)
         assertNull(denpa.requests.take().authorization)

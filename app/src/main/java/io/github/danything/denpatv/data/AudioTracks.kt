@@ -87,7 +87,7 @@ data class AudioChoice(val group: Int, val side: AudioSide?, val track: AudioTra
  *
  * **denpa の `stream` (何本目の音声か) と Media3 の音声の並びは同じとみなす。** denpa 自身も `stream` を
  * ffmpeg の `-map 0:a:<stream>` (TS の PMT の並び) にそのまま渡してエンコードしているので、同じ前提に立つ。
- * Media3 の TS の読み手も PMT の音声を PID の順に並べる (放送では主音声が先の PID)
+ * Media3 の TsExtractor も PMT の音声を PID の順に並べる (放送では主音声が先の PID)
  */
 fun audioChoices(groups: List<AudioTrack>, denpa: List<DenpaAudio>): List<AudioChoice> =
     groups.flatMapIndexed { group, track ->

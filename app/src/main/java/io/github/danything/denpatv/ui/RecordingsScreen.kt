@@ -104,11 +104,11 @@ fun RecordingsScreen(
     var loaded by remember { mutableStateOf(recordings.isNotEmpty()) }
     var retry by remember { mutableIntStateOf(0) }
     /**
-     * denpa の知らせで読み直そうとして読めなかった (denpa が止まっている・入れ替わっている最中)。いまの一覧は出したまま、
+     * denpa の通知で読み直そうとして読めなかった (denpa が止まっている・入れ替わっている最中)。いまの一覧は出したまま、
      * 上の段の隅に「denpa に繋がっていません」と出しておく (古い一覧を観ていると分かるように)。次に読めたら消す
      */
     var offline by remember { mutableStateOf(false) }
-    /** 下に数秒出す知らせ (消せなかったときなど) */
+    /** 下に数秒出す通知 (消せなかったときなど) */
     val (notice, notify) = rememberFlash()
     /** 詳しいところを開いている録画 (長押し) */
     var opened by remember { mutableStateOf<Recording?>(null) }
@@ -150,8 +150,8 @@ fun RecordingsScreen(
             guarded { repo.refreshRecordings() }
         }
     }
-    // denpa の知らせ (録画が増えた・エンコードが終わった・消えた、繋ぎ直した) で読み直す。続けて来たらまとめて1回 (1 秒待つ)。
-    // 読めなくてもいまの一覧を出したまま (次の知らせか、戻ったときに読み直す)
+    // denpa の通知 (録画が増えた・エンコードが終わった・消えた、繋ぎ直した) で読み直す。続けて来たらまとめて1回 (1 秒待つ)。
+    // 読めなくてもいまの一覧を出したまま (次の通知か、戻ったときに読み直す)
     LaunchedEffect(Unit) {
         repo.events.filter { it == DenpaEvent.Opened || it == DenpaEvent.Changed("recordings") }.collectLatest {
             delay(1_000)
@@ -299,7 +299,7 @@ fun RecordingsScreen(
                             // 消したものの隣にフォーカスし直す。読み直さず手元から抜く (続きまで読んだぶんを残す)
                             lastFocused = repo.forgetRecording(recording.id)
                         } else {
-                            // 再生の画面と同じ知らせ
+                            // 再生の画面と同じ通知
                             notify(NOT_DELETED)
                         }
                     }
@@ -374,7 +374,7 @@ private suspend fun prefetch(repo: Repository, recordings: List<Recording>, id: 
 /**
  * 一覧の上の見出し (Google TV の「没入型の一覧」の上の段)。**フォーカスしている録画を大きく**: 番組名・局と放送日時と長さ・
  * ラベル (録画中・エンコード中・観た位置・形式)・説明の頭の1行。
- * いちばん上の1行は画面の名前と手引き、denpa が古すぎるときの1行、新しい版の知らせ (一覧の頭の段から上キーでフォーカスが移る)。
+ * いちばん上の1行は画面の名前と手引き、denpa が古すぎるときの1行、新しい版の通知 (一覧の頭の段から上キーでフォーカスが移る)。
  * 高さは決めておく (録画ごとに行の数が違っても、下の一覧が上下に動かないように)
  */
 @Composable
@@ -389,7 +389,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String, of
             Text("録画", style = MaterialTheme.typography.titleMedium, color = Palette.AccentBright)
             Text(HERO_HINT, style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted)
             if (offline) Badge("denpa に繋がっていません", Palette.Reserved, Palette.Background)
-            // 繋いだ denpa が古すぎる (Repository.checkVersion)。新しい版の知らせを押し出さないよう、余りの幅で切る
+            // 繋いだ denpa が古すぎる (Repository.checkVersion)。新しい版の通知を押し出さないよう、余りの幅で切る
             repo.denpaWarning?.let {
                 Text(
                     it,
@@ -493,7 +493,7 @@ private fun Backdrop(url: String?, token: String?, modifier: Modifier) {
 
 /**
  * その録画のエンコードの進み。**その録画の値が変わったときだけ組み直す** (`derivedStateOf`)。進みの表 (`Repository.encoding`)
- * をそのまま読むと、どれか1件の知らせ (数秒ごと) で、見えているカードが全部組み直しになる
+ * をそのまま読むと、どれか1件の通知 (数秒ごと) で、見えているカードが全部組み直しになる
  */
 @Composable
 private fun encodingOf(repo: Repository, id: Long): Float? {
@@ -558,7 +558,7 @@ private fun RecordingCard(
                 RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxSize(), repo.token, opaque = true)
                 Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (recording.recording) Badge(RECORDING_BADGE, Palette.Recording, Color.White)
-                    // エンコードしている間は進み (denpa の知らせで動く)
+                    // エンコードしている間は進み (denpa の通知で動く)
                     encodingOf(repo, recording.id)?.let { Badge("エンコード中 ${(it * 100).toInt()}%", Palette.Background.copy(alpha = 0.85f), Palette.Text) }
                 }
                 // 番組名は下の縁に。上は暗いグラデーションへ溶かす (明るい画像・字の入った画像でも読めるように)

@@ -82,7 +82,7 @@ data class GitHubAsset(
     val size: Long = 0,
 )
 
-/** 上げる先。覚えておいて、次に開いたときも (確かめ直す前でも) 知らせを出す */
+/** 上げる先。覚えておいて、次に開いたときも (確かめ直す前でも) 通知を出す */
 @Serializable
 data class Update(
     val version: String,
@@ -136,8 +136,8 @@ private fun ByteArray.toHex() = joinToString("") { (it.toInt() and 0xff).toStrin
 
 /**
  * 新しい版が見えたときにどうするか。**確かめた APK が手元にあればそれを使う** (取り直さない)。
- * 無ければ裏で取ってくる。ただし SHA256SUMS の無いリリースは取っても入れられないので、知らせだけ出す
- * (押すと断る文が出る)。裏で何度も取れないときも知らせだけ出し、押したら取ってくる。
+ * 無ければ裏で取ってくる。ただし SHA256SUMS の無いリリースは取っても入れられないので、通知だけ出す
+ * (押すと断る文が出る)。裏で何度も取れないときも通知だけ出し、押したら取ってくる。
  * `fresh` は GitHub をいま引いた (開いたときの 12 時間ごと・設定の「確かめる」) とき。そのときは数えずにもう一度取りに行く
  */
 enum class Prefetch { Reuse, Download, Offer }
@@ -150,7 +150,7 @@ fun prefetchPlan(cached: Boolean, hasSums: Boolean, failures: Int, fresh: Boolea
 }
 
 /**
- * 裏で取れなかったあと、知らせ (「アップデート (v0.4.0)」、押すと取ってくる) を出すか。
+ * 裏で取れなかったあと、通知 (「アップデート (v0.4.0)」、押すと取ってくる) を出すか。
  * 黙っているのは、開いたときの裏の取り込みが続けて [MAX_SILENT_FAILURES] 回より少なく失敗したときだけ
  * (次に確かめたときに取り直す)。設定で「確かめる」を押したときは、見ているので出す
  */

@@ -109,7 +109,7 @@ class Screenshots {
     /**
      * 左のメニューからライブへ (ここまでが README のアニメーション) → 局の切り替え → 選局の間 → メニュー → 局の列 → 番組の詳細。
      * 選局の間 (1.5 秒たつと回るものが出る) を撮るときだけ、偽の denpa の選局を [SLOW_TUNE_MS] に延ばす。
-     * ほかは速く映す (替えたときの局と番組の知らせは、リクエストしてから 4 秒で消える)
+     * ほかは速く映す (替えたときの局と番組の通知は、リクエストしてから 4 秒で消える)
      */
     private fun live(denpa: FakeDenpa) {
         frame(1800)
@@ -164,7 +164,7 @@ class Screenshots {
         shot("live-tuning")
         awaitTuned(denpa)
         denpa.tuneMs = FAST_TUNE_MS
-        // 替えたときの局と番組の知らせが消えるのを待つ
+        // 替えたときの局と番組の通知が消えるのを待つ
         SystemClock.sleep(NOTICE_MS)
 
         press(KeyEvent.KEYCODE_DPAD_DOWN)
@@ -215,8 +215,8 @@ class Screenshots {
     private fun recording() {
         open("denpa://recording/${Showcase.CAPTION_ID}")
         await("字幕が出ません") { nodes().any { it.contentDescription?.contains("字幕を文字で描く") == true } }
-        // 開いてすぐの番組名の知らせが消えるのを待つ (出ている間は字幕がその上へ逃げている)
-        await("番組名の知らせが消えません") { texts().none { it.startsWith("下でシークバー") } }
+        // 開いてすぐの番組名の通知が消えるのを待つ (出ている間は字幕がその上へ逃げている)
+        await("番組名の通知が消えません") { texts().none { it.startsWith("下でシークバー") } }
         SystemClock.sleep(CAPTION_SETTLE_MS)
         shot("captions")
 
@@ -247,7 +247,7 @@ class Screenshots {
         open("denpa://recording/${Showcase.CHASE_ID}")
         SystemClock.sleep(SETTLE_MS)
         await("追っかけが始まりません") { texts().none { it == "読み込んでいます" || it == "映像を待っています" } }
-        // 開いてすぐの番組名の知らせが消えるのを待つ
+        // 開いてすぐの番組名の通知が消えるのを待つ
         SystemClock.sleep(NOTICE_MS)
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         await("下で操作の列が開きません") { "最新" in texts() }
@@ -424,9 +424,9 @@ class Screenshots {
         const val FAST_SETTLE_MS = 1_200L
         /** 回るものが消えてから、映像のフレームが出るまで */
         const val FIRST_FRAME_MS = 500L
-        /** 局を替えたときの局と番組の知らせが消えるまで */
+        /** 局を替えたときの局と番組の通知が消えるまで */
         const val NOTICE_MS = 5_000L
-        /** 知らせが消えてから撮るまで (字幕が下りきる) */
+        /** 通知が消えてから撮るまで (字幕が下りきる) */
         const val CAPTION_SETTLE_MS = 1_000L
         const val KEY_GAP_MS = 400L
         const val LONG_PRESS_MS = 700L

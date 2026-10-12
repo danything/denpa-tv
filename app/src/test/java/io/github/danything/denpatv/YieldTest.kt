@@ -32,15 +32,15 @@ class YieldTest {
 
     @Test
     fun リクエストし直しても映らなかったら_譲った録画へ() {
-        // 蹴られたあとにリクエストし直した。知らせで来た録画へ
+        // チューナーを取り上げられたあとにリクエストし直した。通知で来た録画へ
         assertEquals(news, YieldPlan.fallback(trying = true, returning = false, chased = null, kicked = news))
-        // 「ライブに戻る」が入れなかった。観ていた録画へ戻る (知らせのものではなく)
+        // 「ライブに戻る」が入れなかった。観ていた録画へ戻る (通知のものではなく)
         assertEquals(drama, YieldPlan.fallback(trying = true, returning = true, chased = drama, kicked = news))
     }
 
     @Test
     fun 映ったあとで切れたのは_いつもどおりリクエストし直す() {
-        // 映っていたライブが閉じた (蹴られた直後)。まず同じ局をリクエストし直す
+        // 映っていたライブが閉じた (チューナーを取り上げられた直後)。まず同じ局をリクエストし直す
         assertNull(YieldPlan.fallback(trying = false, returning = false, chased = null, kicked = news))
         // 譲った録画が分からなければ、リクエストし直し続ける
         assertNull(YieldPlan.fallback(trying = true, returning = false, chased = null, kicked = null))

@@ -86,7 +86,7 @@ class CaptionsTest {
 
     @Test
     fun 一周をまたいでも33ビットに畳む() {
-        // 一周の 0.7 秒ほど手前 (95443 秒) から始めた。読み手は伸ばし続けるので、2 秒後は 2^33 を超えたところになる
+        // 一周の 0.7 秒ほど手前 (95443 秒) から始めた。TsExtractor は伸ばし続けるので、2 秒後は 2^33 を超えたところになる
         val offsetUs = -95_443_000_000L
         assertEquals(8_589_870_000L, Pts.broadcast(0, offsetUs))
         assertEquals(8_589_870_000L + 180_000 - Pts.WRAP, Pts.broadcast(2_000, offsetUs))

@@ -39,7 +39,7 @@ internal object Showcase {
         val extended: List<Pair<String, String>> = emptyList(),
     )
 
-    /** エンコード中 (知らせで進みを送る) の録画と、その進み */
+    /** エンコード中 (通知で進みを送る) の録画と、その進み */
     const val ENCODING_ID = 102L
     const val ENCODING_PERCENT = 0.42
 

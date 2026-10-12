@@ -30,7 +30,7 @@ fun knownSpeed(saved: Float?): Float = saved?.takeIf { it in SPEEDS } ?: 1f
 fun speedNumber(speed: Float): String =
     if (speed == speed.toInt().toFloat()) speed.toInt().toString() else speed.toString()
 
-/** 知らせ・タイトルに出す書き方 (×1.25)。ボタンの外では何の数か分からないので × を付ける (等速も「×1」) */
+/** 通知・タイトルに出す書き方 (×1.25)。ボタンの外では何の数か分からないので × を付ける (等速も「×1」) */
 fun speedLabel(speed: Float): String = "×" + speedNumber(speed)
 
 /** 速さのボタンの読み上げの名前。等速は名前だけ (ボタンは印だけ)、速めているときは速さも読む (「再生の速さ 1.25倍」) */

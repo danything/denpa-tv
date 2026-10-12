@@ -26,10 +26,10 @@ class CaptionCue(val pts: Long, val page: CaptionPage?)
 sealed interface CaptionFrame {
     class Cue(val cue: CaptionCue) : CaptionFrame
 
-    /** 選べる字幕の知らせ。字幕を持たない放送では来ない */
+    /** 選べる字幕の通知。字幕を持たない放送では来ない */
     class Tracks(val count: Int) : CaptionFrame
 
-    /** ほかの知らせ (20 秒おきの ping など)。読み捨てる */
+    /** ほかの通知 (20 秒おきの ping など)。読み捨てる */
     data object Other : CaptionFrame
 }
 
@@ -38,7 +38,7 @@ sealed interface CaptionFrame {
  *
  *     [4: 後ろの長さ (BE)][1: 種別][8: 時刻 (90kHz, BE)][中身]
  *     0x22 字幕の文字の配置  JSON (`CaptionPage`)
- *     0x40 知らせ           JSON
+ *     0x40 通知             JSON
  */
 object CaptionFeed {
     const val TEXT = 0x22
@@ -73,7 +73,7 @@ object CaptionFeed {
         return CaptionFrame.Cue(CaptionCue(pts, parseCaptionPage(json)))
     }
 
-    /** 形式の違う知らせは読み捨てる (denpa の版の違い。止めるほどのことではない) */
+    /** 形式の違う通知は読み捨てる (denpa の版の違い。止めるほどのことではない) */
     private fun notice(payload: ByteArray): CaptionFrame {
         val obj = runCatching { lenientJson.parseToJsonElement(payload.toString(Charsets.UTF_8)) as? JsonObject }.getOrNull()
             ?: return CaptionFrame.Other
@@ -114,15 +114,15 @@ object Pts {
     }
 
     /**
-     * 再生位置を放送の PTS に戻す。Media3 の TS の読み手は最初の PTS を 0 (シークして始めたならその位置) に寄せ、
+     * 再生位置を放送の PTS に戻す。Media3 の TsExtractor は最初の PTS を 0 (シークして始めたならその位置) に寄せ、
      * 寄せた幅を `TimestampAdjuster.getTimestampOffsetUs()` に持っている (サンプルの時刻 = 放送の時刻 + 幅)。
-     * 読み手は一周をまたいでも伸ばし続けるので、ここで 33 ビットに畳む
+     * TsExtractor は一周をまたいでも伸ばし続けるので、ここで 33 ビットに畳む
      */
     fun broadcast(positionMs: Long, offsetUs: Long): Long = Math.floorMod(Math.floorDiv((positionMs * 1000 - offsetUs) * 9, 100), WRAP)
 }
 
 /**
- * 届いた字幕を時刻の順に持つ。読み手 (IO) と出す側 (画面) から触るので、まとめて鍵を掛ける。
+ * 届いた字幕を時刻の順に持つ。読む側 (IO) と出す側 (画面) から触るので、まとめて鍵を掛ける。
  *
  * 出すのは「時計を過ぎた中で最後の1枚」。それより前のものはもう出番が無いので捨てる
  * (録画は倍速で先へ読むので、残しておくと溜まる)

@@ -90,7 +90,7 @@ class SseTest {
         }
     }
 
-    /** 予約・録画の知らせでも局の一覧を古いとみなす (局の `now` の録画の印が変わる)。ほかの知らせでは古くしない */
+    /** 予約・録画の通知でも局の一覧を古いとみなす (局の `now` の録画の印が変わる)。ほかの通知では古くしない */
     @Test
     fun 局の一覧を古くする知らせ() {
         for (name in listOf("services", "programs", "reservations", "recordings")) assertTrue(name, staleServices(name))
