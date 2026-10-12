@@ -2,6 +2,7 @@ package io.github.danything.denpatv.data
 
 import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
+import java.net.URLEncoder
 import kotlin.math.roundToLong
 
 /**
@@ -82,7 +83,7 @@ object PlaybackPaths {
 
     fun chapters(id: Long): String = "api/recordings/$id/chapters"
 
-    fun file(id: Long, source: String): String = "api/recordings/$id/file?source=$source"
+    fun file(id: Long, source: String): String = "api/recordings/$id/file?source=${URLEncoder.encode(source, "UTF-8")}"
 
     /** `from` は物差しの位置 (ミリ秒)。秒の小数で渡す。`audio` は変換するときに頼む音声 (元の TS では渡さない) */
     fun stream(id: Long, codec: String, fromMs: Long, audio: DenpaAudio? = null): String {
