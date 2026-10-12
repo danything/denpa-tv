@@ -54,7 +54,7 @@ class CodecSwitching internal constructor(
         scope.launch { repo.app.settings.setLiveQuality(next) }
     }
 
-    /** 流れを頼んだ (`setMediaItem` のたびに) */
+    /** 流れを頼んだ (`load` のたびに) */
     fun requested(quality: LiveQuality) {
         state.value = state.value.requested(quality)
     }

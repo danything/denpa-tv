@@ -15,7 +15,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -166,9 +165,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
         started = false
         refused = false
         recovery.requested()
-        player.setMediaItem(MediaItem.Builder().uri(url, quality.mime))
-        player.prepare()
-        player.playWhenReady = true
+        player.load(url, quality.mime)
         codec.requested(quality)
     }
     LaunchedEffect(Unit) {
@@ -367,17 +364,8 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                 listOf("" to listOf(Control(BACK_TO_LIST, icon = R.drawable.ic_back, initial = true) { ui.leave() })),
             )
         } else if (bar == null && !playing) {
-            // 止めている間の位置のバー (録画の再生と同じ)。キーは映像が受けたまま (左右で 10 秒、決定で動かす、下でシークバー、上で操作の列、長押しで詳細)
-            ControlBar(
-                buildAnnotatedString {
-                    append("一時停止  ")
-                    appendBroadcast(recording.title)
-                    append("\n${position(at)} / ${position(length)} (録画済みのところまで)  ・決定で再生  $SEEK_HINT")
-                },
-                emptyList(),
-                header = { ProgressLine(at, length) },
-                focusActions = false,
-            )
+            // 止めている間の位置のバー (録画の再生と同じ)
+            PausedBar(recording.title, "${position(at)} / ${position(length)} (録画済みのところまで)") { ProgressLine(at, length) }
         } else bar?.let { which ->
             LaunchedEffect(which) { if (which == Bar.SeekBar) runCatching { seekFocus.requestFocus() } }
             ControlBar(
