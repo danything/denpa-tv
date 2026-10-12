@@ -437,7 +437,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         val service = current
         menu = null
         val press = if (fromDetail) ++recordPresses else 0
-        if (fromDetail) recordNote = "録画を頼んでいます…"
+        if (fromDetail) recordNote = "録画を開始しています…"
         scope.launch {
             val result = try {
                 repo.api.recordNow(repo.base, service.id)
@@ -447,7 +447,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             val message = when (result) {
                 is RecordResult.Recorded ->
                     if (result.reserved) "録画を始めます: ${result.title}"
-                    else "予約はありますが、録れない状態です (チューナーの競合など): ${result.title}"
+                    else "予約はありますが、録画できない状態です (チューナーの競合など): ${result.title}"
                 is RecordResult.Failed -> "録画できません: ${result.message}"
             }
             if (!fromDetail) flash(message) else if (press == recordPresses) recordNote = message

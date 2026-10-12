@@ -149,7 +149,7 @@ AGP がライブラリの分とまとめ、R8 で縮めた名前に書き換え�
 EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta01 (2025-06) で**全部非推奨**になり、
 「プラットフォームの API と Android Keystore を直に使え」とされている
 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/security))。アプリの領域は他のアプリから読めず、
-トークンは denpa の画面から (またはこのアプリの設定の「繋ぐ先」の札で) いつでも無効にできるので、暗号化の仕組みは足さない。
+トークンは denpa の画面から (またはこのアプリの設定の「接続先」のボタンで) いつでも無効にできるので、暗号化の仕組みは足さない。
 
 ### ホームの「続きを視聴」: 入れない (OS の `TvContract.WatchNextPrograms`)
 

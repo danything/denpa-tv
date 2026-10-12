@@ -47,8 +47,8 @@ fun SettingsScreen(repo: Repository) {
         Column(Modifier.widthIn(max = PANEL_WIDTH), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // 登録してあれば denpa からも外す (トークンを無効にする)。家の LAN の繋ぎ方なら忘れるだけ
             WideButton(
-                "繋ぐ先: ${repo.base}" + if (repo.token != null) " (このテレビを登録済み)" else "",
-                if (repo.token != null) "押すとサーバーから外す" else "押すと繋ぐ先を変える",
+                "接続先: ${repo.base}" + if (repo.token != null) " (このテレビを登録済み)" else "",
+                if (repo.token != null) "押すと登録を解除" else "押すと接続先を変更",
                 modifier = Modifier.focusRequester(button),
                 onClick = {
                     scope.launch {

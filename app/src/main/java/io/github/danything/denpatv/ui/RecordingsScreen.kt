@@ -136,7 +136,7 @@ fun RecordingsScreen(
         } catch (_: Unauthorized) {
             onUnauthorized()
         } catch (e: Exception) {
-            error = "denpa から録画を取れません: ${e.message}"
+            error = "denpa から録画の一覧を取得できません: ${e.message}"
         }
         recordings = repo.recordings
         loaded = true

@@ -30,10 +30,10 @@ class DenpaVersionTest {
 
     @Test
     fun 古すぎれば要る版と今の版を言う() {
-        assertEquals("denpa v1.50.0 以上が要ります (いまは v1.49.0)", denpaTooOld("v1.49.0"))
-        assertEquals("denpa v1.50.0 以上が要ります (いまは v1.23.1)", denpaTooOld("1.23.1"))
+        assertEquals("denpa v1.50.0 以上が必要です (いまは v1.49.0)", denpaTooOld("v1.49.0"))
+        assertEquals("denpa v1.50.0 以上が必要です (いまは v1.23.1)", denpaTooOld("1.23.1"))
         // 版を返さないとても古い denpa
-        assertEquals("denpa v1.50.0 以上が要ります", denpaTooOld(null))
+        assertEquals("denpa v1.50.0 以上が必要です", denpaTooOld(null))
         assertNull(denpaTooOld("v1.50.0"))
         assertNull(denpaTooOld("v1.51.2"))
         assertNull(denpaTooOld("v2.0.0"))

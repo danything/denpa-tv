@@ -133,7 +133,7 @@ val Recording.unwatched: Boolean get() = watchedAt == JsonNull && resumeMs == nu
 
 /** 札にする形の名前 (AV1 / H.264 / 生TS)。並びは軽いものから */
 val Recording.codecLabels: List<String>
-    get() = listOf("av1" to "AV1", "h264" to "H.264", "mpeg2" to "生TS")
+    get() = listOf("av1" to "AV1", "h264" to "H.264", "mpeg2" to "元のTS")
         .filter { (codec, _) -> files.any { it.codec == codec } }
         .map { it.second }
 

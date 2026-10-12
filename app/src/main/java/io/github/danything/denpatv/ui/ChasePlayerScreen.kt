@@ -54,7 +54,7 @@ import kotlinx.coroutines.launch
 @OptIn(UnstableApi::class)
 @Composable
 fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
-    val chase = recording.chase ?: return Centered("追っかけの口がありません")
+    val chase = recording.chase ?: return Centered("追っかけ再生できません")
     val quality = rememberLiveQuality(repo) ?: return
     val buffering = quality.buffering
     val clock = remember { TsClock() }
@@ -94,7 +94,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
      * 古い画質で一度頼み直してしまう (denpa に焼き直しを2回させる)。MPEG-2 との行き来ではプレーヤーごと作り直すので、替える前に覚えておく
      */
     val switchedAt = remember { mutableStateOf<Pair<Long, LiveQuality>?>(null) }
-    val codec = rememberCodecSwitching(repo, player, quality, if (refused) "denpa が焼くのを断りました" else error, flash) { target ->
+    val codec = rememberCodecSwitching(repo, player, quality, if (refused) "denpa で変換できませんでした" else error, flash) { target ->
         switchedAt.value = position() to target
     }
     /** 裏に回ったときの位置 (`OnBackground`)。戻ったらここから頼み直す。裏に回っていなければ null */
@@ -297,7 +297,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
             override fun onPlayerError(e: PlaybackException) {
                 val code = (e.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
                 when {
-                    code == 404 -> flash("録り終えて焼き上がったようです。一覧に戻って開き直してください")
+                    code == 404 -> flash("エンコードが終わったようです。一覧から開き直してください")
                     // 焼くのを断られた (空の返事)。繋ぎ直さずにそう出す
                     Chase.refused(started, baked = quality != LiveQuality.Raw, httpStatus = code, errorCode = e.errorCode) -> {
                         refused = true
@@ -317,7 +317,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     fun step(direction: Int) {
         val target = Chase.clamp(position() + direction * SEEK_STEP_MS, recorded())
         // もう最新 (か頭) で動けない。頼み直すと途切れるだけなので何もしない
-        if (kotlin.math.abs(target - position()) < 1_000) return flash(if (direction > 0) "最新です" else "頭です")
+        if (kotlin.math.abs(target - position()) < 1_000) return flash(if (direction > 0) "最新です" else "先頭です")
         pending = target
         at = target
         if (bar == null && playing) flash("${position(target)} / ${position(recorded())}")
@@ -363,7 +363,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     PlayerFrame(player, overlay, if (refused) REFUSED else error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, covered = covered, above = {
         if (ended) {
             ControlBar(
-                "最後まで観ました (録り終えました)",
+                "最後まで観ました (録画は終わっています)",
                 listOf("" to listOf(Control(BACK_TO_LIST, icon = R.drawable.ic_back, initial = true) { ui.leave() })),
             )
         } else if (bar == null && !playing) {
@@ -372,7 +372,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                 buildAnnotatedString {
                     append("一時停止  ")
                     appendBroadcast(recording.title)
-                    append("\n${position(at)} / ${position(length)} (録れたところまで)  ・決定で再生  $SEEK_HINT")
+                    append("\n${position(at)} / ${position(length)} (録画済みのところまで)  ・決定で再生  $SEEK_HINT")
                 },
                 emptyList(),
                 header = { ProgressLine(at, length) },
@@ -384,7 +384,7 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
                 buildAnnotatedString {
                     append("録画中  ")
                     appendBroadcast(recording.title)
-                    append("\n${position(at)} / ${position(length)} (録れたところまで)  ${codec.label}")
+                    append("\n${position(at)} / ${position(length)} (録画済みのところまで)  ${codec.label}")
                 },
                 listOf(
                     "" to listOfNotNull(
@@ -429,4 +429,4 @@ fun ChasePlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Uni
     if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }
 
-private const val REFUSED = "denpa が映像を送らずに閉じました (焼けなかったかも)。少し待つか、画質を替えてください"
+private const val REFUSED = "denpa が映像を送らずに閉じました (変換できなかったのかもしれません)。少し待つか、画質を替えてください"

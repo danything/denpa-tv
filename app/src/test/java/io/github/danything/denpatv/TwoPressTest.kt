@@ -40,6 +40,6 @@ class RecordingCardTest {
         assertEquals("30分", durationLabel(1_800_000))
         assertEquals("1時間", durationLabel(3_600_000))
         assertEquals("1時間24分", durationLabel(84 * 60_000 + 10_000))
-        assertEquals(listOf("AV1", "H.264", "生TS"), rec(codecs = listOf("mpeg2", "h264", "av1")).codecLabels)
+        assertEquals(listOf("AV1", "H.264", "元のTS"), rec(codecs = listOf("mpeg2", "h264", "av1")).codecLabels)
     }
 }

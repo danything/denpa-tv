@@ -199,7 +199,7 @@ class Screenshots {
     /** 設定。バージョンを押してアップデートを確かめた後 (「最新です」) */
     private fun settings() {
         click("設定")
-        await("設定が出ません") { texts().any { it.startsWith("繋ぐ先") } }
+        await("設定が出ません") { texts().any { it.startsWith("接続先") } }
         // メニューを閉じて右の画面へ。繋ぐ先 (押すと外れる) からバージョンへ下りて押す
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
         SystemClock.sleep(FOCUS_MS)
