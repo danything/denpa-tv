@@ -333,7 +333,7 @@ fun ChasePlayerScreen(
      * **エンコードが終わったら、ファイルの再生へ移る** (denpa の docs/api.md「録画の状態」)。ファイルなら denpa に変換させずに済み、
      * CM 飛ばし・チャプターも揃う。`recordings` の知らせ (とその間に切れていた知らせの繋ぎ直し) のたびに聞く — ブラウザの追っかけと同じ。
      * 知らせは続けて来るので、まとめて1回 (1 秒待つ)。録り終えていたら (`state`) 一覧と観方 (`playback`) を読み直し、録画の再生がエンコード済みのファイルを開くなら受け取る
-     * (`Chase.handOff`)。`encoded` は「エンコードしない」設定の録画でも true になるので見ない
+     * (`Chase.handOff`)。`encoded` は見ない (エンコード済みがあっても、この端末でデコードできるとは限らない)
      */
     /** エンコードが終わって、ファイルの再生へ渡す録画。移れる合間 (下) を待っている */
     var encodedAs by remember { mutableStateOf<Recording?>(null) }

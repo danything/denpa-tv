@@ -245,8 +245,8 @@ sealed interface TokenResult {
  * `api/recordings/<id>` の答え (`{"id":12,"encoded":false,"state":"recording"}`) から、録り終えたかを読む。
  * `state` が `recorded` (録り終えた) か `available` (ファイルが揃った) なら終わった。`recording`・`failed` は終わっていない扱い。
  *
- * **`encoded` は見ない。** denpa は「エンコードしない」設定の録画でも、元の TS をライブラリに置くので `encoded` が true になる
- * (`available` も同じ)。エンコードが終わったかは、観方 (`playback`) でエンコード済みのファイルを開くかで決める (`Chase.handOff`)。
+ * **`encoded` (エンコード済みのファイルがあるか) は見ない。** エンコード済みがあっても、この端末でデコードできるとは限らない。
+ * ファイルの再生へ移るかは、録画の再生と同じ選び方 (`playback` と `pickPlayback`) がエンコード済みのファイルを開くかで決める (`Chase.handOff`)。
  * `state` が読めなければ版のずれとして `warn` に書き、終わっていないとみなす
  */
 fun parseFinished(body: String, warn: (String) -> Unit = {}): Boolean = parseRecordingState(body, warn)?.finished == true

@@ -184,7 +184,7 @@ class DenpaApiTest {
         assertTrue(parseFinished("""{"id":12,"encoded":false,"state":"recorded"}""", warnings::add))
         assertFalse(parseFinished("""{"id":12,"encoded":false,"state":"recording"}""", warnings::add))
         assertFalse(parseFinished("""{"id":12,"encoded":false,"state":"failed"}""", warnings::add))
-        // encoded は見ない (「エンコードしない」設定の録画でも true になる)
+        // encoded は見ない (録り終えたかは state だけで決める)
         assertFalse(parseFinished("""{"id":12,"encoded":true,"state":"recording"}""", warnings::add))
         assertTrue(warnings.isEmpty())
         // 形が違う (版のずれ): 言うだけで、終わっていないとみなす

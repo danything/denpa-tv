@@ -142,8 +142,8 @@ sealed interface PlaybackLookup {
 }
 
 /**
- * 録画の状態 (`GET api/recordings/<id>`。`parseRecordingState`)。使う鍵だけ。**`encoded` は読まない** (「エンコードしない」設定の録画でも true になる。
- * エンコードが終わったかは `playback` で決める。`Chase.handOff`)
+ * 録画の状態 (`GET api/recordings/<id>`。`parseRecordingState`)。使う鍵だけ。**`encoded` は読まない** (エンコード済みがあっても
+ * この端末でデコードできるとは限らない。ファイルの再生へ移るかは `playback` で決める。`Chase.handOff`)
  */
 data class RecordingState(
     /** `recording` `recorded` `available` `failed` */
