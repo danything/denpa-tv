@@ -87,5 +87,10 @@ class ChaseTest {
         assertFalse(Chase.handOff(encoded.copy(files = emptyList()), decoders))
         assertFalse(Chase.handOff(encoded.copy(files = listOf(RecordingFile("encoded", "av1", "x"))), decoders))
         assertFalse(Chase.handOff(null, decoders))
+        // 元の TS だけ (「エンコードしない」設定・エンコード待ち) は渡さない。MPEG-2 をデコードできても
+        val ts = encoded.copy(files = listOf(RecordingFile("ts", "mpeg2", "api/recordings/12/file?source=ts")))
+        assertFalse(Chase.handOff(ts, Decoders(av1 = false, h264 = true, mpeg2 = true)))
+        // エンコード済みと元の TS があれば、エンコード済みを開くので渡す
+        assertTrue(Chase.handOff(ts.copy(files = encoded.files + ts.files), decoders))
     }
 }

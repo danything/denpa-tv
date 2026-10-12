@@ -36,11 +36,15 @@ object Chase {
     const val NOT_FOUND = "再生できません: 録画が無いか、まだ何も録れていません。少し待ってから開き直してください"
 
     /**
-     * エンコードが終わった録画をファイルの再生へ渡すか (`fresh` は読み直した一覧の1件)。録り終えていて (追っかけでない)、
-     * この端末で開けるファイルがあるときだけ。一覧がまだ追いついていなければ渡さず、次の知らせを待つ
+     * 録り終えた録画をファイルの再生へ渡すか (`fresh` は読み直した一覧の1件)。**エンコードが終わったときだけ** — 追っかけでなく、
+     * 録画の再生が開くファイル (`pickFile`) がエンコード済みのもの (元の TS でない) のとき。
+     * 「エンコードしない」設定の録画 (元の TS だけ) は渡さない (追っかけのまま最後まで観る)。一覧がまだ追いついていなければ、次の知らせを待つ
      */
-    fun handOff(fresh: Recording?, decoders: Decoders): Boolean =
-        fresh != null && !fresh.chasing && pickFile(fresh.files, decoders) != null
+    fun handOff(fresh: Recording?, decoders: Decoders): Boolean {
+        if (fresh == null || fresh.chasing) return false
+        val file = pickFile(fresh.files, decoders) ?: return false
+        return file.source != "ts"
+    }
 
     /** `audio` はエンコードするときに頼む音声 (`bakedAudio`)。元の TS では渡さない */
     fun url(chase: String, codec: String, fromMs: Long, audio: DenpaAudio? = null): String =

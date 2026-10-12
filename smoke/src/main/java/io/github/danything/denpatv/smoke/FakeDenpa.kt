@@ -57,7 +57,7 @@ class FakeDenpa(
 
     /**
      * true なら、追っかけの録画 [CHASE_ID] のエンコードが終わっている: 録画の一覧で録り終えてエンコード済みのファイル (録画の映像) を持ち、
-     * 録画の状態 (`api/recordings/<id>`) も `encoded`。`encodeChase` で入れる
+     * 録画の状態 (`api/recordings/<id>`) も録り終えた `available`。`encodeChase` で入れる
      */
     private val chaseEncoded = AtomicBoolean(false)
 

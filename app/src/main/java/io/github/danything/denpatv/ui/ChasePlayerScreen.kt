@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
  *   操作の列の「最新」で最新の少し手前へ
  * - 録り終えて最後まで来たら「最後まで観ました」
  * - **観ている間にエンコードが終わったら、ファイルの再生へ移る** (`onEncoded`。位置は引き継ぐ)。denpa の `recordings` の知らせのたびに
- *   `GET api/recordings/<id>` で確かめる (denpa の docs/api.md「録画の状態」。ブラウザの追っかけと同じ聞き方)
+ *   `GET api/recordings/<id>` の `state` で録り終えたかを聞き、一覧のファイルでエンコード済みかを見る (`Chase.handOff`)
  * - **切れたら (エラー・録り終える前に流れが閉じた・10 秒進まない) 居た場所から頼み直す** (`Recovery`。ライブと同じ決まり)
  * - H.264 / AV1 を denpa がエンコードできないと (ffmpeg が降りた・録画を読めない)、空の 200 が返る。映る前に終わった・空だったらそう出す
  * - H.264 / AV1 は denpa の変換の枠を使う。埋まっていると 503 で断られる (`Reconnect.Verdict.Busy`)。何度かだけ頼み直し、
@@ -330,7 +330,8 @@ fun ChasePlayerScreen(
     /*
      * **エンコードが終わったら、ファイルの再生へ移る** (denpa の docs/api.md「録画の状態」)。ファイルなら denpa に変換させずに済み、
      * CM 飛ばし・チャプターも揃う。`recordings` の知らせ (とその間に切れていた知らせの繋ぎ直し) のたびに聞く — ブラウザの追っかけと同じ。
-     * 知らせは続けて来るので、まとめて1回 (1 秒待つ)。終わっていたら一覧を読み直して、ファイルの載った録画を受け取る
+     * 知らせは続けて来るので、まとめて1回 (1 秒待つ)。録り終えていたら (`state`) 一覧を読み直し、エンコード済みのファイルが載っていれば受け取る
+     * (`Chase.handOff`)。`encoded` は「エンコードしない」設定の録画でも true になるので見ない
      */
     /** エンコードが終わって、ファイルの再生へ渡す録画。移れる合間 (下) を待っている */
     var encodedAs by remember { mutableStateOf<Recording?>(null) }
@@ -339,7 +340,7 @@ fun ChasePlayerScreen(
             if (encodedAs != null) return@collectLatest
             delay(1_000)
             val fresh = try {
-                if (!repo.api.encoded(repo.base, recording.id)) return@collectLatest
+                if (!repo.api.recordingFinished(repo.base, recording.id)) return@collectLatest
                 repo.refreshRecordings()
                 repo.recordings.firstOrNull { it.id == recording.id }
             } catch (_: Unauthorized) {
