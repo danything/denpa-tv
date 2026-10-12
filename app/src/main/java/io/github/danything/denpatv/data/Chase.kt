@@ -2,11 +2,11 @@ package io.github.danything.denpatv.data
 
 /**
  * 追っかけ再生 (録画中の録画)。denpa の `GET api/recordings/<id>/chase?codec=&from=<秒>` は伸びているファイルを
- * `from` から流しっぱなしにする1本で、シークできない。**シークは `from` を変えて頼み直す。**
+ * `from` から流しっぱなしにする1本で、シークできない。**シークは `from` を変えてリクエストし直す。**
  *
- * - 再生の位置 = 頼んだ `from` + プレーヤーの位置
+ * - 再生の位置 = リクエストした `from` + プレーヤーの位置
  * - 録れた長さ = いま − 放送の始まり (denpa もファイルの大きさ ÷ 録れた秒数で位置を決めるので、ほぼ合う)
- * - 頼む位置は 0 から「録れた長さ − 余白」まで (denpa も録れた長さ − 5 秒で止める)。最新に飛んでも、
+ * - リクエストする位置は 0 から「録れた長さ − 余白」まで (denpa も録れた長さ − 5 秒で止める)。最新に飛んでも、
  *   少し手前から観る
  */
 object Chase {
@@ -15,7 +15,7 @@ object Chase {
 
     fun recordedMs(startAt: Long, now: Long): Long = (now - startAt).coerceAtLeast(0)
 
-    /** 頼む位置にそろえる (0 から 録れた長さ − 余白 まで) */
+    /** リクエストする位置にそろえる (0 から 録れた長さ − 余白 まで) */
     fun clamp(targetMs: Long, recordedMs: Long): Long = targetMs.coerceIn(0, (recordedMs - EDGE_MS).coerceAtLeast(0))
 
     /** 最新の近く (ブラウザの追っかけの「最新」と同じく 20 秒以内) */
@@ -30,7 +30,7 @@ object Chase {
         !started && baked && httpStatus == null && Reconnect.verdict(errorCode, null) != Reconnect.Verdict.Retry
 
     /**
-     * 追っかけの口が 404 を返したときに出す文。denpa の追っかけの 404 は**録画が無い (消された) か、まだ何も録れていない** (録りはじめた直後)。
+     * 追っかけのエンドポイントが 404 を返したときに出す文。denpa の追っかけの 404 は**録画が無い (消された) か、まだ何も録れていない** (録りはじめた直後)。
      * エンコードが終わったのとは関係ない (終わればファイルの再生へ移る)
      */
     const val NOT_FOUND = "再生できません: 録画が無いか、まだ何も録れていません。少し待ってから開き直してください"
@@ -46,7 +46,7 @@ object Chase {
         return pickPlayback(playback, decoders) is PlayChoice.File
     }
 
-    /** `audio` はエンコードするときに頼む音声 (`bakedAudio`)。元の TS では渡さない */
+    /** `audio` はエンコードするときにリクエストする音声 (`bakedAudio`)。元の TS では渡さない */
     fun url(chase: String, codec: String, fromMs: Long, audio: DenpaAudio? = null): String =
         "$chase?codec=$codec&from=${fromMs / 1000}${audioQuery(audio)}"
 }

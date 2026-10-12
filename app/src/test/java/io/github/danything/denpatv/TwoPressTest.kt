@@ -33,7 +33,7 @@ class RecordingCardTest {
             files = codecs.map { RecordingFile(it, it, "") })
 
     @Test
-    fun 観た割合と長さと形の札() {
+    fun 観た割合と長さと形式のラベル() {
         assertEquals(0.5f, rec(resumeMs = 900_000).watched)
         assertNull(rec(resumeMs = null).watched)
         assertNull(rec(durationMs = null, resumeMs = 900_000).watched)

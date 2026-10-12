@@ -27,7 +27,7 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 - **fragmented MP4 (H.264 / AV1)** — denpa のライブ (`api/services/<id>/live`)・追っかけ (`api/recordings/<id>/chase`)・
   録画を流してもらうとき (`api/recordings/<id>/stream`)。ExoPlayer の `FragmentedMp4Extractor` が読む。流しっぱなし (長さ不明) でもそのまま再生できる。
   録画の流れは、denpa が塊の時刻 (tfdt) を録画の時刻のまま書く。`FragmentedMp4Extractor` にも自分の `TimestampAdjuster` を渡して頭を 0 に寄せ、
-  寄せ幅から録画の時刻に戻す (`TsClock` の `mp4`。下の TS の字幕の時計と同じ仕組み。頼んだ位置ちょうどからは始まらないので、頼んだ位置では数えない)
+  寄せ幅から録画の時刻に戻す (`TsClock` の `mp4`。下の TS の字幕の時計と同じ仕組み。リクエストした位置ちょうどからは始まらないので、リクエストした位置では数えない)
 - **Matroska (.mkv)** — denpa のエンコード済みの録画。`MatroskaExtractor` が読む。字幕 (`S_ARIBSUB`、放送の字幕のまま) は読まないので、
   denpa の `captions.json` (下の文字の配置) で出す
 - **MPEG-TS (MPEG-2)** — 録画の元の TS (`stream?codec=mpeg2`。録画の時刻の 0 にあたる PTS を `X-Denpa-Origin` で受け取る) と、ライブ・追っかけの MPEG-2 (`?codec=raw`、いちばん遅れが少ない)。端末に MPEG-2 のデコーダがあれば
@@ -36,8 +36,8 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
   (`ui/RawCaptions.kt`・`ui/TextCaptions.kt`。描き方は denpa のブラウザの `caption-draw.ts` に揃える。字は丸ゴシックを APK に入れて
   `Typeface.createFromAsset` で読む。下の「字幕と放送の字」)。
   時計は **TsExtractor に自分の `TimestampAdjuster` を渡して**控え、寄せ幅 (`getTimestampOffsetUs`) で再生位置を放送の
-  PTS に戻す。読み手は `DefaultExtractorsFactory` と同じ作りで、ほかの形はそのまま (`TsClock`)。
-  PES を自分で覗いて最初の PTS を拾う手もあるが、Media3 がどの PES の PTS を 0 にしたかと食い違いうる (映像と音声で数百 ms 違う)。
+  PTS に戻す。読み手は `DefaultExtractorsFactory` と同じ作りで、ほかの形式はそのまま (`TsClock`)。
+  PES を自分で覗いて最初の PTS を読み取る手もあるが、Media3 がどの PES の PTS を 0 にしたかと食い違いうる (映像と音声で数百 ms 違う)。
   寄せ幅そのものを読めばシーク (寄せ直し) も一周 (Media3 は伸ばし続ける) もそのまま合う
 - **チャプター** — Matroska の Chapters を `Chapter` として track の `Metadata` に出す (1.11.0 から。
   [リリースノート](https://github.com/androidx/media/blob/release/RELEASENOTES.md))。エンコード済みのファイルの CM 飛ばしはこれを読むので、
@@ -45,10 +45,10 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 - **AV1 のソフトデコードは入れない。** Media3 1.9 から dav1d ベースの `decoder_av1` があるが、
   **Maven には出ておらず、NDK でソースからビルドする決まり** ([decoder_av1 の README](https://github.com/androidx/media/tree/release/libraries/decoder_av1)、
   [Media3 1.9.0 の紹介](https://android-developers.googleblog.com/2025/12/media3-190-whats-new.html))。
-  AV1 は**端末がハードでデコードできるときだけ**選び (MediaCodecList で調べる)、デコードできなければ H.264 を頼む。
+  AV1 は**端末がハードでデコードできるときだけ**選び (MediaCodecList で調べる)、デコードできなければ H.264 をリクエストする。
   denpa はどちらも出せるので、ソフトデコードを抱える理由が無い
 - **二か国語 (デュアルモノ) の片側を両耳へ配るのは、音の出口の手前に挟む自前の `AudioProcessor`** (`ui/DualMono.kt`。
-  混ぜ方は Media3 の `ChannelMixingMatrix` / `AudioMixingUtil`)。元の TS だけで、変換したライブ・追っかけは denpa に頼み直す (`?audio=<id>`)
+  混ぜ方は Media3 の `ChannelMixingMatrix` / `AudioMixingUtil`)。元の TS だけで、変換したライブ・追っかけは denpa にリクエストし直す (`?audio=<id>`)
 
 ## AndroidX 以外に入れたもの
 
@@ -57,7 +57,7 @@ Media3 と AndroidX の下限は 23 だが、Navigation 3 が 24 を求める。
 **2026-10-04 に OkHttp を外した。** 「ライブラリはできるだけ少なく、最新のドキュメントの勧めどおりに」
 という方針で見直した。
 
-Media3 の [ネットワーク スタックの頁](https://developer.android.com/media/media3/exoplayer/network-stacks?hl=ja)
+Media3 の [ネットワーク スタックのページ](https://developer.android.com/media/media3/exoplayer/network-stacks?hl=ja)
 (2026-10-04 に確認) の勧めは次の順:
 
 | 候補 | 見たところ |
@@ -69,12 +69,12 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 | **DefaultHttpDataSource** | OS の HttpURLConnection。APK が増えない |
 
 → **映像は Android 14 からは HttpEngine、それより前は DefaultHttpDataSource** (どちらも Media3 の中の
-もので依存は増えない)。どちらも頁の勧めどおり `DefaultDataSource.Factory` で包み、HttpEngine は
+もので依存は増えない)。どちらもページの推奨どおり `DefaultDataSource.Factory` で包み、HttpEngine は
 アプリで1つを使い回す (`DenpaApp.engineHttp`)。
 
 → **API の JSON は OS の HttpURLConnection** (`data/Http.kt`、IO の上で呼ぶ。時間切れは接続 10 秒・
 読み 30 秒と書いてある)。叩くのは局と録画の一覧・録画の観方とチャプターと状態 (`playback`・`chapters`・`api/recordings/<id>`)・番組の中身 (`detail`・`api/programs/<id>`)・観た位置・いまの番組の録画・録画の削除・`health`・テレビの登録 (`api/device/*`) くらい。
-元の TS の字幕 (`api/…/captions`、長さ付きのこまが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。エンコード済みの録画の字幕 (`captions.json`) も同じ。
+元の TS の字幕 (`api/…/captions`、長さ付きのフレームが続く本文) も同じ HttpURLConnection で読み続ける (`data/Captions.kt`)。エンコード済みの録画の字幕 (`captions.json`) も同じ。
 
 → **アプリの中のアップデート (GitHub のリリースを引く・APK を取る) も HttpURLConnection** (`data/Update.kt`)。入れるのは OS の
 `PackageInstaller` のセッション (`Updater.kt`)。アップデートのライブラリは入れない。
@@ -88,8 +88,8 @@ Media3 の [ネットワーク スタックの頁](https://developer.android.com
 OkHttp (と Retrofit / Ktor) を採らない理由:
 
 - **denpa は家の LAN の素の HTTP/1.1。** HTTP/2・HTTP/3 が効くのは CDN 越しの適応配信で
-  (同じ頁もそう書いている)、LAN の1本の流れでは OkHttp でも OS の HTTP でも同じ
-- 画像のライブラリも入れない (下記) ので、OkHttp を分け合う相手が無い。Media3 の勧め (HttpEngine) に乗るほうが依存が少ない
+  (同じページもそう書いている)、LAN の1本の流れでは OkHttp でも OS の HTTP でも同じ
+- 画像のライブラリも入れない (下記) ので、OkHttp を分け合う相手が無い。Media3 の推奨 (HttpEngine) に従うほうが依存が少ない
 
 **キャッシュ (`CacheDataSource`) は使わない。** ライブは流しっぱなしの1本で、溜めても二度と読まない。
 録画は LAN の denpa から読むので、端末に溜めても速くならず、テレビの少ない容量を食うだけ。
@@ -105,19 +105,19 @@ OkHttp (と Retrofit / Ktor) を採らない理由:
 
 ### 画像: 入れない (HttpURLConnection + BitmapFactory + LruCache)
 
-**2026-10-04 に Coil を外した。** 出すのは局ロゴと録画のポスターだけ (小さい絵) で、
+**2026-10-04 に Coil を外した。** 出すのは局ロゴと録画のポスターだけ (小さい画像) で、
 要るのは「出す大きさに縮めて読む」と「読んだものを覚えておく」の2つ。どちらも Android の
 [大きな画像を効率よく読み込む](https://developer.android.com/topic/performance/graphics/load-bitmap) の
 やり方 (`inSampleSize` で 2 の冪に縮める) と `LruCache` で 60 行ほどに収まる (`data/Images.kt`、
 `ui/RemoteImage.kt`)。Coil 3.6.3 / Glide 5 の持つディスクキャッシュ・変換・GIF などは使わない。
 
-録画の一覧の上に敷く大きな絵 (合わせている録画のポスター) と、詳細の後ろのうすい絵も同じもので出す。
+録画の一覧の上に敷く大きな画像 (フォーカスしている録画のポスター) と、詳細の後ろのうすい画像も同じもので出す。
 どちらもぼかして暗くするので、**読むときに 64×36 まで縮めて箱でぼかし、描くときは引き伸ばすだけ** (`Images.loadBlurred`)。
 描くたびにぼかす RenderEffect (`Modifier.blur`、Android 12 から) は使わない — 軽く、Android の版で見た目も変わらない。
 ほかに、**出す大きさちょうどに読む** (2 の冪で縮めたあと BitmapFactory の拡大率で)、**ポスターは RGB_565**
 (透けないので ARGB の半分)、覚えておく量は端末のメモリの級の 1/8 (8〜64MB)。どれも BitmapFactory だけで足りる。
 一覧の上の段の組み方は Google TV の「没入型の一覧」に倣ったが、その部品 (`ImmersiveList`) は
-tv-material 1.1.0 には無い (alpha の頃にあって外された) ので、Box に絵と見出しと格子を重ねて組んだ (`ui/RecordingsScreen.kt`)
+tv-material 1.1.0 には無い (alpha の頃にあって外された) ので、Box に画像と見出しと格子を重ねて組んだ (`ui/RecordingsScreen.kt`)
 
 ### Baseline Profile: 入れない (手で書いた `app/src/main/baseline-prof.txt`)
 
@@ -227,8 +227,8 @@ debug の APK の単体テストでは見つからない。そこで release と
 | --- | --- |
 | **縮めた APK は `minified` の build type** (`initWith(release)`、署名だけ debug の鍵) | Macrobenchmark の `benchmark` と同じ作り。release の鍵は CI のシークレットにしか無く、PR では使えない。R8 の設定は release そのまま |
 | **テストはアプリと別の APK・別のプロセス** (`com.android.test` の self-instrumenting。これも Macrobenchmark と同じ) | アプリの `androidTest` は縮めたアプリと同じプロセスで動き、テストが使うクラス (Kotlin の標準ライブラリ・`androidx.tracing`) を R8 が消してしまう (試したら `ClassNotFoundException: androidx.tracing.Trace` で起き上がらなかった)。アプリに keep を足すと縮め方が release とずれる。外から触れば縮め方はそのままで、アプリが落ちてもテストは生き残り、落ちた記録 (logcat の crash) を失敗の文に入れられる |
-| **アプリのクラスには触らない** | 縮めると名前が変わり、使わないものは消える。触るのは Android の口だけ: 起動とリンク (`denpa://…`) は Intent、見るのは画面の文字 (アクセシビリティの木) と画面の絵 (`UiAutomation.takeScreenshot`)、キーは `UiAutomation`。繋ぐ先も DataStore に直に書けない (別のプロセスで、アプリは debuggable でない) ので、繋ぐ画面の欄に URL を入れて「繋ぐ」を押す |
-| **映像が出たかは画面の絵の色で見る** | 偽の映像は地を1色にしてあり (`scripts/smoke-media.sh`)、画面を撮ってその色の点が 3 割を超えたら出ている。Player の状態は外から読めない |
+| **アプリのクラスには触らない** | 縮めると名前が変わり、使わないものは消える。触るのは Android の API だけ: 起動とリンク (`denpa://…`) は Intent、見るのは画面の文字 (アクセシビリティツリー) とスクリーンショット (`UiAutomation.takeScreenshot`)、キーは `UiAutomation`。繋ぐ先も DataStore に直に書けない (別のプロセスで、アプリは debuggable でない) ので、繋ぐ画面の欄に URL を入れて「繋ぐ」を押す |
+| **映像が出たかはスクリーンショットの色で見る** | 偽の映像は地を1色にしてあり (`scripts/smoke-media.sh`)、画面を撮ってその色の点が 3 割を超えたら出ている。Player の状態は外から読めない |
 | **偽の denpa はテストのプロセスで 127.0.0.1 に立てる** (`java.net.ServerSocket` で HTTP/1.1 を数十行) | Android には `com.sun.net.httpserver` が無い。MockWebServer (OkHttp) は Range・SSE を出し分けるのに Dispatcher を書くことになり、手で書くのと手間が変わらないので足さない |
 | **映像は H.264 だけ** (fragmented MP4 と Matroska、合わせて約 100 KB をリポジトリに置く) | Android TV のエミュレータは MPEG-2 のデコーダを有効にしていない (`c2.android.mpeg2.decoder` は `domain="tv"` で、エミュレータでは使えない)。元の TS (MPEG-2) の再生は確かめられない |
 

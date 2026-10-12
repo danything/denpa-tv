@@ -43,7 +43,7 @@ data class WatchNextItem(
 
 sealed interface WatchNextChange {
     data class Insert(val item: WatchNextItem) : WatchNextChange
-    /** 位置と長さだけ直す (題名・ポスターは変わらない) */
+    /** 位置と長さだけ直す (タイトル・ポスターは変わらない) */
     data class Update(val rowId: Long, val recordingId: Long, val positionMs: Long, val durationMs: Long, val engagedAt: Long) : WatchNextChange
     data class Delete(val rowId: Long, val recordingId: Long) : WatchNextChange
 }

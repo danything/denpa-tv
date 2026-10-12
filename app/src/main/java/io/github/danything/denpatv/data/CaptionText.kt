@@ -12,9 +12,9 @@ import kotlinx.serialization.json.longOrNull
 import kotlin.io.encoding.Base64
 
 /**
- * **字幕の文字の配置** (denpa の docs/api.md「字幕の文字の配置」、`src/lib/caption-text.ts` と同じ形)。
+ * **字幕の文字の配置** (denpa の docs/api.md「字幕の文字の配置」、`src/lib/caption-text.ts` と同じ形式)。
  * denpa が放送の字幕 (ARIB STD-B24) をデコードして置き場所・大きさ・色まで決めたもの。こちらは言われたとおりに塗るだけ
- * (`ui/TextCaptions.kt`)。ライブ・追っかけ・元のTSの録画は字幕の口の 0x22、エンコード済みの録画は `captions.json` で届く。
+ * (`ui/TextCaptions.kt`)。ライブ・追っかけ・元のTSの録画は字幕のエンドポイントの 0x22、エンコード済みの録画は `captions.json` で届く。
  *
  * 座標はすべて**字幕の面の単位** (`planeWidth` × `planeHeight`。ふつう 960x540)。映像の枠に合わせて縦横それぞれ伸ばす
  */
@@ -25,7 +25,7 @@ class CaptionPage(
     val durationMs: Long?,
     /** 描く順 */
     val runs: List<CaptionRun>,
-    /** 置き換えられなかった外字の絵。`CaptionRun.drcs` で引く */
+    /** 置き換えられなかった外字の画像。`CaptionRun.drcs` で引く */
     val drcs: Map<String, CaptionDrcs>,
 ) {
     /** 点滅するものがあるか (その間だけ描き直す) */
@@ -63,7 +63,7 @@ class CaptionRun(
     /** 横の縮め方。字の枠の幅は `size * scaleX` */
     val scaleX: Float,
     val text: String,
-    /** 置き換えられなかった外字。`text` は「〓」で、この絵を字の枠いっぱいに描く */
+    /** 置き換えられなかった外字。`text` は「〓」で、この画像を字の枠いっぱいに描く */
     val drcs: String?,
     /** ARGB */
     val fg: Int,
@@ -88,7 +88,7 @@ class CaptionRun(
     val spaces: BooleanArray = BooleanArray(count) { isCaptionSpace(text.codePointAt(bounds[it])) }
 }
 
-/** 外字の絵。`alpha` は左上から1画素ずつの濃さ (0〜255) */
+/** 外字の画像。`alpha` は左上から1画素ずつの濃さ (0〜255) */
 class CaptionDrcs(val width: Int, val height: Int, val alpha: ByteArray)
 
 /** 縁取りの太さ (面の単位、字の外側へ)。denpa の `STROKE_WIDTH` */
@@ -97,7 +97,7 @@ const val CAPTION_STROKE_WIDTH = 1.5f
 /** 点滅の間 (ミリ秒)。出ている時間と消えている時間。denpa の `FLASH_MS` */
 const val CAPTION_FLASH_MS = 500L
 
-/** 読める形の版。**知らない版は描かない** (denpa は互換の無い変え方をしたら上げる) */
+/** 読める形式の版。**知らない版は描かない** (denpa は互換の無い変え方をしたら上げる) */
 const val CAPTION_TEXT_VERSION = 1
 
 /** 空白として字を描かない字。libaribcaption の IsSpaceCharacter (denpa の `isSpace`) と同じ */
@@ -132,7 +132,7 @@ fun captionColor(text: String?): Int? {
 }
 
 /**
- * 外字の絵を濃さに開く。`data` は base64 で、左上から1画素 `bits` ビットずつ上の桁から詰めたもの。値 v の濃さは v / (depth − 1)
+ * 外字の画像を濃さに開く。`data` は base64 で、左上から1画素 `bits` ビットずつ上の桁から詰めたもの。値 v の濃さは v / (depth − 1)
  * (`bits` は 1・2・4・8 だけ読む。1画素がバイトをまたがない。denpa のブラウザの読み方も同じ前提)
  */
 fun decodeDrcs(width: Int, height: Int, depth: Int, bits: Int, data: String): CaptionDrcs? {
@@ -152,11 +152,11 @@ fun decodeDrcs(width: Int, height: Int, depth: Int, bits: Int, data: String): Ca
 /** 読める1画素のビット数 */
 private val DRCS_BITS = setOf(1, 2, 4, 8)
 
-/** 外字の絵の大きさの上限 (ふつう 16〜36 画素) */
+/** 外字の画像の大きさの上限 (ふつう 16〜36 画素) */
 private const val MAX_DRCS = 256
 
 /**
- * 1枚を読む。**知らない版・形の崩れた1枚は null** (描かない)。足された鍵は読み捨てる。
+ * 1枚を読む。**知らない版・形式の崩れた1枚は null** (描かない)。足された鍵は読み捨てる。
  * 読めない run (色や座標が無い) は、その run だけ捨てる (denpa の版の違い。止めるほどのことではない)
  */
 fun parseCaptionPage(element: JsonElement?): CaptionPage? {
@@ -234,7 +234,7 @@ class CaptionPages(private val atMs: LongArray, private val pages: List<CaptionP
     }
 
     companion object {
-        /** `captions.json` を読む。知らない版・形が違えば null。読めない1枚だけは捨てる */
+        /** `captions.json` を読む。知らない版・形式が違えば null。読めない1枚だけは捨てる */
         fun parse(json: String): CaptionPages? {
             val obj = runCatching { lenientJson.parseToJsonElement(json) as? JsonObject }.getOrNull() ?: return null
             if (obj.int("v") != CAPTION_TEXT_VERSION) return null

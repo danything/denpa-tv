@@ -31,7 +31,7 @@ import java.io.FileNotFoundException
 class WatchNextRows(private val context: Context) {
     private val lock = Mutex()
 
-    /** 録画を閉じた。`posterUrl` は denpa のポスターの URL (トークンを付けて取り、ホームに渡せる形で置く) */
+    /** 録画を閉じた。`posterUrl` は denpa のポスターの URL (トークンを付けて取り、ホームに渡せる形式で置く) */
     suspend fun stopped(recording: Recording, positionMs: Long, durationMs: Long, finished: Boolean, posterUrl: String?, token: String?) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         guarded {
@@ -81,7 +81,7 @@ class WatchNextRows(private val context: Context) {
         return cursor.use { c ->
             buildList {
                 while (c.moveToNext()) {
-                    // 目印が数でない行 (このアプリのものでない形) は触らない
+                    // 目印が数でない行 (このアプリのものでない形式) は触らない
                     val recordingId = c.getString(1)?.toLongOrNull() ?: continue
                     add(WatchNextRow(c.getLong(0), recordingId, c.getLong(2), c.getLong(3), c.getInt(4) != 0, c.getLong(5)))
                 }
@@ -140,7 +140,7 @@ class WatchNextRows(private val context: Context) {
         put(WatchNextPrograms.COLUMN_POSTER_ART_ASPECT_RATIO, WatchNextPrograms.ASPECT_RATIO_16_9)
     }
 
-    /** denpa のポスターを取って、ホームが読める所 (`WatchNextPosters`) に置く。取れなければ null (絵なしで出す) */
+    /** denpa のポスターを取って、ホームが読める所 (`WatchNextPosters`) に置く。取れなければ null (画像なしで出す) */
     private fun savePoster(recordingId: Long, url: String, token: String?): Uri? {
         val bitmap = Images.load(url, POSTER_WIDTH, POSTER_HEIGHT, token) ?: return null
         val file = WatchNextPosters.file(context, recordingId)

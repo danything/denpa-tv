@@ -39,7 +39,7 @@ sealed interface PlayChoice {
 
     /**
      * denpa に流してもらう (`stream?codec=`)。`codec` は `h264` / `av1` (fMP4) か `mpeg2` (元の TS)。
-     * 流しっぱなしの1本なので、**シークは `from` を変えて頼み直す**
+     * 流しっぱなしの1本なので、**シークは `from` を変えてリクエストし直す**
      */
     data class Stream(val codec: String) : PlayChoice {
         val mime: String get() = if (codec == "mpeg2") "video/mp2t" else "video/mp4"
@@ -77,7 +77,7 @@ fun pickPlayback(info: PlaybackInfo, decoders: Decoders): PlayChoice? {
     return null
 }
 
-/** 観方まわりの口 (denpa の根からの相対) */
+/** 観方まわりのエンドポイント (denpa のルートからの相対) */
 object PlaybackPaths {
     fun info(id: Long): String = "api/recordings/$id/playback"
 
@@ -85,7 +85,7 @@ object PlaybackPaths {
 
     fun file(id: Long, source: String): String = "api/recordings/$id/file?source=${URLEncoder.encode(source, "UTF-8")}"
 
-    /** `from` は物差しの位置 (ミリ秒)。秒の小数で渡す。`audio` は変換するときに頼む音声 (元の TS では渡さない) */
+    /** `from` は物差しの位置 (ミリ秒)。秒の小数で渡す。`audio` は変換するときにリクエストする音声 (元の TS では渡さない) */
     fun stream(id: Long, codec: String, fromMs: Long, audio: DenpaAudio? = null): String {
         val at = fromMs.coerceAtLeast(0)
         return "api/recordings/$id/stream?codec=$codec&from=${at / 1000}.${(at % 1000).toString().padStart(3, '0')}${audioQuery(audio)}"
@@ -93,7 +93,7 @@ object PlaybackPaths {
 }
 
 /**
- * 変換して流す fMP4 で頼む音声の候補 (`rememberBakedAudio` に渡す)。物差しが `ts` (元の TS から変換する) なら一覧の `audios`
+ * 変換して流す fMP4 でリクエストする音声の候補 (`rememberBakedAudio` に渡す)。物差しが `ts` (元の TS から変換する) なら一覧の `audios`
  * (`playback.audios` と同じ id で、デュアルモノのどちら側かも分かる)、`encoded` ならエンコード済みのファイルの何本目か (`playback.audios`)
  */
 fun streamAudios(info: PlaybackInfo, broadcast: List<DenpaAudio>): List<DenpaAudio> =
@@ -116,7 +116,7 @@ fun parsePlaybackChapters(json: String): List<ChapterMark> =
         .sortedBy { it.startMs }
 
 /**
- * **流れの時刻を物差しに戻す。** 頼んだ位置 (`from`) と流れが実際に始まる位置はずれる (元の TS から変換するときと、元の TS をそのまま流すときは 1 秒手前の映像から)
+ * **流れの時刻を物差しに戻す。** リクエストした位置 (`from`) と流れが実際に始まる位置はずれる (元の TS から変換するときと、元の TS をそのまま流すときは 1 秒手前の映像から)
  * ので、読み手が頭を 0 に寄せた幅 (`TsClock`) から戻す。プレーヤーの位置 0 が、物差しの何ミリ秒にあたるかを返す
  */
 object StreamClock {
@@ -125,7 +125,7 @@ object StreamClock {
 
     /**
      * 元の TS。プレーヤーの 0 にあたる PTS (`Pts.broadcast`) から、物差しの 0 にあたる PTS (`X-Denpa-Origin`) を引く。
-     * 一周 (33 ビット) の半分の中で**符号付きで**取る — 流れは物差しの 0 より手前から始まることがある (頭から頼むと 1 秒手前から流れる・
+     * 一周 (33 ビット) の半分の中で**符号付きで**取る — 流れは物差しの 0 より手前から始まることがある (頭からリクエストすると 1 秒手前から流れる・
      * 先に来た音声の PTS が映像の頭より小さい) ので、そのときは負になる
      */
     fun tsBaseMs(offsetUs: Long, origin: Long): Long = Math.floorDiv(Pts.delta(Pts.broadcast(0, offsetUs), origin), 90L)
@@ -135,7 +135,7 @@ object StreamClock {
 sealed interface PlaybackLookup {
     data class Found(val info: PlaybackInfo) : PlaybackLookup
 
-    /** 観られない (404)。録っている最中・ファイルが無い録画、`playback` の口の無い古い denpa */
+    /** 観られない (404)。録っている最中・ファイルが無い録画、`playback` のエンドポイントの無い古い denpa */
     data object Missing : PlaybackLookup
 
     /** 届かない・読めない。`message` は画面に出す */

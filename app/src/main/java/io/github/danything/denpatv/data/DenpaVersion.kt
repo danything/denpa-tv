@@ -22,7 +22,7 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 }
 
 /**
- * このアプリが要る denpa の版 (docs/pairing.md の「要る denpa の版」)。いちばん新しく足された口に合わせる:
+ * このアプリが要る denpa の版 (docs/pairing.md の「要る denpa の版」)。いちばん新しく足されたエンドポイントに合わせる:
  * 録画の観方と流し方 (`api/recordings/<id>/playback`・`stream`) と、録画の状態の `durationMs` が 1.55.0 から
  */
 val MIN_DENPA = DenpaVersion(1, 55, 0)
@@ -30,7 +30,7 @@ val MIN_DENPA = DenpaVersion(1, 55, 0)
 /**
  * 繋いだ denpa が古すぎれば、画面に出す1行。足りていれば・分からなければ (`dev` など) null。
  * `version` が無い (null) のは版を返さないとても古い denpa。
- * **古くても止めない** (読める口は読み、無い口は出ないだけ)。言うだけ
+ * **古くても止めない** (あるエンドポイントは読み、無いものは出ないだけ)。言うだけ
  */
 fun denpaTooOld(version: String?): String? {
     if (version == null) return "denpa $MIN_DENPA 以上が必要です"

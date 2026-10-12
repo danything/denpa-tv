@@ -65,9 +65,9 @@ class ProgramInfoTest {
         }
     }
 
-    /** 形がずれていても (denpa の版のずれ) 読めるところは読み、ずれた鍵だけ捨てて言う */
+    /** 形式がずれていても (denpa の版のずれ) 読めるところは読み、ずれた鍵だけ捨てて言う */
     @Test
-    fun 形のずれは言って続ける() {
+    fun 形式のずれは言って続ける() {
         val info = parseProgramInfo(
             """{"name":"番組","description":42,"extended":{"出演者":"誰か","数":3},"genre_detail":[{"lv1":"3"},{"lv1":7,"lv2":0}],
                "audios":[{"componentType":2,"langs":["jpn","eng"]},"ステレオ"],"video_type":null,"video_resolution":1080,"is_free":1}""",
@@ -86,7 +86,7 @@ class ProgramInfoTest {
     }
 
     @Test
-    fun 札の名前() {
+    fun ラベルの名前() {
         assertEquals("アニメ／特撮 > 国内アニメ", genreLabel(Genre(7, 0)))
         assertEquals("アニメ／特撮", genreLabel(Genre(7, 9)))
         assertEquals("", genreLabel(Genre(12, 0)))

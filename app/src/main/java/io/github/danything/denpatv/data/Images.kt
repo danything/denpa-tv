@@ -11,12 +11,12 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * 局ロゴと録画のポスターを読む。**画像のライブラリは入れない** — 出すのは局ロゴと録画のポスター (小さい絵。
- * 一覧の上に敷く大きな絵もポスターをごく小さく読んでぼかしたもの) だけで、要るのは「縮めて読む」と「読んだものを覚えておく」だけ
+ * 局ロゴと録画のポスターを読む。**画像のライブラリは入れない** — 出すのは局ロゴと録画のポスター (小さい画像。
+ * 一覧の上に敷く大きな画像もポスターをごく小さく読んでぼかしたもの) だけで、要るのは「縮めて読む」と「読んだものを覚えておく」だけ
  * (docs/libraries.md)。
  *
  * - **出す大きさちょうどに読む** (2 の冪で縮めたあと、BitmapFactory の拡大率で出す大きさまで縮める。大きく読んで描くときに縮めない)
- * - ポスター (透けない絵) は **RGB_565** で読む (1点 2 バイト。ARGB の半分)。ロゴは透けるので ARGB のまま
+ * - ポスター (透けない画像) は **RGB_565** で読む (1点 2 バイト。ARGB の半分)。ロゴは透けるので ARGB のまま
  * - 覚えておく量は端末のメモリの級 (`ActivityManager.memoryClass`) の 1/8 (`init`)
  */
 object Images {
@@ -37,7 +37,7 @@ object Images {
 
     /**
      * 取ってきて、出す大きさ (`widthPx`×`heightPx` を覆う大きさ) に縮めて読む。読めなければ null。IO の上で呼ぶ。
-     * `opaque` なら RGB_565 で読む (透けない絵だけ。ポスター)
+     * `opaque` なら RGB_565 で読む (透けない画像だけ。ポスター)
      */
     fun load(url: String, widthPx: Int, heightPx: Int, token: String? = null, opaque: Boolean = false): Bitmap? {
         val key = key(url, widthPx, heightPx, opaque)
@@ -48,14 +48,14 @@ object Images {
     }
 
     /**
-     * **ぼかした絵** (一覧の上の段・詳細の後ろに敷く)。ごく小さく (`BLUR_WIDTH`×`BLUR_HEIGHT`) 読んで、さらに箱でぼかす。
-     * 描く側は引き伸ばすだけで、絵がぼけて見える (描くたびにぼかす RenderEffect が要らず、Android 12 より前でも同じ見た目)
+     * **ぼかした画像** (一覧の上の段・詳細の後ろに敷く)。ごく小さく (`BLUR_WIDTH`×`BLUR_HEIGHT`) 読んで、さらに箱でぼかす。
+     * 描く側は引き伸ばすだけで、画像がぼけて見える (描くたびにぼかす RenderEffect が要らず、Android 12 より前でも同じ見た目)
      */
     fun loadBlurred(url: String, token: String? = null): Bitmap? {
         val key = "$url@blur"
         cache.get(key)?.let { return it }
         val small = decode(fetch(url, token) ?: return null, BLUR_WIDTH, BLUR_HEIGHT, opaque = false) ?: return null
-        // 覆う大きさに読んであるので、真ん中を切り出す (16:9 でない絵も縦横比を崩さない)。足りなければ引き伸ばす
+        // 覆う大きさに読んであるので、真ん中を切り出す (16:9 でない画像も縦横比を崩さない)。足りなければ引き伸ばす
         val exact = when {
             small.width == BLUR_WIDTH && small.height == BLUR_HEIGHT -> small
             small.width >= BLUR_WIDTH && small.height >= BLUR_HEIGHT ->
@@ -102,7 +102,7 @@ fun cacheBytes(memoryClassMb: Int): Int = (memoryClassMb / 8).coerceIn(8, 64) * 
 
 private const val DEFAULT_CACHE_BYTES = 24 * 1024 * 1024
 
-/** ぼかした絵の大きさと、ぼかし (箱の半径と回数) */
+/** ぼかした画像の大きさと、ぼかし (箱の半径と回数) */
 const val BLUR_WIDTH = 64
 const val BLUR_HEIGHT = 36
 private const val BLUR_RADIUS = 2
@@ -120,7 +120,7 @@ fun sampleSize(width: Int, height: Int, targetWidth: Int, targetHeight: Int): In
 }
 
 /**
- * 2 の冪で縮めた絵 (`width`×`height`) を、出す大きさを覆う大きさまでさらに縮める拡大率を、BitmapFactory の
+ * 2 の冪で縮めた画像 (`width`×`height`) を、出す大きさを覆う大きさまでさらに縮める拡大率を、BitmapFactory の
  * `inDensity` → `inTargetDensity` の組で返す。縮める要が無ければ (1 割も大きくない・出す大きさより小さい) null
  */
 fun decodeScale(width: Int, height: Int, targetWidth: Int, targetHeight: Int): Pair<Int, Int>? {
@@ -132,7 +132,7 @@ fun decodeScale(width: Int, height: Int, targetWidth: Int, targetHeight: Int): P
 
 private const val DENSITY_BASE = 10_000
 
-/** 箱でぼかす (横と縦に `radius` の平均)。小さな絵だけに使う */
+/** 箱でぼかす (横と縦に `radius` の平均)。小さな画像だけに使う */
 fun boxBlur(pixels: IntArray, width: Int, height: Int, radius: Int) {
     val out = IntArray(pixels.size)
     fun pass(src: IntArray, dst: IntArray, horizontal: Boolean) {

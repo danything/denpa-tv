@@ -17,7 +17,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * **denpa が 200 を返したのに何も送らずに閉じた。** ライブ・追っかけの口 (`live` / `chase`) は、流しはじめてから
+ * **denpa が 200 を返したのに何も送らずに閉じた。** ライブ・追っかけのエンドポイント (`live` / `chase`) は、流しはじめてから
  * 選局やエンコーダの立ち上げに失敗すると、200 のまま空で閉じる (チューナーの空きが無い・放送休止・ffmpeg が降りた。
  * denpa の `sessionStream`)。Media3 はこれを「どの読み手も読めない」(`ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED`)
  * と言うだけで、空だったのか中身が違ったのかが分からないので、ここで見分けて名前を付ける。
@@ -30,15 +30,15 @@ class EmptyStreamException(uri: Uri?) :
     ParserException("denpa が何も送らずに閉じました: $uri", null, false, C.DATA_TYPE_MEDIA)
 
 /**
- * 空の流れの見張り (`EmptyGuardDataSource` の中身)。**長さの分からない流れ (ライブ・追っかけ) を頭から頼んで、
- * 1バイトも来ないうちに終わった**ときだけ空とみなす。長さの分かるもの (録画のファイル) や、途中から頼んだもの
+ * 空の流れの見張り (`EmptyGuardDataSource` の中身)。**長さの分からない流れ (ライブ・追っかけ) を頭からリクエストして、
+ * 1バイトも来ないうちに終わった**ときだけ空とみなす。長さの分かるもの (録画のファイル) や、途中からリクエストしたもの
  * (尻に飛んで 0 バイトなのは正しい) は見ない
  */
 class EmptyWatch {
     private var watching = false
     private var received = 0L
 
-    /** 開いた。`length` は開いて分かった長さ (分からなければ `C.LENGTH_UNSET`)、`position` は頼んだ位置 */
+    /** 開いた。`length` は開いて分かった長さ (分からなければ `C.LENGTH_UNSET`)、`position` はリクエストした位置 */
     fun opened(length: Long, position: Long) {
         watching = length == C.LENGTH_UNSET.toLong() && position == 0L
         received = 0
@@ -53,7 +53,7 @@ class EmptyWatch {
     }
 }
 
-/** 空の流れを `EmptyStreamException` にする口。ほかは `upstream` にそのまま渡す */
+/** 空の流れを `EmptyStreamException` にする部分。ほかは `upstream` にそのまま渡す */
 @OptIn(UnstableApi::class)
 class EmptyGuardDataSource(private val upstream: DataSource) : DataSource {
     private val watch = EmptyWatch()
@@ -80,9 +80,9 @@ class EmptyGuardDataSource(private val upstream: DataSource) : DataSource {
 }
 
 /**
- * 映像として受け取る Content-Type か。**denpa の映像の口はどれも `video/…` か `audio/…`** (docs/api.md)。
+ * 映像として受け取る Content-Type か。**denpa の映像のエンドポイントはどれも `video/…` か `audio/…`** (docs/api.md)。
  * 文字 (`text/html` のログイン画面・`application/json` のエラー) が 200 で来たら、前段の何か (認証の門・
- * 別のサーバ) が denpa の代わりに答えている。Media3 に読ませると「形が分からない」になるので、先に断る
+ * 別のサーバ) が denpa の代わりに答えている。Media3 に読ませると「形式が分からない」になるので、先に断る
  * (`ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE`)。書いていなければ通す
  */
 fun isMediaContentType(contentType: String?): Boolean {
@@ -146,7 +146,7 @@ class BusyLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
 }
 
 /**
- * 画面に出すエラー。混んでいて断られた (`BUSY_MESSAGE`) なら、変換の要らない MPEG-2 を勧める — いま変換を頼んでいて (MPEG-2 でない)、
+ * 画面に出すエラー。混んでいて断られた (`BUSY_MESSAGE`) なら、変換の要らない MPEG-2 を勧める — いま変換をリクエストしていて (MPEG-2 でない)、
  * この端末が MPEG-2 をハードでデコードできる (`LiveQuality.available` に入る) ときだけ。ほかはそのまま
  */
 fun withBusyAdvice(error: String?, quality: LiveQuality, decoders: Decoders): String? =

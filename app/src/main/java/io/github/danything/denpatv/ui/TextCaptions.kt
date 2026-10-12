@@ -35,15 +35,15 @@ import kotlin.math.round
 
 /**
  * **字幕の文字の配置を描く** (`CaptionPage`)。denpa のブラウザの描き方 (`src/lib/components/player/caption-draw.ts`) に揃えてある。
- * あちらは絵にしていた頃の libaribcaption に揃えてあるので、映像に焼き込んでいた字幕と同じ所・同じ形に出る:
+ * あちらは画像にしていた頃の libaribcaption に揃えてあるので、映像に重ねて描き込んでいた字幕と同じ位置・同じ形に出る:
  *
  * - 背景は区画 (`w`x`h`) ごとに塗る。空白も塗る
  * - 字は字の枠の左端をペンの位置にして、**縦は「永」の墨の上下を枠の真ん中に置く**。横は `scaleX` で縮める
  * - 縁取りは字の外側へ `CAPTION_STROKE_WIDTH`、字より先に塗る
- * - 置き換えられなかった外字は、点の絵を字の枠いっぱいに**なめらかに** (双線形で) 引き伸ばす
+ * - 置き換えられなかった外字は、点の画像を字の枠いっぱいに**なめらかに** (双線形で) 引き伸ばす
  *
  * 面は層 (映像の枠。映像は枠いっぱいに伸ばして出している) いっぱいに縦横それぞれ伸ばす。
- * **描くのは替わったときだけ** (1枚が替わった・字が届いた・点滅の切り替わり)。Paint や外字の絵は使い回し、描くたびに作らない
+ * **描くのは替わったときだけ** (1枚が替わった・字が届いた・点滅の切り替わり)。Paint や外字の画像は使い回し、描くたびに作らない
  */
 @Composable
 internal fun TextCaptionLayer(page: CaptionPage, font: DenpaFont, inset: () -> Float) {
@@ -82,7 +82,7 @@ internal class TextCaptionPainter {
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
-    /** 外字の絵 (濃さだけの絵) を、この色で塗る */
+    /** 外字の画像 (濃さだけの画像) を、この色で塗る */
     private val drcsPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val bounds = Rect()
     private val target = RectF()
@@ -93,7 +93,7 @@ internal class TextCaptionPainter {
     private var ascent = 0f
     private var descent = 0f
 
-    /** 外字の絵。1枚が替わったら作り直す */
+    /** 外字の画像。1枚が替わったら作り直す */
     private var drcsPage: CaptionPage? = null
     private val drcsBitmaps = HashMap<String, Bitmap>()
 
@@ -199,7 +199,7 @@ internal class TextCaptionPainter {
         canvas.drawBitmap(bitmap, null, target, drcsPaint)
     }
 
-    /** 外字の絵を濃さだけの絵 (ALPHA_8) にする。塗るときの Paint の色で出る */
+    /** 外字の画像を濃さだけの画像 (ALPHA_8) にする。塗るときの Paint の色で出る */
     private fun drcsBitmap(page: CaptionPage, key: String): Bitmap? {
         drcsBitmaps[key]?.let { return it }
         val drcs = page.drcs[key] ?: return null

@@ -21,10 +21,10 @@ import java.nio.ByteBuffer
  *
  * Media3 の `ChannelMixingAudioProcessor` をそのまま使わないのは、**係数を決めるのが繋ぎ直し (`configure`) のときだけ**だから —
  * そのまま (単位行列) で繋ぐと休んだきりになり、観ている途中で主音声に替えても効かない (次に形式が変わるまで)。
- * 係数の形 (`ChannelMixingMatrix`) と混ぜ方 (`AudioMixingUtil.mix`) は同じものを使い、いつも動かしておいて毎回 `side` を読む。
+ * 係数の行列 (`ChannelMixingMatrix`) と混ぜ方 (`AudioMixingUtil.mix`) は同じものを使い、いつも動かしておいて毎回 `side` を読む。
  *
  * **PCM にしか掛からない** — AAC は既定どおり端末のデコーダで PCM にデコードしてから流すので掛かる (DefaultAudioSink は AAC を
- * そのまま出す道 (passthrough) を使わず、オフロードも既定でオフ)。エンコードした AV1 の Opus も同じ
+ * そのまま出す経路 (passthrough) を使わず、オフロードも既定でオフ)。エンコードした AV1 の Opus も同じ
  */
 @OptIn(UnstableApi::class)
 class DualMonoProcessor : BaseAudioProcessor() {

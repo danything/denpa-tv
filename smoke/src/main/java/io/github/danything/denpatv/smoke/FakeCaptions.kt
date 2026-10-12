@@ -5,7 +5,7 @@ package io.github.danything.denpatv.smoke
  * 面は放送と同じ 960x540、区画は 40x60 (libaribcaption と同じ置き方。下の2行は y = 390・450 あたり)
  */
 internal object FakeCaptions {
-    /** smoke が出たかを見る字 (読み上げの文) と、背景の色 (画面の絵で塗られたかを見る。映像の地の赤紫と違う青) */
+    /** smoke が出たかを見る字 (読み上げの文) と、背景の色 (スクリーンショットで塗られたかを見る。映像の地の赤紫と違う青) */
     const val TEXT = "偽の字幕"
     const val BACKGROUND = 0xFF0000FF.toInt()
 
@@ -15,7 +15,7 @@ internal object FakeCaptions {
     )
 
     /**
-     * 画面の絵に撮る1枚 (作り物)。上の行は縁取りだけ (背景なし) で、頭に外字 (音符の点の絵)、間に半角の英字。
+     * スクリーンショットに撮る1枚 (作り物)。上の行は縁取りだけ (背景なし) で、頭に外字 (音符の点の画像)、間に半角の英字。
      * 下の行は半透明の背景に、黄色の囲み・ルビ (小さな字の行) つき
      */
     val showcase = pages(

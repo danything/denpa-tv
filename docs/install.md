@@ -69,9 +69,9 @@ adb は Google の **Android SDK Platform-Tools** に入っています。
 ### Android TV (Google TV でないもの)
 
 1. 設定 → **デバイス設定** (端末によっては「デバイス」) → **端末情報** → **ビルド** を何回か押す
-   ([Google Cast の Android TV のデバッグの頁](https://developers.google.com/cast/docs/android_tv_receiver/debugging))
+   ([Google Cast の Android TV のデバッグのページ](https://developers.google.com/cast/docs/android_tv_receiver/debugging))
 2. 設定 → **デバイス設定** → **開発者向けオプション** → **USB デバッグ** をオン
-3. ホーム画面へ戻る (同じ頁によると、戻らないと設定が効かない)
+3. ホーム画面へ戻る (同じページによると、戻らないと設定が効かない)
 
 ### Fire TV
 
@@ -81,7 +81,7 @@ adb は Google の **Android SDK Platform-Tools** に入っています。
 2. 設定 → **My Fire TV** → **開発者オプション** で **ADB デバッグ** をオン
 3. 同じところの **不明ソースからのアプリ** をオン
 4. IP アドレスは 設定 → **My Fire TV** → **バージョン情報** → **ネットワーク** で見る
-   (設定 → ネットワーク の画面には出ない、と Amazon の頁にある)
+   (設定 → ネットワーク の画面には出ない、と Amazon のページにある)
 
 ## 4. パソコンからテレビに繋ぐ
 

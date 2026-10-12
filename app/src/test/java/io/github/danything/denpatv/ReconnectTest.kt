@@ -59,7 +59,7 @@ class ReconnectTest {
         assertFalse(Reconnect.shouldRetry(Verdict.Unauthorized, stream = true, attempts = 0, few = 0))
     }
 
-    /** 変換の枠が埋まって断られた 503 は、ライブ・追っかけでも何度かだけ (何度でも頼み直すと denpa を叩き続けるだけ)。ほかの 503 は入れ替えなので何度でも */
+    /** 変換の枠が埋まって断られた 503 は、ライブ・追っかけでも何度かだけ (何度でもリクエストし直すと denpa を叩き続けるだけ)。ほかの 503 は入れ替えなので何度でも */
     @Test
     fun 混んでいて断られたら何度かだけ() {
         val badStatus = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
@@ -96,7 +96,7 @@ class ReconnectTest {
     fun 位置か溜まりが動いていれば止まっていない() {
         val watch = StallWatch()
         watch.check(0, watching = true, positionMs = 0, bufferedMs = 1_000)
-        // 絵は止まっていても届いている (溜めている最中)
+        // 映像は止まっていても届いている (溜めている最中)
         assertNull(watch.check(6_000, watching = true, positionMs = 0, bufferedMs = 2_000))
         assertNull(watch.check(12_000, watching = true, positionMs = 0, bufferedMs = 2_000))
         // 届いてはいないが進んでいる (溜めたぶんを流している)
@@ -122,9 +122,9 @@ class ReconnectTest {
         assertEquals(ChaseEnd.Lost, chaseEnd(stillRecording = null, positionMs = 600_000, durationMs = 600_000, pictured = true))
         // 録り終えて尻まで観た
         assertEquals(ChaseEnd.Finished, chaseEnd(stillRecording = false, positionMs = 1_790_000, durationMs = 1_800_000, pictured = true))
-        // 録り終えたが途中で切れた (denpa の入れ替え)。居た場所から続ける
+        // 録り終えたが途中で切れた (denpa の入れ替え)。いた位置から続ける
         assertEquals(ChaseEnd.Lost, chaseEnd(stillRecording = false, positionMs = 600_000, durationMs = 1_800_000, pictured = true))
-        // 頼み直しても何も映らずに終わった・長さが分からない (前と同じく観終えたことに)
+        // リクエストし直しても何も映らずに終わった・長さが分からない (前と同じく観終えたことに)
         assertEquals(ChaseEnd.Finished, chaseEnd(stillRecording = false, positionMs = 600_000, durationMs = 1_800_000, pictured = false))
         assertEquals(ChaseEnd.Finished, chaseEnd(stillRecording = false, positionMs = 600_000, durationMs = null, pictured = true))
     }
@@ -132,7 +132,7 @@ class ReconnectTest {
     @Test
     fun 追っかけで映る前に繋がらないのは断られたのではない() {
         val parse = PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
-        // エンコードを断られた空の 200 は、形が分からないと言われる
+        // エンコードを断られた空の 200 は、形式が分からないと言われる
         assertTrue(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = parse))
         // denpa の入れ替えの最中 (繋ぎ直しの途中) に繋がらない・読めないのは、繋ぎ直しに任せる
         assertFalse(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED))

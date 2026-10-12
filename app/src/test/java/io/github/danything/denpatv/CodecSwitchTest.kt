@@ -8,10 +8,10 @@ import org.junit.Test
 
 class CodecSwitchTest {
     @Test
-    fun 選んだらすぐ切り替え中_最初の絵で済む() {
+    fun 選んだらすぐ切り替え中_最初のフレームで済む() {
         val chosen = CodecSwitch(LiveQuality.H264).choose(LiveQuality.Av1)!!
         assertEquals("AV1 に切り替え中", chosen.label)
-        // 頼む前の絵 (前の流れ) では済ませない
+        // リクエストする前のフレーム (前の流れ) では済ませない
         val (early, none) = chosen.pictured()
         assertNull(none)
         assertEquals(chosen, early)
@@ -43,7 +43,7 @@ class CodecSwitchTest {
     }
 
     @Test
-    fun 切り替え中でない頼みは_映っている画質() {
+    fun 切り替え中でないリクエストは_映っている画質() {
         assertEquals(LiveQuality.Raw, CodecSwitch(LiveQuality.H264).requested(LiveQuality.Raw).shown)
         // 局を替えても、切り替え中の画質は待ち続ける
         val chosen = CodecSwitch(LiveQuality.H264).choose(LiveQuality.Av1)!!

@@ -124,8 +124,8 @@ fun rememberTracks(
             scope.launch {
                 // デュアルモノはどちら側かを覚える (名前は番組で変わるので覚えない)
                 if (next.side != null) repo.app.settings.setDualMonoSide(next.side)
-                // 名前の付いたものだけ覚える。番号だけのもの・デュアルモノの本へ移ったら忘れる (次に別の番組で副音声にならないように)。
-                // 同じデュアルモノの本の中で側を替えただけなら、覚えている名前はそのまま
+                // 名前の付いたものだけ覚える。番号だけのもの・デュアルモノの音声へ移ったら忘れる (次に別の番組で副音声にならないように)。
+                // 同じデュアルモノの音声の中で側を替えただけなら、覚えている名前はそのまま
                 if (next.group != selectedGroup || next.side == null) repo.app.settings.setAudioLabel(track.label.takeIf { track.named })
             }
             onChange("音声 ${track.label}")
@@ -134,8 +134,8 @@ fun rememberTracks(
 }
 
 /**
- * 変換して流すライブ・追っかけの音声の切り替え。`audio` を denpa に頼む URL に足し (`audioQuery`)、変わったら頼み直す。
- * `ready` になるまで (覚えている側を読み終えるまで) は頼まない — 読む前に頼むと、すぐ頼み直しになる
+ * 変換して流すライブ・追っかけの音声の切り替え。`audio` を denpa にリクエストする URL に足し (`audioQuery`)、変わったらリクエストし直す。
+ * `ready` になるまで (覚えている側を読み終えるまで) はリクエストしない — 読む前にリクエストすると、すぐリクエストし直しになる
  */
 class BakedAudio(val ready: Boolean, val audio: DenpaAudio?, private val choices: List<DenpaAudio>, private val next: () -> Unit) {
     /** 操作の列に足すボタン (選べるものが2つ以上あるときだけ) */

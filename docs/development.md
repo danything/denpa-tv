@@ -10,19 +10,19 @@
 - 要る denpa の版を上げるときは、[README](../README.md#denpa-に繋ぐ)・[pairing.md](pairing.md#要る-denpa-の版) と `MIN_DENPA` (`data/DenpaVersion.kt`) をいっしょに直す。
   古い denpa に合わせた作りは持たない
 
-## 画面の絵
+## スクリーンショット
 
-`docs/images/` の絵は全部、CI の Screenshots の流れ (`.github/workflows/screenshots.yml`) で撮ります。smoke/ の `Screenshots` が
+`docs/images/` の画像は全部、CI の Screenshots ワークフロー (`.github/workflows/screenshots.yml`) で撮ります。smoke/ の `Screenshots` が
 Android TV のエミュレータ (API 36、1080p) で、作り物の局・番組・録画・説明 (`Showcase`) を返す偽の denpa に繋ぎ、
 繋ぐ画面 → 録画の一覧・詳細 → ライブ (局の切り替え・選局の間・メニュー・局の列・詳細) → 設定 → 録画の再生 (字幕・操作の列・詳細・最後まで) → 追っかけ
-の順に撮って、1280 幅の webp にします。README の頭の動く絵 (`navigation.webp`) は、途中で撮ったこまを繋いだものです。
+の順に撮って、1280 幅の webp にします。README の頭のアニメーション (`navigation.webp`) は、途中で撮ったコマを繋いだものです。
 番組名・人名・説明は作り物で、ポスターと映像はぼかした場面に見えるように描いたもの、局ロゴは番号を書いただけの画像です
 (観た割合のバー・録画中・予約済み・エンコード中も、偽の denpa がそう返しているだけ)。局名だけは実在の名前です。
 
 撮り直すとき:
 
-1. Actions の Screenshots を手で走らせる (`gh workflow run screenshots.yml --ref <枝>`)
+1. Actions の Screenshots を手で走らせる (`gh workflow run screenshots.yml --ref <ブランチ>`)
 2. 終わったら artifact (`shots`) を取ってきて (`gh run download <run id> -n shots`)、`docs/images/` にあるのと同じ名前の webp を上書きする
-3. 絵が変わったら、README・usage.md の alt も合わせる
+3. 画像が変わったら、README・usage.md の alt も合わせる
 
-ライブの字幕は撮れません (元の TS でしか出ないが、エミュレータには MPEG-2 のデコーダが無く、元の TS を選べない)。字幕は録画の再生の絵に出ています。
+ライブの字幕は撮れません (元の TS でしか出ないが、エミュレータには MPEG-2 のデコーダが無く、元の TS を選べない)。字幕は録画の再生の画像に出ています。

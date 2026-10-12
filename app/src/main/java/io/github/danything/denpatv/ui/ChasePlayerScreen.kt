@@ -45,16 +45,16 @@ import kotlinx.coroutines.launch
  * ブラウザの追っかけと同じく、続きの位置があればそこから (無ければ頭から)。
  *
  * - 画質はライブと同じ設定 (MPEG-2 をハードでデコードできれば元の TS、そうでなければ H.264)。操作の列で変えられる
- * - 流しっぱなしの1本でシークできないので、**位置を変えるときは頼み直す** (`Chase`)。左右・シークバーで 10 秒ずつ、
- *   続けて押したぶんはまとめて頼む。シークバーの長さは録れた長さ (いま − 放送の始まり)
+ * - 流しっぱなしの1本でシークできないので、**位置を変えるときはリクエストし直す** (`Chase`)。左右・シークバーで 10 秒ずつ、
+ *   続けて押したぶんはまとめてリクエストする。シークバーの長さは録れた長さ (いま − 放送の始まり)
  * - 最新の近くまで来たら、ライブのようにそのまま観つづける (勝手に飛ばない)。速くして観ていたら等速に戻す。
  *   操作の列の「最新」で最新の少し手前へ
  * - 録り終えて最後まで来たら「最後まで観ました」
  * - **観ている間にエンコードが終わったら、ファイルの再生へ移る** (`onEncoded`。位置は引き継ぐ)。denpa の `recordings` の知らせのたびに
  *   `GET api/recordings/<id>` の `state` で録り終えたかを聞き、録画の再生がエンコード済みのファイルを開くか (`playback`) を見る (`Chase.handOff`)
- * - **切れたら (エラー・録り終える前に流れが閉じた・10 秒進まない) 居た場所から頼み直す** (`Recovery`。ライブと同じ決まり)
+ * - **切れたら (エラー・録り終える前に流れが閉じた・10 秒進まない) いた位置からリクエストし直す** (`Recovery`。ライブと同じ決まり)
  * - H.264 / AV1 を denpa がエンコードできないと (ffmpeg が降りた・録画を読めない)、空の 200 が返る。映る前に終わった・空だったらそう出す
- * - H.264 / AV1 は denpa の変換の枠を使う。埋まっていると 503 で断られる (`Reconnect.Verdict.Busy`)。何度かだけ頼み直し、
+ * - H.264 / AV1 は denpa の変換の枠を使う。埋まっていると 503 で断られる (`Reconnect.Verdict.Busy`)。何度かだけリクエストし直し、
  *   諦めたら「サーバが混んでいます」と出して、MPEG-2 をデコードできる端末なら MPEG-2 を勧める (`withBusyAdvice`)
  *
  * キーは録画の再生と同じ (左右で 10 秒、決定で止める・動かす、下でシークバー、上・Menu で操作の列、決定の長押しと情報キーで詳細)。
@@ -75,14 +75,14 @@ fun ChasePlayerScreen(
     val buffering = quality.buffering
     val clock = remember { TsClock() }
     fun recorded() = Chase.recordedMs(recording.startAt, System.currentTimeMillis())
-    /** 頼んだ位置 (ミリ秒)。再生の位置はこれ + プレーヤーの位置 */
+    /** リクエストした位置 (ミリ秒)。再生の位置はこれ + プレーヤーの位置 */
     var from by remember { mutableLongStateOf(Chase.clamp(recording.resumeMs ?: 0L, recorded())) }
-    /** 同じ位置で頼み直すとき (止めていて繋がりが切れた・繋ぎ直す) に増やす */
+    /** 同じ位置でリクエストし直すとき (止めていて繋がりが切れた・繋ぎ直す) に増やす */
     var attempt by remember { mutableIntStateOf(0) }
-    /** 左右で動かしている途中の行き先 (まとめて頼む) */
+    /** 左右で動かしている途中の行き先 (まとめてリクエストする) */
     var pending by remember { mutableStateOf<Long?>(null) }
     /*
-     * **切れた・止まったら、居た場所から頼み直す** (`Recovery`。ブラウザの追っかけと同じ)。流れが終わったときは、録り終えたのか
+     * **切れた・止まったら、いた位置からリクエストし直す** (`Recovery`。ブラウザの追っかけと同じ)。流れが終わったときは、録り終えたのか
      * 切れたのかを denpa に聞いてから (下の `onPlaybackStateChanged`)
      */
     val (player, error, dualMono, recovery) = rememberPlayer(
@@ -99,25 +99,25 @@ fun ChasePlayerScreen(
     val flasher = rememberFlash()
     val (overlay, flash) = flasher
     val scope = rememberCoroutineScope()
-    /** エンコードを断られた。頼み直すまで、ふつうのエラーの代わりにそう出す */
+    /** エンコードを断られた。リクエストし直すまで、ふつうのエラーの代わりにそう出す */
     var refused by remember { mutableStateOf(false) }
-    /** 追っかけの口が 404 を返した (録画が無い・まだ何も録れていない)。頼み直すまで、ふつうのエラーの代わりに `Chase.NOT_FOUND` を出す */
+    /** 追っかけのエンドポイントが 404 を返した (録画が無い・まだ何も録れていない)。リクエストし直すまで、ふつうのエラーの代わりに `Chase.NOT_FOUND` を出す */
     var notFound by remember { mutableStateOf(false) }
     // 一覧の「録画中」は古くなる (録り終える・エンコードが終わる)。戻ったら読み直してもらう
     DisposableEffect(Unit) { onDispose { repo.recordingsStale = true } }
 
     fun position() = pending ?: (from + player.currentPosition)
     /**
-     * 画質を替えるときの位置と行き先。**画質が替わってから**、ここから頼み直す — 押したときに `from` を替えると、新しい画質が届く前に
-     * 古い画質で一度頼み直してしまう (denpa に再エンコードを2回させる)。MPEG-2 との行き来ではプレーヤーごと作り直すので、替える前に覚えておく
+     * 画質を替えるときの位置と行き先。**画質が替わってから**、ここからリクエストし直す — 押したときに `from` を替えると、新しい画質が届く前に
+     * 古い画質で一度リクエストし直してしまう (denpa に再エンコードを2回させる)。MPEG-2 との行き来ではプレーヤーごと作り直すので、替える前に覚えておく
      */
     val switchedAt = remember { mutableStateOf<Pair<Long, LiveQuality>?>(null) }
     val codec = rememberCodecSwitching(repo, player, quality, if (refused) "denpa で変換できませんでした" else error, flash) { target ->
         switchedAt.value = position() to target
     }
-    /** 裏に回ったときの位置 (`OnBackground`)。戻ったらここから頼み直す。裏に回っていなければ null */
+    /** 裏に回ったときの位置 (`OnBackground`)。戻ったらここからリクエストし直す。裏に回っていなければ null */
     var stoppedAt by remember { mutableStateOf<Long?>(null) }
-    // 元の TS の字幕。映像を頼み直したら、字幕もいまの位置から頼み直す
+    // 元の TS の字幕。映像をリクエストし直したら、字幕もいまの位置からリクエストし直す
     val captions = rememberRawCaptions(
         repo,
         player,
@@ -130,7 +130,7 @@ fun ChasePlayerScreen(
     )
     // デュアルモノの主・副は、元の TS のときだけ配り直す (変換した追っかけは denpa が選んだ1つだけをエンコードする。下の `baked`)
     val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { quality == LiveQuality.Raw }.orEmpty())
-    // 変換した追っかけの音声は denpa に頼んで選ぶ (`?audio=<id>`)。替えたら、いまの位置から頼み直す
+    // 変換した追っかけの音声は denpa にリクエストして選ぶ (`?audio=<id>`)。替えたら、いまの位置からリクエストし直す
     val baked = rememberBakedAudio(repo, recording.audios.takeIf { quality != LiveQuality.Raw }.orEmpty(), key = recording.id) { label ->
         from = position()
         flash(label)
@@ -145,17 +145,17 @@ fun ChasePlayerScreen(
     var bar by ui::bar
     var details by ui::details
     var ended by remember { mutableStateOf(false) }
-    /** 止めたとき。長く止めたら、動かすときに頼み直す (止めている間に繋がりが切れるので) */
+    /** 止めたとき。長く止めたら、動かすときにリクエストし直す (止めている間に繋がりが切れるので) */
     var pausedAt by remember { mutableLongStateOf(0L) }
     val speed by repo.app.settings.playbackSpeed.collectAsState(initial = 1f)
-    /** 頼み直してから映りはじめたか (映る前に終わった・壊れたなら、denpa がエンコードを断った空の返事) */
+    /** リクエストし直してから映りはじめたか (映る前に終わった・壊れたなら、denpa がエンコードを断った空の返事) */
     var started by remember { mutableStateOf(false) }
-    /** 最新に追いついて等速に戻したか (速さの設定はそのまま。頼み直したらまた速く) */
+    /** 最新に追いついて等速に戻したか (速さの設定はそのまま。リクエストし直したらまた速く) */
     var caughtUp by remember { mutableStateOf(false) }
     LaunchedEffect(player, speed, caughtUp) { player.setPlaybackSpeed(if (caughtUp) 1f else speed) }
     /**
-     * 流れている最中に速さを変えたら、今の位置から頼み直す (録画の再生の `resyncAfterSpeedChange` と同じ手当て。
-     * 流しっぱなしの1本はシークできないので、飛び直す代わりに頼み直す)。追いついて等速に戻すときはしない
+     * 流れている最中に速さを変えたら、今の位置からリクエストし直す (録画の再生の `resyncAfterSpeedChange` と同じ手当て。
+     * 流しっぱなしの1本はシークできないので、飛び直す代わりにリクエストし直す)。追いついて等速に戻すときはしない
      */
     var lastSpeed by remember { mutableFloatStateOf(speed) }
     LaunchedEffect(speed) {
@@ -168,12 +168,12 @@ fun ChasePlayerScreen(
 
     LaunchedEffect(from, quality, attempt, baked.ready, baked.audio?.id, codec.chosen) {
         if (!baked.ready) return@LaunchedEffect
-        // 選んだ画質が覚えている画質に届くまでは頼まない (ライブと同じ)
+        // 選んだ画質が覚えている画質に届くまではリクエストしない (ライブと同じ)
         if (codec.chosen != quality) return@LaunchedEffect
-        // 画質を替えた頼みでだけ使う。替えるたびに覚え直し、使ったら消すので、あとの頼み直し (左右・繋ぎ直し) の位置は巻き戻さない
+        // 画質を替えたリクエストでだけ使う。替えるたびに覚え直し、使ったら消すので、あとの再リクエスト (左右・繋ぎ直し) の位置は巻き戻さない
         switchedAt.value?.takeIf { it.second == quality }?.let { (at, _) ->
             switchedAt.value = null
-            // 位置を替えると、この頼みをやり直す (そちらで頼む)
+            // 位置を替えると、このリクエストをやり直す (そちらでリクエストする)
             if (at != from) {
                 from = at
                 return@LaunchedEffect
@@ -211,7 +211,7 @@ fun ChasePlayerScreen(
             delay(500)
         }
     }
-    // 続けて押した左右は、止まってから1度だけ頼み直す
+    // 続けて押した左右は、止まってから1度だけリクエストし直す
     LaunchedEffect(pending) {
         val target = pending ?: return@LaunchedEffect
         delay(700)
@@ -250,7 +250,7 @@ fun ChasePlayerScreen(
     }
     /*
      * **裏に回ったら止めて denpa から降り、観た位置を預ける** (ホーム・別のアプリ。エンコードしている追っかけなら denpa のエンコーダも空く)。
-     * 流しっぱなしの1本なので、戻ったら止めた位置から頼み直して続ける
+     * 流しっぱなしの1本なので、戻ったら止めた位置からリクエストし直して続ける
      */
     OnBackground(
         onStop = {
@@ -276,7 +276,7 @@ fun ChasePlayerScreen(
 
             /*
              * 録り終えて最後まで読んだら、denpa が閉じる。**それ以外で閉じたのは切れた** (denpa の入れ替え・再エンコード) ので、
-             * まだ録っているか・尻まで観たかを denpa に聞いて、切れたのなら居た場所から頼み直す (`chaseEnd`)
+             * まだ録っているか・尻まで観たかを denpa に聞いて、切れたのならいた位置からリクエストし直す (`chaseEnd`)
              */
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != Player.STATE_ENDED || ended) return
@@ -374,7 +374,7 @@ fun ChasePlayerScreen(
      */
     fun step(direction: Int) {
         val target = Chase.clamp(position() + direction * SEEK_STEP_MS, recorded())
-        // もう最新 (か頭) で動けない。頼み直すと途切れるだけなので何もしない
+        // もう最新 (か頭) で動けない。リクエストし直すと途切れるだけなので何もしない
         if (kotlin.math.abs(target - position()) < 1_000) return flash(if (direction > 0) "最新です" else "先頭です")
         pending = target
         at = target
@@ -386,7 +386,7 @@ fun ChasePlayerScreen(
         attempt++
         flash("最新へ")
     }
-    /** 止める・動かす。止めたら操作の列を開いて「再生」に合わせ、動かしたら閉じて何も出さない (録画の再生と同じ) */
+    /** 止める・動かす。止めたら操作の列を開いて「再生」にフォーカスし、動かしたら閉じて何も出さない (録画の再生と同じ) */
     fun togglePause() {
         if (player.playWhenReady) {
             player.playWhenReady = false
@@ -396,7 +396,7 @@ fun ChasePlayerScreen(
             flasher.clear()
             bar = Bar.Actions
         } else {
-            // 長く止めていたら繋がりが切れているかもしれないので、止めた位置から頼み直す
+            // 長く止めていたら繋がりが切れているかもしれないので、止めた位置からリクエストし直す
             if (System.nanoTime() - pausedAt > 10_000_000_000L) {
                 from = position()
                 attempt++
@@ -448,7 +448,7 @@ fun ChasePlayerScreen(
                         speedControl(speed) { scope.stepSpeed(repo, speed) },
                     ),
                     "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
-                        // 選んだらすぐ入れて、居た場所から頼み直す (映るまでは前の絵のまま「… に切り替え中」)
+                        // 選んだらすぐ入れて、いた位置からリクエストし直す (映るまでは前の映像のまま「… に切り替え中」)
                         Control(choice.label, on = choice == codec.chosen) {
                             codec.choose(choice)
                         }

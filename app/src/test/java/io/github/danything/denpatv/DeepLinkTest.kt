@@ -34,7 +34,7 @@ class DeepLinkTest {
     }
 
     @Test
-    fun ほかの形は読まない() {
+    fun ほかの形式は読まない() {
         assertNull(DeepLink.parse(null))
         assertNull(DeepLink.parse(""))
         assertNull(DeepLink.parse("https://example.com/live"))

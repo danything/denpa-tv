@@ -10,7 +10,7 @@ class TitlesTest {
         if (title.length <= chars) title else keepEpisode(title, visible = chars, room = room) { it.length <= chars }
 
     @Test
-    fun 収まる題はそのまま() {
+    fun 収まるタイトルはそのまま() {
         assertEquals("NHKニュース7", fit("NHKニュース7", 22))
         assertEquals("葬送のフリーレン #12「本物の勇者」", fit("葬送のフリーレン #12「本物の勇者」", 22))
     }

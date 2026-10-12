@@ -23,7 +23,7 @@ class YieldTest {
     }
 
     @Test
-    fun 形が違っても止めずに読み捨てる() {
+    fun 形式が違っても止めずに読み捨てる() {
         val warnings = mutableListOf<String>()
         assertNull(denpaEvent(SseEvent("yielded", """{"serviceId":1}"""), warnings::add))
         assertNull(denpaEvent(SseEvent("yielded", "not json"), warnings::add))
@@ -31,24 +31,24 @@ class YieldTest {
     }
 
     @Test
-    fun 頼み直しが映らなかったら_譲った録画へ() {
-        // 蹴られたあとの頼み直し。知らせで来た録画へ
+    fun リクエストし直しても映らなかったら_譲った録画へ() {
+        // 蹴られたあとにリクエストし直した。知らせで来た録画へ
         assertEquals(news, YieldPlan.fallback(trying = true, returning = false, chased = null, kicked = news))
         // 「ライブに戻る」が入れなかった。観ていた録画へ戻る (知らせのものではなく)
         assertEquals(drama, YieldPlan.fallback(trying = true, returning = true, chased = drama, kicked = news))
     }
 
     @Test
-    fun 映ったあとで切れたのは_いつもどおり頼み直す() {
-        // 映っていたライブが閉じた (蹴られた直後)。まず同じ局を頼み直す
+    fun 映ったあとで切れたのは_いつもどおりリクエストし直す() {
+        // 映っていたライブが閉じた (蹴られた直後)。まず同じ局をリクエストし直す
         assertNull(YieldPlan.fallback(trying = false, returning = false, chased = null, kicked = news))
-        // 譲った録画が分からなければ、頼み直し続ける
+        // 譲った録画が分からなければ、リクエストし直し続ける
         assertNull(YieldPlan.fallback(trying = true, returning = false, chased = null, kicked = null))
     }
 
     @Test
     fun 追っかけは録れているところの少し手前から() {
-        // denpa は録れている範囲に収める (いま書いているところの 5 秒手前まで)。秒で頼む
+        // denpa は録れている範囲に収める (いま書いているところの 5 秒手前まで)。秒でリクエストする
         assertEquals("api/recordings/12/chase?codec=raw&from=604800", YieldPlan.chaseUrl(12, "raw"))
     }
 

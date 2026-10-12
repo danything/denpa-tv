@@ -23,7 +23,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 録画の観方 (denpa の `playback`・`stream`・`chapters`)。docs/api.md の例の形で */
+/** 録画の観方 (denpa の `playback`・`stream`・`chapters`)。docs/api.md の例の形式で */
 class PlaybackTest {
     private val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
     private val stick = Decoders(av1 = false, h264 = true, mpeg2 = true, av1Hardware = false, mpeg2Hardware = false)
@@ -73,13 +73,13 @@ class PlaybackTest {
         assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(rawOnly, stick))
         assertNull(pickPlayback(rawOnly, bare))
         assertNull(pickPlayback(PlaybackInfo(), tv))
-        // 中身の形は流し方で決まる
+        // 中身の形式は流し方で決まる
         assertEquals("video/mp2t", PlayChoice.Stream("mpeg2").mime)
         assertEquals("video/mp4", PlayChoice.Stream("h264").mime)
     }
 
     @Test
-    fun 流す口は録画の時刻を秒の小数で渡す() {
+    fun 流すエンドポイントは録画の時刻を秒の小数で渡す() {
         assertEquals("api/recordings/12/stream?codec=h264&from=754.025", PlaybackPaths.stream(12, "h264", 754_025))
         assertEquals("api/recordings/12/stream?codec=mpeg2&from=0.000", PlaybackPaths.stream(12, "mpeg2", -5))
         assertEquals(
@@ -90,7 +90,7 @@ class PlaybackTest {
     }
 
     @Test
-    fun 変換で頼む音声は_元の_TS_からなら放送の音声_エンコード済みからならファイルの何本目か() {
+    fun 変換でリクエストする音声は_元の_TS_からなら放送の音声_エンコード済みからならファイルの何本目か() {
         val broadcast = listOf(DenpaAudio("0:main", 0, "main", "主音声"), DenpaAudio("0:sub", 0, "sub", "副音声"))
         assertEquals(broadcast, streamAudios(tsOnly, broadcast))
         val withTracks = encoded.copy(audios = listOf(PlayAudio("0", "主音声"), PlayAudio("1", "副音声")))
@@ -122,12 +122,12 @@ class PlaybackTest {
         assertEquals(3_000L, StreamClock.tsBaseMs(-1_000_000_000, pts - 3 * 90_000))
         // 一周をまたぐ: 頭の PTS が一周の 1 秒あと、録画の 0 は一周の 1 秒前
         assertEquals(2_000L, StreamClock.tsBaseMs(-1_000_000, Pts.WRAP - 90_000))
-        // 録画の 0 より手前から流れる (頭から頼むと 1 秒手前から): 負になる。一周の向きを取り違えない
+        // 録画の 0 より手前から流れる (頭からリクエストすると 1 秒手前から): 負になる。一周の向きを取り違えない
         assertEquals(-1_000L, StreamClock.tsBaseMs(-1_000_000_000, pts + 90_000))
     }
 }
 
-/** 観方まわりの口を叩く (docs/api.md の形) */
+/** 観方まわりのエンドポイントを呼ぶ (docs/api.md の形式) */
 class PlaybackApiTest {
     private val denpa = FakeDenpa()
     private val api = DenpaApi(warn = {})
@@ -147,7 +147,7 @@ class PlaybackApiTest {
         assertEquals("encoded", found.info.axis)
         assertEquals(PlayOffer("mpeg2", "raw"), found.info.offers.last())
         assertEquals("/api/recordings/12/playback", denpa.requests.take().target)
-        // 録画中・ファイルが無い・口の無い古い denpa
+        // 録画中・ファイルが無い・エンドポイントの無い古い denpa
         denpa.enqueue("", code = 404)
         assertEquals(PlaybackLookup.Missing, api.playback(base, 12))
         denpa.enqueue("<html>")

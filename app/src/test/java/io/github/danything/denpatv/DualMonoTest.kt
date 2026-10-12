@@ -110,7 +110,7 @@ class DualMonoTest {
     }
 
     @Test
-    fun 焼くときはこの画面で選んだもの_無ければ既定の主音声の覚えている側() {
+    fun エンコードするときはこの画面で選んだもの_無ければ既定の主音声の覚えている側() {
         assertEquals("0:sub", bakedAudio(dual, "0:sub", AudioSide.Main)?.id)
         assertEquals("0:main", bakedAudio(dual, null, AudioSide.Main)?.id)
         assertEquals("0:sub", bakedAudio(dual, null, AudioSide.Sub)?.id)
@@ -120,7 +120,7 @@ class DualMonoTest {
     }
 
     @Test
-    fun 焼くときの既定は放送の言う主音声() {
+    fun エンコードするときの既定は放送の言う主音声() {
         val two = listOf(
             DenpaAudio("0:both", 0, "both", "解説ステレオ (日本語)", false),
             DenpaAudio("1:both", 1, "both", "主音声ステレオ (日本語)", true),
@@ -130,14 +130,14 @@ class DualMonoTest {
     }
 
     @Test
-    fun 選べるものが1つ以下なら頼まない() {
+    fun 選べるものが1つ以下ならリクエストしない() {
         assertNull(bakedAudio(listOf(DenpaAudio("0:both", 0, "both", "ステレオ")), "0:both", AudioSide.Main))
         assertNull(bakedAudio(emptyList(), null, AudioSide.Main))
         assertEquals("", audioQuery(null))
     }
 
     @Test
-    fun 頼む_URL_に音声を足す() {
+    fun リクエストの_URL_に音声を足す() {
         assertEquals("&audio=0%3Asub", audioQuery(dual[1]))
         assertEquals("api/recordings/9/chase?codec=h264&from=754&audio=0%3Amain", Chase.url("api/recordings/9/chase", "h264", 754_900, dual[0]))
         assertEquals("api/recordings/9/chase?codec=raw&from=754", Chase.url("api/recordings/9/chase", "raw", 754_900))

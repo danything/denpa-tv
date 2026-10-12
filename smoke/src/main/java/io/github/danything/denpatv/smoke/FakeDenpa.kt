@@ -21,13 +21,13 @@ import kotlin.concurrent.thread
  * エミュレータの中 (テストのプロセス) で動かす偽の denpa (`SmokeTest`)。**HTTP/1.1 を ServerSocket で数十行だけ話す** — Android に JDK の
  * `com.sun.net.httpserver` は無く、MockWebServer (OkHttp) を足すほどのことはしない (docs/libraries.md)。
  *
- * 答えるのは denpa の docs/api.md のうちアプリが叩く口だけ。映像はテストの APK の assets (`scripts/smoke-media.sh` で作る)。
+ * 答えるのは denpa の docs/api.md のうちアプリが叩くエンドポイントだけ。映像はテストの APK の assets (`scripts/smoke-media.sh` で作る)。
  * 1つの要求ごとに繋ぎを閉じる (`Connection: close`)。映像は Range に答える。`api/events` (SSE) は閉じるまで開けておく。
- * 届いた要求は `requests` に `GET /api/…` の形で溜める
+ * 届いた要求は `requests` に `GET /api/…` の形式で溜める
  */
 class FakeDenpa(
     private val assets: AssetManager,
-    /** 画面の絵を撮るときの作り物の録画・局・番組を返す (`Showcase`。`Screenshots`) */
+    /** スクリーンショットを撮るときの作り物の録画・局・番組を返す (`Showcase`。`Screenshots`) */
     private val showcase: Boolean = false,
 ) : AutoCloseable {
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
@@ -35,7 +35,7 @@ class FakeDenpa(
     val requests = ConcurrentLinkedQueue<String>()
 
     /**
-     * この数だけ、次のライブの要求に 503 を返す (denpa が入れ替わっている最中のつもり。アプリが待って頼み直すかを見る)。
+     * この数だけ、次のライブの要求に 503 を返す (denpa が入れ替わっている最中のつもり。アプリが待ってリクエストし直すかを見る)。
      * ライブの映像 (live.mp4) は 10 秒で終わる — denpa が流れを閉じた (番組の境目での再エンコード・再起動) のと同じに見える
      */
     val failLive = AtomicInteger(0)
@@ -45,13 +45,13 @@ class FakeDenpa(
 
     /**
      * この数だけ、次のライブの要求に 200 を返して何も送らずに閉じる (denpa が選局・エンコードに失敗したときと同じ。
-     * Media3 は「形が分からない」と言うので、アプリがそれを見分けて言い換えるかを見る)
+     * Media3 は「形式が分からない」と言うので、アプリがそれを見分けて言い換えるかを見る)
      */
     val emptyLive = AtomicInteger(0)
 
     /**
      * true の間、追っかけの要求に 503 `{"message":"サーバが混んでいます"}` を返す (denpa の変換の枠が埋まっているつもり。
-     * アプリが何度かだけ頼み直して「サーバが混んでいます」と言うかを見る)
+     * アプリが何度かだけリクエストし直して「サーバが混んでいます」と言うかを見る)
      */
     val busyChase = AtomicBoolean(false)
 
@@ -61,7 +61,7 @@ class FakeDenpa(
      */
     private val chaseEncoded = AtomicBoolean(false)
 
-    /** 画面の絵のライブで、選局にかかったつもりで待つ長さ (`Screenshots` が選局の間を撮るときだけ延ばす) */
+    /** スクリーンショットのライブで、選局にかかったつもりで待つ長さ (`Screenshots` が選局の間を撮るときだけ延ばす) */
     @Volatile
     var tuneMs = 300L
 
@@ -137,7 +137,7 @@ class FakeDenpa(
                 json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"}]}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
             // エンコード前の録画: ファイルは元の TS だけなので、変換して流してもらう (エミュレータは MPEG-2 をデコードできない)。
-            // 流れはライブと同じ fMP4 (塊の時刻は 0 から)。CM は 4〜6 秒 (CM 飛ばしで頼み直す)
+            // 流れはライブと同じ fMP4 (塊の時刻は 0 から)。CM は 4〜6 秒 (CM 飛ばしでリクエストし直す)
             path == "/api/recordings/$RAW_ID/playback" ->
                 json(out, """{"duration":10,"axis":"ts","audios":[],"offers":[{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"av1","way":"stream"},{"codec":"mpeg2","way":"raw"}]}""")
             path == "/api/recordings/$RAW_ID/chapters" ->
@@ -145,7 +145,7 @@ class FakeDenpa(
             path == "/api/recordings/$RAW_ID/stream" -> media(out, "live.mp4", "video/mp4", range)
             // エンコード済みの録画の字幕 (文字の配置)
             path == "/api/recordings/$RECORDING_ID/captions.json" -> json(out, FakeCaptions.smoke)
-            // 追っかけはライブと同じエンコード方式の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリは居た場所から頼み直す)
+            // 追っかけはライブと同じエンコード方式の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリはいた位置からリクエストし直す)
             path == "/api/recordings/$CHASE_ID/chase" ->
                 if (busyChase.get()) {
                     respond(out, 503, "application/json", """{"message":"サーバが混んでいます"}""".toByteArray())
@@ -173,7 +173,7 @@ class FakeDenpa(
     }
 
     /**
-     * 画面の絵を撮るときの口 (`Showcase`)。答えたら true (ほかは smoke と同じ口へ)。
+     * スクリーンショットを撮るときのエンドポイント (`Showcase`)。答えたら true (ほかは smoke と同じエンドポイントへ)。
      * ライブは**選局に [tuneMs] かかったつもりで待ってから、放送と同じ速さで**流す (`paced`)。作り物の録画は、どれも同じ映像と字幕
      */
     private fun showcaseRoute(method: String, path: String, range: String?, out: OutputStream): Boolean {
@@ -223,7 +223,7 @@ class FakeDenpa(
 
     /**
      * 録り終えた録画と、録っている最中の録画 (追っかけ。1時間後まで録る)。後者はエンコードが終わっていれば (`encodeChase`)、ファイルを持つ録り終えた録画。
-     * エンコード前の録画 [RAW_ID] は [RECORDING_ID] の1時間あと (一覧はいちばん古い録画に合わせて開くので、[RECORDING_ID] をいちばん古いままにする)
+     * エンコード前の録画 [RAW_ID] は [RECORDING_ID] の1時間あと (一覧はいちばん古い録画にフォーカスして開くので、[RECORDING_ID] をいちばん古いままにする)
      */
     private fun recordings(): String {
         val now = System.currentTimeMillis()
@@ -249,7 +249,7 @@ class FakeDenpa(
         pendingEvents += "event: recordings\ndata: 1\n\n"
     }
 
-    /** 次の知らせで送るもの (`yieldLive`)。知らせに繋いでいる流れが拾って送る */
+    /** 次の知らせで送るもの (`yieldLive`)。知らせに繋いでいる流れが取り出して送る */
     private val pendingEvents = ConcurrentLinkedQueue<String>()
 
     /**
@@ -263,7 +263,7 @@ class FakeDenpa(
 
     /**
      * 知らせ (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る。作り物の録画を返すときは、エンコードの進み (`encode`) も一緒に。
-     * 頼まれた知らせ (`yieldLive`) は待たずに送る
+     * リクエストされた知らせ (`yieldLive`) は待たずに送る
      */
     private fun events(out: OutputStream) {
         out.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n: connected\n\n".toByteArray())
@@ -389,13 +389,13 @@ class FakeDenpa(
         /** エンコード前の録画 (元の TS だけ。denpa に変換して流してもらう) */
         const val RAW_ID = 3L
         const val RAW_TITLE = "偽のエンコード前"
-        /** 黙っている長さ (アプリが見張りで気付いて頼み直すより十分長く) */
+        /** 黙っている長さ (アプリが見張りで気付いてリクエストし直すより十分長く) */
         private const val STALL_HOLD_MS = 60_000L
-        /** 画面の絵のライブ・追っかけの映像の長さ (`scripts/smoke-media.sh` の showcase-live) と、先に送るぶん・送る間 */
+        /** スクリーンショットのライブ・追っかけの映像の長さ (`scripts/smoke-media.sh` の showcase-live) と、先に送るぶん・送る間 */
         private const val SHOWCASE_LIVE_MS = 120_000L
         private const val HEAD_START_MS = 2_000L
         private const val PACE_MS = 200L
-        /** 知らせの流れが、頼まれた知らせ (`yieldLive`) を見に行く間 */
+        /** 知らせの流れが、リクエストされた知らせ (`yieldLive`) を見に行く間 */
         private const val EVENT_POLL_MS = 200L
         private val REASONS = mapOf(200 to "OK", 204 to "No Content", 206 to "Partial Content", 404 to "Not Found", 503 to "Service Unavailable", 416 to "Range Not Satisfiable")
     }

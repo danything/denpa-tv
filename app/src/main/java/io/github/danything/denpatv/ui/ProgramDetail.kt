@@ -62,14 +62,14 @@ import io.github.danything.denpatv.data.DetailText
 import io.github.danything.denpatv.data.arrangeDetail
 import kotlinx.coroutines.launch
 
-/** 詳細に出す中身。録画 (一覧・再生中) とライブで同じ形 (`ProgramDetailDialog`) */
+/** 詳細に出す中身。録画 (一覧・再生中) とライブで同じ作り (`ProgramDetailDialog`) */
 data class DetailFacts(
     val title: String,
     /** 「局 ・ 10/6(火) 21:00〜21:54 (54分)」(`programMeta`)。頭の局名 (`service`) は放送の字 */
     val meta: String,
     /** 局名 (`meta` の頭)。無ければ null */
     val service: String? = null,
-    /** ラベル (ジャンル・映像・音声・形) */
+    /** ラベル (ジャンル・映像・音声・形式) */
     val chips: List<String> = emptyList(),
     /** ラベルの頭に出す印。「● 録画中」は赤、「予約済み」は琥珀 (`badgeColor`) */
     val badge: String? = null,
@@ -85,7 +85,7 @@ data class DetailFacts(
 
 /**
  * 詳細のボタン。並べた順に左から。**「閉じる」はどの詳細でも右の端** (開き方で並びを変えない)。
- * `primary` は主な操作 (azure で塗る。「続きから再生」「録画」)。開いたときは `initial` のボタン、無ければ先頭に合う
+ * `primary` は主な操作 (azure で塗る。「続きから再生」「録画」)。開いたときは `initial` のボタン、無ければ先頭にフォーカスする
  */
 class DetailAction(val label: String, val primary: Boolean = false, val initial: Boolean = false, val onClick: () -> Unit)
 
@@ -99,12 +99,12 @@ internal const val CLOSE = "閉じる"
  *
  * - 左に寄せた1列。**番組名を大きく、その下に1行の「局 ・ 日時 (長さ)」**、ライブなら番組の進みと残り、ボタンの列
  *   (録画中の印・ジャンル・映像・音声)
- * - **その下に操作のボタンを横1列**。主な操作が先頭で、「閉じる」が右の端。開いたときは主な操作に合う (録画は「続きから再生」、
- *   ライブは「録画」)。再生中と、ライブで録っている・録る予定のときは「閉じる」に合う (映像に戻るだけ)
+ * - **その下に操作のボタンを横1列**。主な操作が先頭で、「閉じる」が右の端。開いたときは主な操作にフォーカスする (録画は「続きから再生」、
+ *   ライブは「録画」)。再生中と、ライブで録っている・録る予定のときは「閉じる」にフォーカスする (映像に戻るだけ)
  * - 下の残りに説明と放送の詳細を**1列で、大事な順に** (`arrangeDetail`): 説明と番組内容・あらすじをまとめた読みもの →
  *   出演者 → 制作・音楽など (小さく詰めて) → おしらせ。ホームページは出さない。1行は画面の6割ほどまで (長すぎると読みにくい)。
  *   収まらなければボタンの列から下キーで本文に入り、**上下で読み進める** (いちばん上でもう一度上を押すとボタンに戻る)
- * - 絵 (ポスター) は絵として出さない (文字を読むための画面)。一覧の上で開いたときだけ、後ろにほとんど見えないくらい薄く敷く (`FaintBackdrop`)
+ * - 画像 (ポスター) は画像として出さない (文字を読むための画面)。一覧の上で開いたときだけ、後ろにほとんど見えないくらい薄く敷く (`FaintBackdrop`)
  *
  * 長押しで開くので、離すまでの決定はこの窓では受けない (`ignoreHeldCenter`。先頭のボタンが押されないように)。戻るで閉じる
  */
@@ -117,14 +117,14 @@ fun ProgramDetailDialog(
     note: String? = null,
     /** 映像の上に開く (再生中・ライブ)。右へ行くほど少し透かして映像を覗かせる。一覧の上では透かさない */
     overVideo: Boolean = false,
-    /** 後ろにうすく敷く絵 (録画のポスター)。null なら地の色だけ */
+    /** 後ろにうすく敷く画像 (録画のポスター)。null なら地の色だけ */
     backdrop: String? = null,
-    /** 絵を取るときの鍵 */
+    /** 画像を取るときのキー */
     token: String? = null,
 ) {
     val first = remember { FocusRequester() }
     val start = actions.indexOfFirst { it.initial }.coerceAtLeast(0)
-    // ボタンの数が変わったら (ライブで録画を頼んで「録画」のボタンが消えた) 合わせ直す。合っていたボタンが消えると、どこにも合わなくなる
+    // ボタンの数が変わったら (ライブで録画して「録画」のボタンが消えた) フォーカスし直す。フォーカスのあったボタンが消えると、どこにもフォーカスが無くなる
     LaunchedEffect(actions.size) { runCatching { first.requestFocus() } }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val surface = MaterialTheme.colorScheme.surface
@@ -213,8 +213,8 @@ private fun Header(facts: DetailFacts, token: String?) {
 }
 
 /**
- * 説明と放送の詳細を1列で (`arrangeDetail` の並び)。**収まらなければ合わせられて、上下で読み進める**
- * (合っている間は縁を出す。続きがあれば本文の下の1行に「▼ 下キーで続き」)。いちばん上で上を押すと、合いが先頭のボタンへ戻る
+ * 説明と放送の詳細を1列で (`arrangeDetail` の並び)。**収まらなければフォーカスできて、上下で読み進める**
+ * (フォーカスがある間は縁を出す。続きがあれば本文の下の1行に「▼ 下キーで続き」)。いちばん上で上を押すと、フォーカスが先頭のボタンへ戻る
  */
 @Composable
 private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
@@ -226,7 +226,7 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
     var viewport by remember { mutableIntStateOf(0) }
     val scrollable = scroll.maxValue > 0
     val frame = if (focused) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else Color.Transparent
-    // 本文に合っている間に中身が縮んで収まった (ライブで番組が替わった) ら、先頭のボタンへ戻す (合いの行き場が無くならないように)
+    // 本文にフォーカスがある間に中身が縮んで収まった (ライブで番組が替わった) ら、先頭のボタンへ戻す (フォーカスの行き場が無くならないように)
     LaunchedEffect(scrollable) {
         if (!scrollable && focused) runCatching { up.requestFocus() }
     }
@@ -242,9 +242,9 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
             .border(2.dp, frame, RoundedCornerShape(12.dp))
             .onFocusChanged { focused = it.isFocused }
             .focusProperties {
-                // 収まっていれば合わせない (下キーで止まるだけになる)
+                // 収まっていればフォーカスしない (下キーで止まるだけになる)
                 canFocus = scrollable
-                // 上で抜けるときは先頭のボタンへ (近いもの = 真上のボタンに合うと、右の端の「閉じる」に飛ぶ)
+                // 上で抜けるときは先頭のボタンへ (近いもの = 真上のボタンにフォーカスすると、右の端の「閉じる」に飛ぶ)
                 this.up = up
             }
             .then(
@@ -256,12 +256,12 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
                             if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                             val step = viewport * 0.6f
                             when (event.key) {
-                                // 下: 読み進める。いちばん下でも受ける (下に合わせる先は無い)
+                                // 下: 読み進める。いちばん下でも受ける (下にフォーカスする先は無い)
                                 Key.DirectionDown -> {
                                     if (scroll.canScrollForward) scope.launch { scroll.animateScrollBy(step) }
                                     true
                                 }
-                                // 上: 戻る。いちばん上なら受けない (上のボタンへ合いが移る)
+                                // 上: 戻る。いちばん上なら受けない (上のボタンへフォーカスが移る)
                                 Key.DirectionUp -> if (scroll.canScrollBackward) {
                                     scope.launch { scroll.animateScrollBy(-step) }
                                     true
@@ -358,8 +358,8 @@ private fun badgeColor(label: String): Color = if (label == RESERVED) Palette.Re
 private fun badgeTextColor(label: String): Color = if (label == RESERVED) Palette.Background else Color.White
 
 /**
- * 詳細の後ろにうすく敷く録画の絵。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (`BlurredImage`)、
- * 地の色で大きく覆い、左と下へ溶かす。絵の要素としては出さない (縁もボタンも付けない)
+ * 詳細の後ろにうすく敷く録画の画像。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (`BlurredImage`)、
+ * 地の色で大きく覆い、左と下へ溶かす。画像の要素としては出さない (縁もボタンも付けない)
  */
 @Composable
 private fun BoxScope.FaintBackdrop(url: String, token: String?) {

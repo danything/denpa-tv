@@ -49,7 +49,7 @@ class WatchNextTest {
     }
 
     @Test
-    fun 長さは焼いた長さ_無ければ予定の長さ() {
+    fun 長さはエンコードした長さ_無ければ予定の長さ() {
         assertEquals(1_800_000, recording(1).lengthMs())
         assertEquals(3_600_000, recording(1, durationMs = null).copy(endAt = start + 3_600_000).lengthMs())
         assertEquals(0, recording(1, durationMs = null).lengthMs())

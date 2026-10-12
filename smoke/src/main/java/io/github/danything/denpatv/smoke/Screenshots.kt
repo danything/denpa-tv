@@ -19,14 +19,14 @@ import org.junit.Test
 import org.junit.rules.Timeout
 
 /**
- * **画面の絵を撮る** (README・docs/ と PR に貼る絵)。CI の Screenshots の流れ (`.github/workflows/screenshots.yml`) だけが
+ * **スクリーンショットを撮る** (README・docs/ と PR に貼る画像)。CI の Screenshots ワークフロー (`.github/workflows/screenshots.yml`) だけが
  * `-e shots 1` を付けて走らせる。付けなければ何もしない (smoke では飛ばす)。
  *
- * 作り物の録画・局・番組 (`Showcase`) を返す偽の denpa に繋ぎ、docs/images/ の絵を全部 `/data/local/tmp/shots/<名前>.png` に撮る
+ * 作り物の録画・局・番組 (`Showcase`) を返す偽の denpa に繋ぎ、docs/images/ の画像を全部 `/data/local/tmp/shots/<名前>.png` に撮る
  * (CI が adb pull で取ってくる)。繋ぐ画面 → 録画の一覧・詳細 → 左のメニューからライブ (局の切り替え・選局の間・メニュー・局の列・番組の詳細)
- * → 設定 → 録画の再生 (字幕・操作の列・詳細・最後まで観たとき) → 追っかけ、の順。README の頭の動く絵 (navigation) は
- * `navigation/<番号>-<見せるミリ秒>.png` のこまに撮り、CI が1つの webp に繋ぐ。
- * 終わりに一覧を上下に送り、こまの描き時間を測れるようにする (前と後の見比べ用。読むのは scripts/shots-run.sh)
+ * → 設定 → 録画の再生 (字幕・操作の列・詳細・最後まで観たとき) → 追っかけ、の順。README の頭のアニメーション (navigation) は
+ * `navigation/<番号>-<見せるミリ秒>.png` のコマに撮り、CI が1つの webp に繋ぐ。
+ * 終わりに一覧を上下に送り、コマの描き時間を測れるようにする (前と後の見比べ用。読むのは scripts/shots-run.sh)
  */
 class Screenshots {
     @get:Rule
@@ -58,7 +58,7 @@ class Screenshots {
             recording()
             chase()
 
-            // 軽さ: 一覧で上下に送るあいだのこまを数える (読むのは scripts/shots-run.sh の dumpsys gfxinfo)
+            // 軽さ: 一覧で上下に送るあいだのフレームを数える (読むのは scripts/shots-run.sh の dumpsys gfxinfo)
             await("録画の一覧に戻りません") { texts().any { "名城" in it } }
             SystemClock.sleep(SETTLE_MS)
             shell("dumpsys gfxinfo $APP reset")
@@ -74,9 +74,9 @@ class Screenshots {
         }
     }
 
-    /** 録画の一覧 (下の端・頭・長い題)・録画の詳細。終わりは長い題 (行の左の端) に合わせておく (続けて左でメニューを開く) */
+    /** 録画の一覧 (下の端・頭・長いタイトル)・録画の詳細。終わりは長いタイトル (行の左の端) にフォーカスしておく (続けて左でメニューを開く) */
     private fun recordings() {
-        // 開くと一番下 (いちばん古い録画) に合う
+        // 開くと一番下 (いちばん古い録画) にフォーカスが移る
         await("録画の一覧が出ません") { texts().any { "名城" in it } }
         SystemClock.sleep(SETTLE_MS)
         shot("recordings-bottom")
@@ -95,21 +95,21 @@ class Screenshots {
         shot("detail")
         press(KeyEvent.KEYCODE_BACK)
         await("録画の詳細が閉じません") { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } }
-        // 閉じると一覧は一番下に合わせ直すことがある。落ち着くのを待ち、居る所から長い題 (10/5) のほうへ送る
+        // 閉じると一覧は一番下にフォーカスを戻すことがある。落ち着くのを待ち、いる位置から長いタイトル (10/5) のほうへ送る
         await("録画の一覧に戻りません") { texts().any { "録画" == it } }
         SystemClock.sleep(SETTLE_MS)
         val bottom = texts().any { "名城" in it }
 
-        // 長い題 (話数を残して途中を切る)
+        // 長いタイトル (話数を残して途中を切る)
         focusCard("病弱令嬢", if (bottom) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN)
         SystemClock.sleep(SETTLE_MS)
         shot("long-title")
     }
 
     /**
-     * 左のメニューからライブへ (ここまでが README の動く絵) → 局の切り替え → 選局の間 → メニュー → 局の列 → 番組の詳細。
+     * 左のメニューからライブへ (ここまでが README のアニメーション) → 局の切り替え → 選局の間 → メニュー → 局の列 → 番組の詳細。
      * 選局の間 (1.5 秒たつと回るものが出る) を撮るときだけ、偽の denpa の選局を [SLOW_TUNE_MS] に延ばす。
-     * ほかは速く映す (替えたときの局と番組の知らせは、頼んでから 4 秒で消える)
+     * ほかは速く映す (替えたときの局と番組の知らせは、リクエストしてから 4 秒で消える)
      */
     private fun live(denpa: FakeDenpa) {
         frame(1800)
@@ -122,7 +122,7 @@ class Screenshots {
         SystemClock.sleep(SETTLE_MS)
         shot("drawer")
         frame(1500)
-        // メニューは「録画」に合って開く。下で「ライブ」へ、決定で映す
+        // メニューは「録画」にフォーカスして開く。下で「ライブ」へ、決定で映す
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         SystemClock.sleep(FOCUS_MS)
         frame(900)
@@ -134,7 +134,7 @@ class Screenshots {
         awaitTuned(denpa)
         frame(1500)
 
-        // 上で局の列 (いま映している局に合う)、右で隣の局、決定で替える (替える間は前の局の絵のまま回るもの)
+        // 上で局の列 (いま映している局にフォーカス)、右で隣の局、決定で替える (替える間は前の局の映像のまま回るもの)
         press(KeyEvent.KEYCODE_DPAD_UP)
         await("上で局の列が開きません") { "地上波" in texts() }
         SystemClock.sleep(FOCUS_MS)
@@ -157,7 +157,7 @@ class Screenshots {
         shot("live")
         frame(1800)
 
-        // もう一度右。選局に時間がかかっている間 (前の局の絵のまま回るもの)
+        // もう一度右。選局に時間がかかっている間 (前の局の映像のまま回るもの)
         denpa.tuneMs = SLOW_TUNE_MS
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
         SystemClock.sleep(BUSY_MS)
@@ -191,7 +191,7 @@ class Screenshots {
         // 映像だけのライブの窓には字が無いので、空でも閉じたとみなす
         await("戻るで番組の詳細が閉じません") { "閉じる" !in windowTexts() }
         SystemClock.sleep(FOCUS_MS)
-        // もう一度の戻るで、いちばん上のメニューへ (「ライブ」に合う)
+        // もう一度の戻るで、いちばん上のメニューへ (「ライブ」にフォーカス)
         press(KeyEvent.KEYCODE_BACK)
         await("ライブから戻りません") { "設定" in texts() }
     }
@@ -275,15 +275,15 @@ class Screenshots {
     private fun barOpen() = texts().any { it.startsWith("CM 飛ばし") }
 
     /**
-     * `title` を含む録画のカードに合わせる。まだ組まれていなければ `key` で送ってから探し直す。
-     * 合ったかは上の段 (合わせている録画の番組名) に同じ題が出たかで見る (Compose の入力の合いは木では古いまま返ることがある。SmokeTest)
+     * `title` を含む録画のカードにフォーカスする。まだ組まれていなければ `key` で送ってから探し直す。
+     * フォーカスしたかは上の段 (フォーカスしている録画の番組名) に同じタイトルが出たかで見る (Compose の入力フォーカスはツリーでは古いまま返ることがある。SmokeTest)
      */
     private fun focusCard(title: String, key: Int) {
         val seen = mutableSetOf<String>()
         fun matching() = nodes().filter { n -> n.text?.toString()?.contains(title) == true }.also { list -> list.forEach { seen += it.text.toString() } }
         for (i in 0 until 16) {
             if (matching().size >= 2) return
-            // カードの中の題から、合わせられるもの (カード) をたどる
+            // カードの中のタイトルから、フォーカスできるもの (カード) をたどる
             val card = matching().firstNotNullOfOrNull { generateSequence(it) { n -> n.parent }.firstOrNull { n -> n.isFocusable } }
             if (card != null && card.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
                 SystemClock.sleep(KEY_GAP_MS)
@@ -292,10 +292,10 @@ class Screenshots {
             press(key)
             SystemClock.sleep(KEY_GAP_MS)
         }
-        error("「$title」に合いません (見えた題: $seen): ${texts()}")
+        error("「$title」にフォーカスできません (見えたタイトル: $seen): ${texts()}")
     }
 
-    /** `label` のボタンに合わせて押す (合わせるのは、撮る絵で合っているように) */
+    /** `label` のボタンにフォーカスして押す (撮る画面でフォーカスが当たっているように) */
     private fun click(label: String, prefix: Boolean = false) {
         val target = node { it.text?.toString()?.let { t -> if (prefix) t.startsWith(label) else t == label } == true }?.let(::clickable)
             ?: error("「$label」がありません: ${texts()}")
@@ -312,7 +312,7 @@ class Screenshots {
         shell("screencap -p $DIR/$name.png")
     }
 
-    /** README の動く絵の1こま。`ms` はそのこまを見せる長さ (CI が名前から読む) */
+    /** README のアニメーションの1コマ。`ms` はそのコマを見せる長さ (CI が名前から読む) */
     private fun frame(ms: Int) {
         frames++
         shot("navigation/%02d-%d".format(frames, ms))
@@ -341,7 +341,7 @@ class Screenshots {
         send(KeyEvent.ACTION_UP, 0, 0)
     }
 
-    /** キーを送る前に、アプリの窓 (ダイアログも) に入力の合いが来ているのを待つ (SmokeTest の awaitAppFocus) */
+    /** キーを送る前に、アプリの窓 (ダイアログも) に入力フォーカスが来ているのを待つ (SmokeTest の awaitAppFocus) */
     private fun awaitAppFocus() {
         val deadline = SystemClock.uptimeMillis() + WAIT_MS
         while (SystemClock.uptimeMillis() < deadline) {
@@ -408,21 +408,21 @@ class Screenshots {
         const val DIR = "/data/local/tmp/shots"
         val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
-        /** 合わせてから撮るまで (上の段の絵を替える・ポスターを読む・膨らむのを待つ) */
+        /** フォーカスしてから撮るまで (上の段の画像を替える・ポスターを読む・膨らむのを待つ) */
         const val SETTLE_MS = 3_000L
-        /** キーで合いを移してから撮るまで */
+        /** キーでフォーカスを移してから撮るまで */
         const val FOCUS_MS = 1_000L
         /** 選局の間を撮るときの偽の denpa の選局の長さと、ふだんの長さ */
         const val SLOW_TUNE_MS = 4_500L
         const val FAST_TUNE_MS = 300L
         /**
-         * 局を替えてから、回るものを撮るまで。左右の局の切り替えは離して 0.5 秒たってから頼み、頼んで 1.5 秒たつと回るものが出る。
+         * 局を替えてから、回るものを撮るまで。左右の局の切り替えは離して 0.5 秒たってからリクエストし、リクエストして 1.5 秒たつと回るものが出る。
          * 偽の denpa が答える ([SLOW_TUNE_MS]) より前
          */
         const val BUSY_MS = 2_800L
-        /** 速く映すとき、局を替えてから映りはじめるまで (離して 0.5 秒 + 選局 + 最初のこま) */
+        /** 速く映すとき、局を替えてから映りはじめるまで (離して 0.5 秒 + 選局 + 最初のフレーム) */
         const val FAST_SETTLE_MS = 1_200L
-        /** 回るものが消えてから、映像のこまが出るまで */
+        /** 回るものが消えてから、映像のフレームが出るまで */
         const val FIRST_FRAME_MS = 500L
         /** 局を替えたときの局と番組の知らせが消えるまで */
         const val NOTICE_MS = 5_000L

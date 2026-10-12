@@ -90,7 +90,7 @@ class ConnectTest {
     }
 
     @Test
-    fun 断られたら登録をはじめ_登録の画面の_URL_は接頭辞の下に解く() = runTest {
+    fun 断られたら登録をはじめ_登録の画面の_URL_は接頭辞の下で解決する() = runTest {
         for (refused in listOf(401, 403)) {
             denpa.enqueue(HEALTH_OK)
             denpa.enqueue("""{"error":"unauthorized"}""", code = refused)
@@ -140,7 +140,7 @@ class ConnectTest {
     }
 
     @Test
-    fun 映像と絵にも同じヘッダを付ける() {
+    fun 映像と画像にも同じヘッダを付ける() {
         assertEquals(mapOf("Authorization" to "Bearer denpa_abc"), authorizationHeaders("denpa_abc"))
         assertEquals(emptyMap<String, String>(), authorizationHeaders(null))
         assertNull(Http.bearer(""))

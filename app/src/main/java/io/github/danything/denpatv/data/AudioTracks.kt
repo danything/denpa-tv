@@ -51,7 +51,7 @@ enum class AudioSide(val wire: String, val fallbackLabel: String) {
 }
 
 /**
- * denpa が番組表から組み立てた選べる音声の1つ (ブラウザの `arib.ts` の `AudioTrack`)。`id` は `"0:main"` の形、
+ * denpa が番組表から組み立てた選べる音声の1つ (ブラウザの `arib.ts` の `AudioTrack`)。`id` は `"0:main"` の形式、
  * `stream` は何本目の音声か、`side` はどちら側か。局の `now.audios` と録画の `audios` で来る (denpa の docs/api.md)。
  * 番組表に音声が無ければ空 — デュアルモノを見分けられないので、左右をそのまま出す
  */
@@ -86,7 +86,7 @@ data class AudioChoice(val group: Int, val side: AudioSide?, val track: AudioTra
  * デュアルモノの名前は覚える名前に使わない (`named = false`。どちら側かは別に覚える。`AudioSide`)
  *
  * **denpa の `stream` (何本目の音声か) と Media3 の音声の並びは同じとみなす。** denpa 自身も `stream` を
- * ffmpeg の `-map 0:a:<stream>` (TS の PMT の並び) にそのまま渡してエンコードしているので、同じ前提に乗る。
+ * ffmpeg の `-map 0:a:<stream>` (TS の PMT の並び) にそのまま渡してエンコードしているので、同じ前提に立つ。
  * Media3 の TS の読み手も PMT の音声を PID の順に並べる (放送では主音声が先の PID)
  */
 fun audioChoices(groups: List<AudioTrack>, denpa: List<DenpaAudio>): List<AudioChoice> =
@@ -112,10 +112,10 @@ fun dualMonoCoefficients(side: AudioSide): FloatArray = when (side) {
 }
 
 /**
- * **変換して流すライブ・追っかけで頼む音声** (`?audio=<id>`)。エンコードしたものには音声が1本しか入っていない (denpa が選んでエンコードする)
- * ので、選び直すには denpa に頼み直す。元の TS は全部の音声が入っているので使わない (`audioChoices` で選ぶ)。
+ * **変換して流すライブ・追っかけでリクエストする音声** (`?audio=<id>`)。エンコードしたものには音声が1本しか入っていない (denpa が選んでエンコードする)
+ * ので、選び直すには denpa にリクエストし直す。元の TS は全部の音声が入っているので使わない (`audioChoices` で選ぶ)。
  *
- * - 選べるものが1つ以下なら null (頼まない。denpa の既定のまま)
+ * - 選べるものが1つ以下なら null (リクエストしない。denpa の既定のまま)
  * - この画面で選んだもの (`picked`) が並びにあれば、それ
  * - 無ければ denpa の既定 (放送の言う主音声、無ければ先頭)。それがデュアルモノなら、覚えている側 (`side`)
  */
@@ -127,6 +127,6 @@ fun bakedAudio(audios: List<DenpaAudio>, picked: String?, side: AudioSide): Denp
     return audios.firstOrNull { it.stream == default.stream && it.side == side.wire } ?: default
 }
 
-/** エンコードしたものを頼む URL に足す `&audio=<id>` (頼まなければ空) */
+/** エンコードしたものをリクエストする URL に足す `&audio=<id>` (リクエストしなければ空) */
 fun audioQuery(audio: DenpaAudio?): String =
     audio?.id?.takeIf { it.isNotBlank() }?.let { "&audio=" + URLEncoder.encode(it, "UTF-8") }.orEmpty()
