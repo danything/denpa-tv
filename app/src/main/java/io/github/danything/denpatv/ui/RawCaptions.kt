@@ -43,7 +43,7 @@ import java.io.IOException
 import java.net.URI
 
 /**
- * **TS の読み手が 0 に寄せた幅を覚えておく** (生の TS の字幕を放送の PTS で突き合わせるため。`Pts.broadcast`)。
+ * **TS の読み手が 0 に寄せた幅を覚えておく** (元の TS の字幕を放送の PTS で突き合わせるため。`Pts.broadcast`)。
  *
  * Media3 の TsExtractor は、最初の PTS を 0 に寄せた時刻でサンプルを出す。寄せ幅は渡した `TimestampAdjuster` が持って
  * いるので、**読み手を作るところで自分の `TimestampAdjuster` を渡して控えておく**。中身は `DefaultExtractorsFactory` と
@@ -107,14 +107,14 @@ class TsClock(private val inner: DefaultExtractorsFactory = DefaultExtractorsFac
 }
 
 /**
- * denpa から受け取る字幕 (Media3 は ARIB の字幕を読まない) の、画面に出すぶん。生の TS の字幕の口
- * (`rememberRawCaptions`) と、焼いた録画の `captions.json` (`rememberCaptionPages`)。描くのは `CaptionLayer`
+ * denpa から受け取る字幕 (Media3 は ARIB の字幕を読まない) の、画面に出すぶん。元の TS の字幕の口
+ * (`rememberRawCaptions`) と、エンコード済みの録画の `captions.json` (`rememberCaptionPages`)。描くのは `CaptionLayer`
  */
 class CaptionState(
     /** 文字の配置を描く字 (`DenpaApp.denpaFont`。アプリを開いたときに読む) */
     val font: DenpaFont,
 ) {
-    /** 選べる字幕があるか。操作の列の「字幕」の札を出すかに使う */
+    /** 選べる字幕があるか。操作の列の「字幕」のボタンを出すかに使う */
     var available by mutableStateOf(false)
     /** いま重ねている文字の配置 */
     var page by mutableStateOf<CaptionPage?>(null)
@@ -123,12 +123,12 @@ class CaptionState(
 }
 
 /**
- * **生の TS の字幕を受け取って、出す番のものを選ぶ。** 描くのは `CaptionLayer`。
+ * **元の TS の字幕を受け取って、出す番のものを選ぶ。** 描くのは `CaptionLayer`。
  *
- * - 字幕の入れ切りは焼いた録画の字幕と同じ設定 (端末ごと)。切ってある間も、選べる字幕があるかだけは訊く
- *   (札を出すため。分かったら切る)
+ * - 字幕のオン・オフはエンコード済みの録画の字幕と同じ設定 (端末ごと)。オフにしてある間も、選べる字幕があるかだけは訊く
+ *   (ボタンを出すため。分かったら切る)
  * - **映像が流れはじめてから頼む** — TS の読み手が最初の PTS を読むまで時計が無く、ライブは映像の口が
- *   開いていないと字幕の口が 404 を返す (denpa は字幕のためにチューナーを掴まない)
+ *   開いていないと字幕の口が 404 を返す (denpa は字幕のためにチューナーを使わない)
  * - `generation` が変わったら (局を替えた・頼み直した・シークした) 頼み直す。録画は頼むときの位置 (`fromMs`) から読ませる
  * - ライブは切れたら繋ぎ直す。録画は読み切ったら終わり
  *
@@ -150,7 +150,7 @@ fun rememberRawCaptions(
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
 
     LaunchedEffect(path, generation, enabled) {
-        // 選べる字幕は局 (録画) ごと。頼み直し・シークでは消さない (札がちらつく)
+        // 選べる字幕は局 (録画) ごと。頼み直し・シークでは消さない (ボタンがちらつく)
         if (state.key != path) {
             state.key = path
             state.available = false
@@ -158,9 +158,9 @@ fun rememberRawCaptions(
         state.timeline.clear()
         state.page = null
         if (path == null) return@LaunchedEffect
-        // 切ってあって、選べる字幕があるかはもう分かっている
+        // オフにしてあって、選べる字幕があるかはもう分かっている
         if (!enabled && state.available) return@LaunchedEffect
-        /** 続けて断られた回数。生TSが無い・映像が開かないままのときに頼み続けない */
+        /** 続けて断られた回数。元のTSが無い・映像が開かないままのときに頼み続けない */
         var refused = 0
         while (true) {
             // 映像が流れはじめる (頼み直した映像を TS の読み手が読みはじめる) まで待つ。
@@ -178,7 +178,7 @@ fun rememberRawCaptions(
                 throw e
             } catch (_: CaptionFeed.Refused) {
                 // 404 (映像の口がまだ開いていない・繋ぎ直しの間)。少し待って頼み直す。
-                // 続くなら、録画はやめる (生TSが無い)。ライブは間を空けて頼み続ける (チューナーの立ち上がりが遅いこともある)
+                // 続くなら、録画はやめる (元のTSが無い)。ライブは間を空けて頼み続ける (チューナーの立ち上がりが遅いこともある)
                 if (++refused >= MAX_REFUSED) {
                     if (fromMs != null) return@LaunchedEffect
                     delay(SLOW_RETRY_MS)
@@ -189,7 +189,7 @@ fun rememberRawCaptions(
                 refused = 0
                 false
             }
-            // 切ってある間に選べる字幕が分かった・録画を読み切った
+            // オフにしてある間に選べる字幕が分かった・録画を読み切った
             if (!enabled && state.available) return@LaunchedEffect
             if (finished && fromMs != null) return@LaunchedEffect
             delay(RETRY_MS)
@@ -225,7 +225,7 @@ fun rememberRawCaptions(
 }
 
 /**
- * **焼いた録画の字幕を、文字の配置で丸ごと受け取る** (`GET api/recordings/<id>/captions.json`)。再生位置を追い越していない
+ * **エンコード済みの録画の字幕を、文字の配置で丸ごと受け取る** (`GET api/recordings/<id>/captions.json`)。再生位置を追い越していない
  * 中の最後の1枚を出す (シークしても頼み直さない)。字幕を持たない録画は 404 で、そのときは何もしない
  */
 @Composable
@@ -273,7 +273,7 @@ fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUn
 }
 
 /**
- * 字幕の口を読み続ける。きれいに閉じたら true。`keepGoing` が false を返す間 (字幕を切ってある) は、
+ * 字幕の口を読み続ける。きれいに閉じたら true。`keepGoing` が false を返す間 (字幕をオフにしてある) は、
  * 選べる字幕が分かったところでやめる
  */
 private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGoing: () -> Boolean): Boolean = coroutineScope {

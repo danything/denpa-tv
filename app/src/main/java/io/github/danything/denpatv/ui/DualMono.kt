@@ -15,7 +15,7 @@ import io.github.danything.denpatv.data.dualMonoCoefficients
 import java.nio.ByteBuffer
 
 /**
- * **デュアルモノの片側を両耳へ配り直す** (ブラウザの denpa の生の道 `raw/engine.ts` と、焼く道の `-af pan` と同じ)。
+ * **デュアルモノの片側を両耳へ配り直す** (ブラウザの denpa の元の TS の経路 `raw/engine.ts` と、エンコードする経路の `-af pan` と同じ)。
  *
  * 2ch の PCM にだけ掛かり、`side` を替えればすぐ (いま出しているぶんの溜めの後から) 効く。`Both` ならそのまま通す。
  *
@@ -23,8 +23,8 @@ import java.nio.ByteBuffer
  * そのまま (単位行列) で繋ぐと休んだきりになり、観ている途中で主音声に替えても効かない (次に形式が変わるまで)。
  * 係数の形 (`ChannelMixingMatrix`) と混ぜ方 (`AudioMixingUtil.mix`) は同じものを使い、いつも動かしておいて毎回 `side` を読む。
  *
- * **PCM にしか掛からない** — AAC は既定どおり端末のデコーダで PCM に解いてから流すので掛かる (DefaultAudioSink は AAC を
- * そのまま出す道 (passthrough) を使わず、オフロードも既定で切)。焼いた AV1 の Opus も同じ
+ * **PCM にしか掛からない** — AAC は既定どおり端末のデコーダで PCM にデコードしてから流すので掛かる (DefaultAudioSink は AAC を
+ * そのまま出す道 (passthrough) を使わず、オフロードも既定でオフ)。エンコードした AV1 の Opus も同じ
  */
 @OptIn(UnstableApi::class)
 class DualMonoProcessor : BaseAudioProcessor() {

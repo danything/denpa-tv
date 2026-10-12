@@ -15,7 +15,7 @@ class StreamErrorsTest {
 
     @Test
     fun 長さの分からない流れが空で終わったら空とみなす() {
-        // denpa のライブ・追っかけが選局・焼くのに失敗して、200 のまま空で閉じた
+        // denpa のライブ・追っかけが選局・エンコードに失敗して、200 のまま空で閉じた
         val watch = EmptyWatch()
         watch.opened(unset, 0)
         assertTrue(watch.read(C.RESULT_END_OF_INPUT))
@@ -84,12 +84,12 @@ class StreamErrorsTest {
             message(badStatus, 404),
         )
         assertEquals(
-            "denpa が答えられません (HTTP 503)。denpa が動いているか確かめてください (ERROR_CODE_IO_BAD_HTTP_STATUS)",
+            "denpa でエラーが起きました (HTTP 503)。denpa が動いているか確かめてください (ERROR_CODE_IO_BAD_HTTP_STATUS)",
             message(badStatus, 503),
         )
-        assertEquals("denpa の答えが HTTP 400 (ERROR_CODE_IO_BAD_HTTP_STATUS)", message(badStatus, 400))
+        assertEquals("denpa が HTTP 400 を返しました (ERROR_CODE_IO_BAD_HTTP_STATUS)", message(badStatus, 400))
         assertEquals(
-            "denpa でないものが答えました (text/html)。接続先の URL を確かめてください (ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE)",
+            "denpa 以外のサーバーが応答しました (text/html)。接続先の URL を確かめてください (ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE)",
             message(PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE, type = "text/html"),
         )
         // 回線 (切れた・途中で終わった・HttpEngine の中の失敗)
@@ -99,7 +99,7 @@ class StreamErrorsTest {
         )
         assertTrue(message(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED).startsWith("denpa との繋がりが切れました"))
         assertEquals(
-            "届いたものを映像として読めませんでした (ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED)",
+            "受け取ったデータを映像として読み取れませんでした (ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED)",
             message(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED),
         )
         assertEquals("この端末では再生できない形式です (ERROR_CODE_DECODER_INIT_FAILED)", message(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED))

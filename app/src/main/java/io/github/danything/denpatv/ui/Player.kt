@@ -93,13 +93,13 @@ import kotlinx.coroutines.delay
 enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val afterRebufferMs: Int) {
     /** 録画。ExoPlayer の既定 */
     Recording(50_000, 50_000, 1_000, 2_000),
-    /** ライブ (denpa が焼く H.264 / AV1)。焼き上がりが塊で届くので少しは溜める */
+    /** ライブ (denpa がエンコードする H.264 / AV1)。エンコードした映像が塊で届くので少しは溜める */
     Live(2_000, 8_000, 1_000, 1_500),
-    /** 生の TS (MPEG-2)。届いたそばから出す */
+    /** 元の TS (MPEG-2)。届いたそばから出す */
     LowLatency(500, 2_000, 250, 500),
 }
 
-/** ライブ・追っかけの溜め方。生の TS は届いたそばから出す */
+/** ライブ・追っかけの溜め方。元の TS は届いたそばから出す */
 val LiveQuality.buffering: Buffering get() = if (this == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
 
 /**
@@ -120,7 +120,7 @@ fun dataSourceFactory(context: Context, engine: EngineHttp?, token: String?): Da
     }
     // 家の外の denpa に登録してあれば、映像にもトークンを付ける
     http.setDefaultRequestProperties(authorizationHeaders(token))
-    // 200 のまま空で閉じた流れ (選局・焼くのに失敗した) を見分ける (`EmptyStreamException`)
+    // 200 のまま空で閉じた流れ (選局・エンコードに失敗した) を見分ける (`EmptyStreamException`)
     return DefaultDataSource.Factory(context, EmptyGuardDataSource.Factory(http))
 }
 
@@ -129,7 +129,7 @@ fun authorizationHeaders(token: String?): Map<String, String> =
     Http.bearer(token)?.let { mapOf("Authorization" to it) } ?: emptyMap()
 
 /**
- * `clock` は TS の読み手が 0 に寄せた幅を覚える (生の TS の字幕を放送の PTS で突き合わせるため。RawCaptions.kt)。
+ * `clock` は TS の読み手が 0 に寄せた幅を覚える (元の TS の字幕を放送の PTS で突き合わせるため。RawCaptions.kt)。
  * 読み手の作り方は Media3 の既定と同じ。`dualMono` は音の出口の手前に挟む (デュアルモノの片側を両耳へ。DualMono.kt)
  */
 @OptIn(UnstableApi::class)
@@ -187,19 +187,19 @@ fun chaptersOf(tracks: Tracks): List<ChapterMark> =
         .toList()
 
 /**
- * 映像と字幕と、上に重ねる文字。キーは呼ぶ側が受ける (ライブは局送り、録画は送り戻し)。
+ * 映像と字幕と、上に重ねる文字。キーは呼ぶ側が受ける (ライブは局の切り替え、録画は送り戻し)。
  * **決定 (OK) は短押しと長押しを分けて `onCenter` に渡す** (録画・追っかけ・ライブとも長押しで番組の詳しいところ。情報キーの無いリモコンが多いので)。
  * 長押しは繰り返しの印でも、押したままの長さでも決まる (`CenterPress`)。
  *
- * 上に重ねたもの (ライブのメニュー・操作の帯) を閉じたら、**必ず映像にキーを戻す** — 閉じたものに合っていたまま
+ * 上に重ねたもの (ライブのメニュー・操作バー) を閉じたら、**必ず映像にキーを戻す** — 閉じたものに合っていたまま
  * 消えると、どこにも合わずリモコンが効かなくなる。`active` の間は**映像そのものに合っているか見張り、外れていたら
- * 取り戻す** (閉じたものが消える間・帯が勝手に消えたとき・端末によって遅れて合いが外れる場合も)。
+ * 取り戻す** (閉じたものが消える間・操作バーが勝手に消えたとき・端末によって遅れて合いが外れる場合も)。
  * 開いている間と、画面を離れるとき (一覧に戻る間に一覧が合いを取るので、取り返さない) は `active = false`
  *
- * **字幕 (`captions`) は、下に重ねたもの (知らせ・`above` の帯やメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
+ * **字幕 (`captions`) は、下に重ねたもの (知らせ・`above` の操作バーやメニュー) の上へ逃がす** (`OverlayInsets`)。出したらすぐ上へ、閉じたら滑らかに戻す
  *
- * **`above` が帯を出している間 (`covered`) は、下の端の知らせを出さない** (どちらも下の端の板なので重なる)。知らせとエラーは
- * 帯の題の2行目に添える (`LocalBarNotice`。`ControlBar` が読む)。帯の中で押したもの (CM 飛ばし・画質) の返事もそこに出る
+ * **`above` が操作バーを出している間 (`covered`) は、下の端の知らせを出さない** (どちらも下の端の板なので重なる)。知らせとエラーは
+ * 操作バーのタイトルの2行目に添える (`LocalBarNotice`。`ControlBar` が読む)。操作バーの中で押したもの (CM 飛ばし・画質) の返事もそこに出る
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -207,10 +207,10 @@ fun PlayerFrame(
     player: ExoPlayer,
     overlay: CharSequence?,
     error: String?,
-    /** 映像がキーを受けるか。上に重ねたもの (メニュー・帯) が開いている間は false。閉じたら映像に戻す */
+    /** 映像がキーを受けるか。上に重ねたもの (メニュー・操作バー) が開いている間は false。閉じたら映像に戻す */
     active: Boolean = true,
     onKey: (KeyEvent) -> Boolean,
-    /** キーを離したとき (ライブの局送りは、離してから待って頼む) */
+    /** キーを離したとき (ライブの局の切り替えは、離してから待って頼む) */
     onKeyUp: (KeyEvent) -> Unit = {},
     onCenter: (CenterPress.Action) -> Unit = {},
     /** 知らせの下に出す進み (ライブの番組の進み)。null なら出さない */
@@ -221,7 +221,7 @@ fun PlayerFrame(
     busyLabel: String = "読み込んでいます",
     /** 繋ぎ直しの様子 (`rememberPlayer` の `recovery`)。繋ぎ直している間は前の絵を残して「繋ぎ直しています」 */
     recovery: Recovery,
-    /** `above` が帯を出しているか。出している間は、知らせを下の端に出さずに帯の題に添える */
+    /** `above` が操作バーを出しているか。出している間は、知らせを下の端に出さずに操作バーのタイトルに添える */
     covered: Boolean = false,
     above: @Composable BoxScope.() -> Unit = {},
 ) {
@@ -282,7 +282,7 @@ fun PlayerFrame(
     }
 }
 
-/** 下の端に出す知らせ。操作の帯と同じく、下の端に小さく (下から薄く暗くするだけ) */
+/** 下の端に出す知らせ。操作バーと同じく、下の端に小さく (下から薄く暗くするだけ) */
 @Composable
 private fun BoxScope.Notice(text: CharSequence?, progress: Pair<Long, Long>?) {
     if (text == null) return
@@ -292,7 +292,7 @@ private fun BoxScope.Notice(text: CharSequence?, progress: Pair<Long, Long>?) {
     }
 }
 
-/** 帯 (`ControlBar`) の題の2行目に添える知らせ。`PlayerFrame` が帯を出している間 (`covered`) だけ渡す */
+/** 操作バー (`ControlBar`) の題の2行目に添える知らせ。`PlayerFrame` が操作バーを出している間 (`covered`) だけ渡す */
 val LocalBarNotice = compositionLocalOf<CharSequence?> { null }
 
 /** 映像に合っているか見張る間 (ミリ秒) */
@@ -457,7 +457,7 @@ class Flash internal constructor() {
         shownAt = System.nanoTime()
     }
 
-    /** すぐ消す。帯を開いたとき (開く前の知らせ (開いてすぐの番組名など) を、帯の題に持ち込まない) */
+    /** すぐ消す。操作バーを開いたとき (開く前の知らせ (開いてすぐの番組名など) を、操作バーのタイトルに持ち込まない) */
     fun clear() {
         text = null
     }
@@ -485,7 +485,7 @@ data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono:
 
 /**
  * ExoPlayer を画面の寿命に合わせる。エラーは文にして返す。
- * `clock` は生の TS の字幕の時計 (`rememberRawCaptions` と同じものを渡す)。
+ * `clock` は元の TS の字幕の時計 (`rememberRawCaptions` と同じものを渡す)。
  *
  * `reconnect` の決まりで、**切れた・止まったら繋ぎ直す** (`Recovery`)。繋ぎ直している間はエラーを出さず、前の絵を残して幕が
  * 「繋ぎ直しています」を出す。諦めたとき (直らないもの・回数を使い切った) だけエラーを返す
@@ -530,7 +530,7 @@ fun rememberPlayer(
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != Player.STATE_ENDED || !recovery.plan.endedIsLost) return
-                // 映したあとに終わったのは denpa の入れ替え。映る前に終わったのは、焼くのを断られたのかもしれない (何度か)
+                // 映したあとに終わったのは denpa の入れ替え。映る前に終わったのは、エンコードを断られたのかもしれない (何度か)
                 val verdict = if (recovery.pictured) Reconnect.Verdict.Retry else Reconnect.Verdict.RetryFew
                 if (!recovery.retry("ended 流れが終わった (映して ${recovery.playedSeconds()} 秒)", verdict)) error = EMPTY_STREAM_MESSAGE
             }

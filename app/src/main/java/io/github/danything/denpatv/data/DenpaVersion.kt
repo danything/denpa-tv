@@ -10,7 +10,7 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
     companion object {
         /**
          * `api/health` の `version` (リリースのタグ。`v1.44.0`。v の無いものも読む) を読む。
-         * 手元・develop の `dev` やタグでないもの (手で焼いたイメージ) は null
+         * 手元・develop の `dev` やタグでないもの (手でビルドしたイメージ) は null
          */
         fun parse(tag: String): DenpaVersion? {
             val (major, minor, patch) = TAG.matchEntire(tag.trim())?.destructured ?: return null
@@ -23,7 +23,7 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 
 /**
  * このアプリが要る denpa の版 (docs/pairing.md の「要る denpa の版」)。いちばん新しく足された口に合わせる:
- * 字幕の文字の配置 (生TSの字幕の口の 0x22・焼いた録画の `captions.json`) が 1.50.0 から
+ * 字幕の文字の配置 (元のTSの字幕の口の 0x22・エンコード済みの録画の `captions.json`) が 1.50.0 から
  */
 val MIN_DENPA = DenpaVersion(1, 50, 0)
 

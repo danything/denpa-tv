@@ -53,12 +53,12 @@ object YieldPlan {
 
     /** 切り替えたときの知らせ。番組名は放送の字で出すので、呼ぶ側が挟む (前・後) */
     const val SWITCHED_HEAD = "録画のためチャンネルを切り替えました: "
-    const val SWITCHED_TAIL = " (録画中を再生しています)"
+    const val SWITCHED_TAIL = " (録画中の番組を再生しています)"
 
     /** 「ライブに戻る」を試して入れなかったときの知らせ */
     fun refused(endAt: Long, zone: TimeZone = TimeZone.getDefault()): String =
         "録画が終わるまでライブは見られません (${SimpleDateFormat("HH:mm", Locale.JAPAN).apply { timeZone = zone }.format(Date(endAt))})"
 
-    /** メニューの札。押すと頼み直しを試す */
+    /** メニューのボタン。押すと頼み直しを試す */
     const val BACK_TO_LIVE = "ライブに戻る"
 }

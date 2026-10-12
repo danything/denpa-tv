@@ -49,7 +49,7 @@ sealed interface UpdateState {
     data object Checking : UpdateState
     /** 新しい版は無い (`latest` は見えたいちばん新しい版。リリースが無ければ null) */
     data class UpToDate(val latest: String?) : UpdateState
-    /** 手元で焼いた版 (0.0.0-dev)。リリースと署名が違うので上げない */
+    /** 手元でビルドした版 (0.0.0-dev)。リリースと署名が違うので上げない */
     data class DevBuild(val latest: String?) : UpdateState
     data class CheckFailed(val message: String) : UpdateState
     /** 新しい版がある。裏で取れなかった (取らない) ときの知らせで、押すと取ってきて入れる */
@@ -171,7 +171,7 @@ class Updater(private val app: DenpaApp) {
     private val started = AtomicBoolean(false)
 
     /**
-     * 開いたとき (プロセスごとに1回。プロセスが落ちて画面が作り直されたときも)。手元で焼いた版では見ない。
+     * 開いたとき (プロセスごとに1回。プロセスが落ちて画面が作り直されたときも)。手元でビルドした版では見ない。
      * 許可の画面へ送ったあとに開き直したのなら、続けて入れる (許可が見えなくても入れてみる) (`resumeRequest`)
      */
     fun checkOnStart() {

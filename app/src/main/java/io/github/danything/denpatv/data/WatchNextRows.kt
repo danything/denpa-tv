@@ -171,7 +171,7 @@ class WatchNextPosters : ContentProvider() {
     override fun onCreate() = true
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
-        if (mode != "r") throw SecurityException("読むだけです")
+        if (mode != "r") throw SecurityException("読み取り専用です")
         val id = uri.lastPathSegment?.toLongOrNull()?.takeIf { uri.pathSegments.size == 1 } ?: throw FileNotFoundException(uri.toString())
         val file = file(context ?: throw FileNotFoundException(uri.toString()), id)
         if (!file.exists()) throw FileNotFoundException(uri.toString())

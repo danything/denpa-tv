@@ -62,16 +62,16 @@ import io.github.danything.denpatv.data.DetailText
 import io.github.danything.denpatv.data.arrangeDetail
 import kotlinx.coroutines.launch
 
-/** 詳しくに出す中身。録画 (一覧・再生中) とライブで同じ形 (`ProgramDetailDialog`) */
+/** 詳細に出す中身。録画 (一覧・再生中) とライブで同じ形 (`ProgramDetailDialog`) */
 data class DetailFacts(
     val title: String,
     /** 「局 ・ 10/6(火) 21:00〜21:54 (54分)」(`programMeta`)。頭の局名 (`service`) は放送の字 */
     val meta: String,
     /** 局名 (`meta` の頭)。無ければ null */
     val service: String? = null,
-    /** 札 (ジャンル・映像・音声・形) */
+    /** ラベル (ジャンル・映像・音声・形) */
     val chips: List<String> = emptyList(),
-    /** 札の頭に赤で出す印 (「● 録画中」「録画予約済み」) */
+    /** ラベルの頭に赤で出す印 (「● 録画中」「録画予約済み」) */
     val badge: String? = null,
     /** 進み (位置, 長さ。ミリ秒) と、その横の1言 (「あと 32 分」「0:14:22 まで観た」)。null なら出さない */
     val progress: Pair<Long, Long>? = null,
@@ -84,36 +84,36 @@ data class DetailFacts(
 )
 
 /**
- * 詳しくの札。並べた順に左から。**「閉じる」はどの詳しくでも右の端** (開き方で並びを変えない)。
- * `primary` は主な操作 (azure で塗る。「続きから再生」「録画」)。開いたときは `initial` の札、無ければ先頭に合う
+ * 詳細のボタン。並べた順に左から。**「閉じる」はどの詳細でも右の端** (開き方で並びを変えない)。
+ * `primary` は主な操作 (azure で塗る。「続きから再生」「録画」)。開いたときは `initial` のボタン、無ければ先頭に合う
  */
 class DetailAction(val label: String, val primary: Boolean = false, val initial: Boolean = false, val onClick: () -> Unit)
 
-/** 詳しくを閉じる札 */
+/** 詳細を閉じるボタン */
 internal const val CLOSE = "閉じる"
 
 /**
- * 番組の詳しく。**録画の一覧 (カードの長押し)・録画と追っかけの再生中・ライブ (決定の長押し・情報キー) で同じもの**。
- * ブラウザの denpa の詳細 (観る画面の右の欄、`ProgramFacts`) と同じ並びで、テレビの詳しくの画面 (Android TV の
+ * 番組の詳細。**録画の一覧 (カードの長押し)・録画と追っかけの再生中・ライブ (決定の長押し・情報キー) で同じもの**。
+ * ブラウザの denpa の詳細 (観る画面の右の欄、`ProgramFacts`) と同じ並びで、テレビの詳細の画面 (Android TV の
  * 詳細ページ) の作りに合わせる:
  *
- * - 左に寄せた1列。**番組名を大きく、その下に1行の「局 ・ 日時 (長さ)」**、ライブなら番組の進みと残り、札の列
+ * - 左に寄せた1列。**番組名を大きく、その下に1行の「局 ・ 日時 (長さ)」**、ライブなら番組の進みと残り、ボタンの列
  *   (録画中の印・ジャンル・映像・音声)
- * - **その下に操作の札を横1列**。主な操作が先頭で、「閉じる」が右の端。開いたときは主な操作に合う (録画は「続きから再生」、
+ * - **その下に操作のボタンを横1列**。主な操作が先頭で、「閉じる」が右の端。開いたときは主な操作に合う (録画は「続きから再生」、
  *   ライブは「録画」)。再生中と、ライブで録っている・録る予定のときは「閉じる」に合う (映像に戻るだけ)
  * - 下の残りに説明と放送の詳細を**1列で、大事な順に** (`arrangeDetail`): 説明と番組内容・あらすじをまとめた読みもの →
  *   出演者 → 制作・音楽など (小さく詰めて) → おしらせ。ホームページは出さない。1行は画面の6割ほどまで (長すぎると読みにくい)。
- *   収まらなければ札の列から下キーで本文に入り、**上下で読み進める** (いちばん上でもう一度上を押すと札に戻る)
+ *   収まらなければボタンの列から下キーで本文に入り、**上下で読み進める** (いちばん上でもう一度上を押すとボタンに戻る)
  * - 絵 (ポスター) は出さない (文字を読むための画面。映像は一覧のカードと再生の画面で見える)
  *
- * 長押しで開くので、離すまでの決定はこの窓では受けない (`ignoreHeldCenter`。先頭の札が押されないように)。戻るで閉じる
+ * 長押しで開くので、離すまでの決定はこの窓では受けない (`ignoreHeldCenter`。先頭のボタンが押されないように)。戻るで閉じる
  */
 @Composable
 fun ProgramDetailDialog(
     facts: DetailFacts,
     actions: List<DetailAction>,
     onDismiss: () -> Unit,
-    /** 札の下に出す1行 (ライブの「録画を始めます」など) */
+    /** ボタンの下に出す1行 (ライブの「録画を始めます」など) */
     note: String? = null,
     /** 映像の上に開く (再生中・ライブ)。右へ行くほど少し透かして映像を覗かせる。一覧の上では透かさない */
     overVideo: Boolean = false,
@@ -124,7 +124,7 @@ fun ProgramDetailDialog(
 ) {
     val first = remember { FocusRequester() }
     val start = actions.indexOfFirst { it.initial }.coerceAtLeast(0)
-    // 札の数が変わったら (ライブで録画を頼んで「録画」の札が消えた) 合わせ直す。合っていた札が消えると、どこにも合わなくなる
+    // ボタンの数が変わったら (ライブで録画を頼んで「録画」のボタンが消えた) 合わせ直す。合っていたボタンが消えると、どこにも合わなくなる
     LaunchedEffect(actions.size) { runCatching { first.requestFocus() } }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val surface = MaterialTheme.colorScheme.surface
@@ -148,7 +148,7 @@ fun ProgramDetailDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     actions.forEachIndexed { index, action ->
                         val modifier = if (index == start) Modifier.focusRequester(first) else Modifier
-                        // 札の文字は1行のまま伸ばす (「もう一度押すと削除」になっても切れないように)
+                        // ボタンの文字は1行のまま伸ばす (「もう一度押すと削除」になっても切れないように)
                         DenpaButton(onClick = action.onClick, modifier = modifier, primary = action.primary) {
                             Text(action.label, maxLines = 1, softWrap = false)
                         }
@@ -192,7 +192,7 @@ private fun Header(facts: DetailFacts, token: String?) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             chips.forEach { label ->
                 val badge = label == facts.badge
-                // 高さを揃える (英数字だけの札 (「1080i MPEG-2」) は字の高さが低い)
+                // 高さを揃える (英数字だけのラベル (「1080i MPEG-2」) は字の高さが低い)
                 Box(
                     Modifier
                         .height(CHIP_HEIGHT)
@@ -214,7 +214,7 @@ private fun Header(facts: DetailFacts, token: String?) {
 
 /**
  * 説明と放送の詳細を1列で (`arrangeDetail` の並び)。**収まらなければ合わせられて、上下で読み進める**
- * (合っている間は縁を出す。続きがあれば本文の下の1行に「▼ 下キーで続き」)。いちばん上で上を押すと、合いが先頭の札へ戻る
+ * (合っている間は縁を出す。続きがあれば本文の下の1行に「▼ 下キーで続き」)。いちばん上で上を押すと、合いが先頭のボタンへ戻る
  */
 @Composable
 private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
@@ -226,7 +226,7 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
     var viewport by remember { mutableIntStateOf(0) }
     val scrollable = scroll.maxValue > 0
     val frame = if (focused) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else Color.Transparent
-    // 本文に合っている間に中身が縮んで収まった (ライブで番組が替わった) ら、先頭の札へ戻す (合いの行き場が無くならないように)
+    // 本文に合っている間に中身が縮んで収まった (ライブで番組が替わった) ら、先頭のボタンへ戻す (合いの行き場が無くならないように)
     LaunchedEffect(scrollable) {
         if (!scrollable && focused) runCatching { up.requestFocus() }
     }
@@ -244,7 +244,7 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
             .focusProperties {
                 // 収まっていれば合わせない (下キーで止まるだけになる)
                 canFocus = scrollable
-                // 上で抜けるときは先頭の札へ (近いもの = 真上の札に合うと、右の端の「閉じる」に飛ぶ)
+                // 上で抜けるときは先頭のボタンへ (近いもの = 真上のボタンに合うと、右の端の「閉じる」に飛ぶ)
                 this.up = up
             }
             .then(
@@ -261,7 +261,7 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
                                     if (scroll.canScrollForward) scope.launch { scroll.animateScrollBy(step) }
                                     true
                                 }
-                                // 上: 戻る。いちばん上なら受けない (上の札へ合いが移る)
+                                // 上: 戻る。いちばん上なら受けない (上のボタンへ合いが移る)
                                 Key.DirectionUp -> if (scroll.canScrollBackward) {
                                     scope.launch { scroll.animateScrollBy(-step) }
                                     true
@@ -349,17 +349,17 @@ private val TEXT_WIDTH = 600.dp
 /** 本文の縁の内側の余白 */
 private val BODY_PADDING = 16.dp
 
-/** 札の高さ */
+/** ボタンの高さ */
 private val CHIP_HEIGHT = 30.dp
 
-/** 札の頭の印の色。録画中は赤 (一覧のカードの「● 録画中」と同じ)、予約済みは琥珀 (局の列の札の印と同じ) */
+/** ラベルの頭の印の色。録画中は赤 (一覧のカードの「● 録画中」と同じ)、予約済みは琥珀 (局の列のカードの印と同じ) */
 private fun badgeColor(label: String): Color = if (label == RESERVED) Palette.Reserved else Palette.Recording
 
 private fun badgeTextColor(label: String): Color = if (label == RESERVED) Palette.Background else Color.White
 
 /**
- * 詳しくの後ろにうすく敷く録画の絵。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (`BlurredImage`)、
- * 地の色で大きく覆い、左と下へ溶かす。絵の要素としては出さない (縁も札も付けない)
+ * 詳細の後ろにうすく敷く録画の絵。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (`BlurredImage`)、
+ * 地の色で大きく覆い、左と下へ溶かす。絵の要素としては出さない (縁もボタンも付けない)
  */
 @Composable
 private fun BoxScope.FaintBackdrop(url: String, token: String?) {

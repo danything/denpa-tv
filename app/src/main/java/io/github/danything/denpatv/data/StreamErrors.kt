@@ -12,7 +12,7 @@ import androidx.media3.datasource.TransferListener
 
 /**
  * **denpa が 200 を返したのに何も送らずに閉じた。** ライブ・追っかけの口 (`live` / `chase`) は、流しはじめてから
- * 選局や焼き手の立ち上げに失敗すると、200 のまま空で閉じる (チューナーの空きが無い・放送休止・ffmpeg が降りた。
+ * 選局やエンコーダの立ち上げに失敗すると、200 のまま空で閉じる (チューナーの空きが無い・放送休止・ffmpeg が降りた。
  * denpa の `sessionStream`)。Media3 はこれを「どの読み手も読めない」(`ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED`)
  * と言うだけで、空だったのか中身が違ったのかが分からないので、ここで見分けて名前を付ける。
  *
@@ -95,13 +95,13 @@ fun playbackMessage(errorCode: Int, codeName: String, httpStatus: Int?, contentT
     val what = when {
         httpStatus == 404 -> "denpa に見つかりません (HTTP 404)。一覧を開き直してください"
         httpStatus == 403 -> "denpa にアクセスを拒否されました (HTTP 403)"
-        httpStatus != null && httpStatus >= 500 -> "denpa が答えられません (HTTP $httpStatus)。denpa が動いているか確かめてください"
-        httpStatus != null -> "denpa の答えが HTTP $httpStatus"
+        httpStatus != null && httpStatus >= 500 -> "denpa でエラーが起きました (HTTP $httpStatus)。denpa が動いているか確かめてください"
+        httpStatus != null -> "denpa が HTTP $httpStatus を返しました"
         errorCode == PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE ->
-            "denpa でないものが答えました${contentType?.let { " ($it)" } ?: ""}。接続先の URL を確かめてください"
+            "denpa 以外のサーバーが応答しました${contentType?.let { " ($it)" } ?: ""}。接続先の URL を確かめてください"
         errorCode in 2000..2999 || errorCode == PlaybackException.ERROR_CODE_TIMEOUT ->
             "denpa との繋がりが切れました。denpa とネットワークを確かめてください"
-        errorCode in 3000..3999 -> "届いたものを映像として読めませんでした"
+        errorCode in 3000..3999 -> "受け取ったデータを映像として読み取れませんでした"
         errorCode in 4000..4999 -> "この端末では再生できない形式です"
         errorCode in 5000..5999 -> "音声を再生できませんでした"
         else -> null

@@ -23,8 +23,8 @@ import org.junit.rules.Timeout
  * `-e shots 1` を付けて走らせる。付けなければ何もしない (smoke では飛ばす)。
  *
  * 作り物の録画・局・番組 (`Showcase`) を返す偽の denpa に繋ぎ、docs/images/ の絵を全部 `/data/local/tmp/shots/<名前>.png` に撮る
- * (CI が adb pull で取ってくる)。繋ぐ画面 → 録画の一覧・詳しく → 左のメニューからライブ (局送り・選局の間・メニュー・局の列・番組の詳しく)
- * → 設定 → 録画の再生 (字幕・操作の列・詳しく・最後まで観たとき) → 追っかけ、の順。README の頭の動く絵 (navigation) は
+ * (CI が adb pull で取ってくる)。繋ぐ画面 → 録画の一覧・詳細 → 左のメニューからライブ (局の切り替え・選局の間・メニュー・局の列・番組の詳細)
+ * → 設定 → 録画の再生 (字幕・操作の列・詳細・最後まで観たとき) → 追っかけ、の順。README の頭の動く絵 (navigation) は
  * `navigation/<番号>-<見せるミリ秒>.png` のこまに撮り、CI が1つの webp に繋ぐ。
  * 終わりに一覧を上下に送り、こまの描き時間を測れるようにする (前と後の見比べ用。読むのは scripts/shots-run.sh)
  */
@@ -74,27 +74,27 @@ class Screenshots {
         }
     }
 
-    /** 録画の一覧 (下の端・頭・長い題)・録画の詳しく。終わりは長い題 (行の左の端) に合わせておく (続けて左でメニューを開く) */
+    /** 録画の一覧 (下の端・頭・長い題)・録画の詳細。終わりは長い題 (行の左の端) に合わせておく (続けて左でメニューを開く) */
     private fun recordings() {
         // 開くと一番下 (いちばん古い録画) に合う
         await("録画の一覧が出ません") { texts().any { "名城" in it } }
         SystemClock.sleep(SETTLE_MS)
         shot("recordings-bottom")
 
-        // 一覧の頭 (録っている最中の録画。その下の段に焼いている最中の録画)
+        // 一覧の頭 (録っている最中の録画。その下の段にエンコード中の録画)
         focusCard("辺境に追放された薬師令嬢", KeyEvent.KEYCODE_DPAD_UP)
         SystemClock.sleep(SETTLE_MS)
         shot("recordings")
 
-        // 長押しで詳しく (続きのある録画。放送の詳細が揃っている)
+        // 長押しで詳細 (続きのある録画。放送の詳細が揃っている)
         focusCard("星読みの薬師", KeyEvent.KEYCODE_DPAD_DOWN)
         SystemClock.sleep(SETTLE_MS)
         longPress(KeyEvent.KEYCODE_DPAD_CENTER)
-        await("録画の詳しくが開きません") { windowTexts().any { it.startsWith("続きから再生") } }
+        await("録画の詳細が開きません") { windowTexts().any { it.startsWith("続きから再生") } }
         SystemClock.sleep(SETTLE_MS)
         shot("detail")
         press(KeyEvent.KEYCODE_BACK)
-        await("録画の詳しくが閉じません") { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } }
+        await("録画の詳細が閉じません") { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } }
         // 閉じると一覧は一番下に合わせ直すことがある。落ち着くのを待ち、居る所から長い題 (10/5) のほうへ送る
         await("録画の一覧に戻りません") { texts().any { "録画" == it } }
         SystemClock.sleep(SETTLE_MS)
@@ -107,7 +107,7 @@ class Screenshots {
     }
 
     /**
-     * 左のメニューからライブへ (ここまでが README の動く絵) → 局送り → 選局の間 → メニュー → 局の列 → 番組の詳しく。
+     * 左のメニューからライブへ (ここまでが README の動く絵) → 局の切り替え → 選局の間 → メニュー → 局の列 → 番組の詳細。
      * 選局の間 (1.5 秒たつと回るものが出る) を撮るときだけ、偽の denpa の選局を [SLOW_TUNE_MS] に延ばす。
      * ほかは速く映す (替えたときの局と番組の知らせは、頼んでから 4 秒で消える)
      */
@@ -184,12 +184,12 @@ class Screenshots {
         await("戻るで局の列が閉じません") { "地上波" !in texts() }
 
         longPress(KeyEvent.KEYCODE_DPAD_CENTER)
-        await("決定の長押しで番組の詳しくが開きません") { windowTexts().let { "閉じる" in it && it.any { t -> "月曜九時のドラマ" in t } } }
+        await("決定の長押しで番組の詳細が開きません") { windowTexts().let { "閉じる" in it && it.any { t -> "月曜九時のドラマ" in t } } }
         SystemClock.sleep(SETTLE_MS)
         shot("live-detail")
         press(KeyEvent.KEYCODE_BACK)
         // 映像だけのライブの窓には字が無いので、空でも閉じたとみなす
-        await("戻るで番組の詳しくが閉じません") { "閉じる" !in windowTexts() }
+        await("戻るで番組の詳細が閉じません") { "閉じる" !in windowTexts() }
         SystemClock.sleep(FOCUS_MS)
         // もう一度の戻るで、いちばん上のメニューへ (「ライブ」に合う)
         press(KeyEvent.KEYCODE_BACK)
@@ -211,7 +211,7 @@ class Screenshots {
         shot("settings")
     }
 
-    /** 録画の再生。字幕 (作り物の文字の配置。`FakeCaptions.showcase`)・下キーの操作の列・決定の長押しの詳しく・最後まで観たとき */
+    /** 録画の再生。字幕 (作り物の文字の配置。`FakeCaptions.showcase`)・下キーの操作の列・決定の長押しの詳細・最後まで観たとき */
     private fun recording() {
         open("denpa://recording/${Showcase.CAPTION_ID}")
         await("字幕が出ません") { nodes().any { it.contentDescription?.contains("字幕を文字で描く") == true } }
@@ -228,11 +228,11 @@ class Screenshots {
         await("戻るで操作の列が閉じません") { !barOpen() }
 
         longPress(KeyEvent.KEYCODE_DPAD_CENTER)
-        await("決定の長押しで詳しくが開きません") { windowTexts().let { "閉じる" in it && it.any { t -> "荷物持ち" in t } } }
+        await("決定の長押しで詳細が開きません") { windowTexts().let { "閉じる" in it && it.any { t -> "荷物持ち" in t } } }
         SystemClock.sleep(SETTLE_MS)
         shot("player-detail")
         press(KeyEvent.KEYCODE_BACK)
-        await("戻るで詳しくが閉じません") { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } }
+        await("戻るで詳細が閉じません") { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } }
 
         // 止まっていれば動かして、最後まで観る (作り物の録画は 30 秒)
         if (texts().any { it.startsWith("一時停止  ") }) press(KeyEvent.KEYCODE_DPAD_CENTER)
@@ -271,7 +271,7 @@ class Screenshots {
         SystemClock.sleep(FIRST_FRAME_MS)
     }
 
-    /** 録画の帯 (操作の列) が開いている */
+    /** 録画の操作バー (操作の列) が開いている */
     private fun barOpen() = texts().any { it.startsWith("CM 飛ばし") }
 
     /**
@@ -295,7 +295,7 @@ class Screenshots {
         error("「$title」に合いません (見えた題: $seen): ${texts()}")
     }
 
-    /** `label` の札に合わせて押す (合わせるのは、撮る絵で合っているように) */
+    /** `label` のボタンに合わせて押す (合わせるのは、撮る絵で合っているように) */
     private fun click(label: String, prefix: Boolean = false) {
         val target = node { it.text?.toString()?.let { t -> if (prefix) t.startsWith(label) else t == label } == true }?.let(::clickable)
             ?: error("「$label」がありません: ${texts()}")
@@ -416,7 +416,7 @@ class Screenshots {
         const val SLOW_TUNE_MS = 4_500L
         const val FAST_TUNE_MS = 300L
         /**
-         * 局を替えてから、回るものを撮るまで。左右の局送りは離して 0.5 秒たってから頼み、頼んで 1.5 秒たつと回るものが出る。
+         * 局を替えてから、回るものを撮るまで。左右の局の切り替えは離して 0.5 秒たってから頼み、頼んで 1.5 秒たつと回るものが出る。
          * 偽の denpa が答える ([SLOW_TUNE_MS]) より前
          */
         const val BUSY_MS = 2_800L

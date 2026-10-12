@@ -56,11 +56,11 @@ class RecordingListTest {
         list.refresh()
         assertSame(first, list.items)
 
-        // 1件だけ焼き上がった: その録画だけ新しく、ほかは前のもの
-        answer = recordings(5).map { if (it.id == 3L) it.copy(title = "焼けた") else it }
+        // 1件だけエンコードが終わった: その録画だけ新しく、ほかは前のもの
+        answer = recordings(5).map { if (it.id == 3L) it.copy(title = "エンコード済み") else it }
         list.refresh()
         assertNotSame(first, list.items)
-        list.items.forEach { if (it.id == 3L) assertEquals("焼けた", it.title) else assertSame(first.first { old -> old.id == it.id }, it) }
+        list.items.forEach { if (it.id == 3L) assertEquals("エンコード済み", it.title) else assertSame(first.first { old -> old.id == it.id }, it) }
     }
 
     @Test

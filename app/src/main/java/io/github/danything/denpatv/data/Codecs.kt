@@ -6,10 +6,10 @@ import android.media.MediaFormat
 import android.os.Build
 
 /**
- * この端末が解ける映像の形。`*Hardware` はハードウェアのデコーダがあるか。
+ * この端末がデコードできる映像の形。`*Hardware` はハードウェアのデコーダがあるか。
  *
- * **ライブはハードで解けるものから選ぶ。** ソフトの AV1 / MPEG-2 デコーダを持つ端末もあるが、
- * 1080i を流しっぱなしで解くには非力なことが多い。録画は解けさえすれば開く (`pickFile`)
+ * **ライブはハードでデコードできるものから選ぶ。** ソフトの AV1 / MPEG-2 デコーダを持つ端末もあるが、
+ * 1080i を流しっぱなしでデコードするには非力なことが多い。録画はデコードできさえすれば開く (`pickFile`)
  */
 data class Decoders(
     val av1: Boolean,
@@ -54,10 +54,10 @@ data class Decoders(
  * ライブの画質 (コーデック)。`codec` は denpa の `?codec=` にそのまま渡す値。名前と並びはブラウザの denpa の
  * 画質のメニューと同じ (H.264 / AV1 / MPEG-2)
  *
- * - **H.264** — どの端末でも解ける
- * - **AV1** — 同じ画質で軽い。ハードで解ける端末だけ
- * - **MPEG-2** (`raw`) — 焼かずに1局に絞っただけの TS。denpa が焼くのを待たないぶんいちばん遅れが少なく、
- *   denpa の CPU も使わない。字幕は denpa が解いた文字の配置を描いて重ねる (`ui/RawCaptions.kt`)。ハードで解ける端末だけ (既定はこれ)
+ * - **H.264** — どの端末でもデコードできる
+ * - **AV1** — 同じ画質で軽い。ハードでデコードできる端末だけ
+ * - **MPEG-2** (`raw`) — エンコードせずに1局に絞っただけの TS。denpa がエンコードを待たないぶんいちばん遅れが少なく、
+ *   denpa の CPU も使わない。字幕は denpa がデコードした文字の配置を描いて重ねる (`ui/RawCaptions.kt`)。ハードでデコードできる端末だけ (既定はこれ)
  */
 enum class LiveQuality(val codec: String, val label: String, val mime: String) {
     H264("h264", "H.264", "video/mp4"),
@@ -72,7 +72,7 @@ enum class LiveQuality(val codec: String, val label: String, val mime: String) {
             if (decoders.mpeg2Hardware) add(Raw)
         }
 
-        /** 覚えている画質が、この端末で選べればそれ。無ければ MPEG-2 (ハードで解ければ)、だめなら H.264 */
+        /** 覚えている画質が、この端末で選べればそれ。無ければ MPEG-2 (ハードでデコードできれば)、だめなら H.264 */
         fun choose(saved: String?, decoders: Decoders): LiveQuality {
             val choices = available(decoders)
             return choices.firstOrNull { it.name == saved } ?: if (Raw in choices) Raw else H264
@@ -81,8 +81,8 @@ enum class LiveQuality(val codec: String, val label: String, val mime: String) {
 }
 
 /**
- * 録画のどのファイルを開くか。解ける中で軽いほうから — AV1、H.264、生の TS (MPEG-2) の順。
- * 解けるものが無ければ null
+ * 録画のどのファイルを開くか。デコードできる中で軽いほうから — AV1、H.264、元の TS (MPEG-2) の順。
+ * デコードできるものが無ければ null
  */
 fun pickFile(files: List<RecordingFile>, decoders: Decoders): RecordingFile? {
     fun can(codec: String) = when (codec) {

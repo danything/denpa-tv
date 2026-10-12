@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # AGP 9.4 は JDK 17 以上。CI は 25 で焼く
+      # AGP 9.4 は JDK 17 以上。CI は 25 でビルドする
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -64,7 +64,7 @@ jobs:
           code=$(echo "$files" | grep -Ev '(\.md$|^docs/|^LICENSE$|^scripts/install\.(sh|ps1)$|^renovate\.json$)' > /dev/null && echo true || echo false)
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
 
-  # 縮めた APK (:app の minified。R8 は release と同じで、署名だけ debug) と SmokeTest の APK を1度だけ焼く。
+  # 縮めた APK (:app の minified。R8 は release と同じで、署名だけ debug) と SmokeTest の APK を1度だけビルドする。
   # emulator の列はこれを入れて走らせるだけ (Gradle も JDK も使わない)。lint・単体テスト (build の列) とは並べて走る。
   # emulator の列はこれを待たずにエミュレータを起こし、上がった smoke-apks を取りに来る (scripts/wait-apks.sh)
   apks:
@@ -82,7 +82,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
       - if: needs.changes.outputs.code == 'true'
         name: Build APKs
-        # lintVital (縮める版に付く lint の致命の分) は外して焼くだけにする。lint は build の列の lintDebug が全部の検査でやっている。
+        # lintVital (縮める版に付く lint の致命の分) は外してビルドだけにする。lint は build の列の lintDebug が全部の検査でやっている。
         # ここで走らせると R8 と並んで 1 分ほど CPU を使い、emulator の列が待つ APK を遅らせうる
         run: ./gradlew :app:assembleMinified :smoke:assembleMinified -x lintVitalMinified --console=plain
       # 手順の名前は scripts/wait-apks.sh が見ている (emulator の列はこれが終わるのを待つ)
@@ -103,7 +103,7 @@ jobs:
   # 像はどれも Android TV (system-images;android-NN;android-tv)。36 だけ x86_64 (24〜34 の TV の像は x86 しか無い)
   emulator:
     name: emulator (API ${{ matrix.api-level }})
-    # apks は待たない。キャッシュから像を戻してエミュレータを起こすのと、APK を焼くのを重ねる (APK は Smoke test の手順の中で待つ)
+    # apks は待たない。キャッシュから像を戻してエミュレータを起こすのと、APK のビルドを重ねる (APK は Smoke test の手順の中で待つ)
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 40

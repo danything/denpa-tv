@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/danything/denpa-tv/main/scripts/ins
 
 - **リリース** — [Releases](https://github.com/danything/denpa-tv/releases) の最新から `denpa-tv-<版>.apk` を落とす。
   名前に `-debug` が付いているものは debug の署名です (下の「署名について」)
-- **CI の焼きたて** — まだリリースが無い・最新の main を試したいときは、
+- **CI のビルド** — まだリリースが無い・最新の main を試したいときは、
   [Actions](https://github.com/danything/denpa-tv/actions/workflows/ci.yml) の成功した実行を開き、
   下の Artifacts から `denpa-tv-debug` を落として展開する (`app-debug.apk`)。GitHub にログインしている必要があります
 

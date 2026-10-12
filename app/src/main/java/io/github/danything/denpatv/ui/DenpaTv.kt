@@ -51,7 +51,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable data class Main(val link: Long = 0) : NavKey
 @Serializable data class Live(val link: Long = 0) : NavKey
-/** 録画を観る。`fromStart` なら続きではなく頭から (詳しくの「最初から」) */
+/** 録画を観る。`fromStart` なら続きではなく頭から (詳細の「最初から」) */
 @Serializable data class Watch(val recordingId: Long, val fromStart: Boolean = false) : NavKey
 
 @Composable
@@ -118,7 +118,7 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
             entry<Live> { LivePlayerScreen(repo, onLeave = { backStack.removeAt(backStack.lastIndex) }, onUnauthorized = unauthorized) }
             entry<Watch> { key ->
                 val leave = { backStack.removeAt(backStack.lastIndex); Unit }
-                // 録画中は追っかけ (伸びている生TSを denpa に流してもらう)、録り終えたものはファイルで
+                // 録画中は追っかけ (伸びている元のTSを denpa に流してもらう)、録り終えたものはファイルで
                 // 「最初から」は続きの位置を持たないものとして開く (頭から流し、観た位置はいつもどおり預ける)
                 val recording = remember(key) {
                     repo.recordings.firstOrNull { it.id == key.recordingId }?.let { if (key.fromStart) it.copy(resumeMs = null) else it }
@@ -216,8 +216,8 @@ fun Centered(text: String) {
  * **戻るキーは、合いを動かすのに使わせず、そのまま「戻る」にする** (`BackHandler` が受ける)。
  *
  * Android 12 以前 (予測型の戻るが無い) では、戻るキーはまず画面の部品に届き、Compose は合いのあるところから
- * **合いを外へ出す** (FocusDirection.Exit) のに使ってしまう。そうなると、ライブのメニューや操作の帯を開いて戻るを押しても
- * 帯は閉じず、合いだけが帯の外へ抜けて (どこにも合わずに) リモコンが効かなくなったり、帯を飛ばして画面ごと戻ったりした。
+ * **合いを外へ出す** (FocusDirection.Exit) のに使ってしまう。そうなると、ライブのメニューや操作バーを開いて戻るを押しても
+ * 操作バーは閉じず、合いだけが操作バーの外へ抜けて (どこにも合わずに) リモコンが効かなくなったり、操作バーを飛ばして画面ごと戻ったりした。
  * Android 13 以降の予測型の戻るでは、もともと戻るキーは部品に届かない。どちらでも同じ動きにする。
  * 押し続けた繰り返しは捨て、離したときに1回だけ戻る
  */

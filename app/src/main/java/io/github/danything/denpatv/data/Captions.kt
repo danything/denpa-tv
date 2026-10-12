@@ -10,9 +10,9 @@ import java.net.HttpURLConnection
 import java.net.URI
 
 /**
- * **生の TS (MPEG-2) の字幕の1枚。** 放送の字幕は Media3 では解かないので、denpa が解いた**文字の配置** (0x22。`CaptionPage`) を
+ * **元の TS (MPEG-2) の字幕の1枚。** 放送の字幕は Media3 ではデコードしないので、denpa がデコードした**文字の配置** (0x22。`CaptionPage`) を
  * `GET api/services/<id>/captions` (ライブ) / `GET api/recordings/<id>/captions?from=<秒>` (追っかけ・録画) で受け取る
- * (denpa の docs/api.md「生TSの字幕」)。
+ * (denpa の docs/api.md「元のTSの字幕」)。
  *
  * **放送の PTS** が付いてくる。映像の PTS がそこを過ぎたら重ね、次が来るまで出しておく (`runs` が空の1枚が来たら消える)。
  * 映像の PTS は Media3 が 0 に寄せているので、足し戻して比べる (`Pts`)
@@ -56,7 +56,7 @@ object CaptionFeed {
         } catch (_: EOFException) {
             return null
         }
-        if (length < 9 || length > MAX_FRAME) throw IOException("字幕のこまの長さがおかしい: $length")
+        if (length < 9 || length > MAX_FRAME) throw IOException("字幕のフレームの長さが不正です: $length")
         val kind = input.readUnsignedByte()
         val pts = input.readLong()
         val payload = ByteArray(length - 9).also { input.readFully(it) }
@@ -81,8 +81,8 @@ object CaptionFeed {
         return CaptionFrame.Tracks((obj["tracks"] as? JsonArray)?.size ?: 0)
     }
 
-    /** 断られた。404 はライブなら「まだ流していない」(映像を開いた直後)、録画なら「生TSが無い」 */
-    class Refused(val code: Int) : IOException("字幕の口が $code を返しました")
+    /** 断られた。404 はライブなら「まだ流していない」(映像を開いた直後)、録画なら「元のTSが無い」 */
+    class Refused(val code: Int) : IOException("字幕を取得できません (HTTP $code)")
 
     /** 繋ぐ。`token` があれば `Authorization: Bearer` を付ける。401 は `Unauthorized`、ほかの失敗は `Refused` */
     fun connect(url: URI, token: String?): HttpURLConnection {
@@ -160,10 +160,10 @@ object CaptionPaths {
     fun live(live: String): String? =
         live.substringBefore('?').takeIf { it.endsWith("/live") }?.let { it.removeSuffix("/live") + "/captions" }
 
-    /** 追っかけ・録画 (生TS)。頼むときに `query` を付ける */
+    /** 追っかけ・録画 (元のTS)。頼むときに `query` を付ける */
     fun recording(id: Long): String = "api/recordings/$id/captions"
 
-    /** 焼いた録画の字幕まるごと (文字の配置)。字幕を持たない録画は 404 */
+    /** エンコード済みの録画の字幕まるごと (文字の配置)。字幕を持たない録画は 404 */
     fun recordingText(id: Long): String = "api/recordings/$id/captions.json"
 
     /** 字幕の口に付けるもの。録画は読ませる位置 (秒)、ライブは何も付けない */

@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 data class AudioTrack(val label: String, val named: Boolean)
 
 /**
- * 音声の名前。名前 (`label`) があればそれ、無ければ言語 (日本語など) と番号 (生の TS は名前が無い)
+ * 音声の名前。名前 (`label`) があればそれ、無ければ言語 (日本語など) と番号 (元の TS は名前が無い)
  */
 fun audioTrack(index: Int, label: String?, language: String?): AudioTrack {
     if (!label.isNullOrBlank()) return AudioTrack(label, true)
@@ -77,7 +77,7 @@ fun dualMonoLabels(audios: List<DenpaAudio>, stream: Int): Map<AudioSide, String
 }
 
 /**
- * 札で選べる1つ。`group` は Media3 の音声の何本目か、`side` はデュアルモノのどちら側か (デュアルモノでなければ null)
+ * ボタンで選べる1つ。`group` は Media3 の音声の何本目か、`side` はデュアルモノのどちら側か (デュアルモノでなければ null)
  */
 data class AudioChoice(val group: Int, val side: AudioSide?, val track: AudioTrack)
 
@@ -86,7 +86,7 @@ data class AudioChoice(val group: Int, val side: AudioSide?, val track: AudioTra
  * デュアルモノの名前は覚える名前に使わない (`named = false`。どちら側かは別に覚える。`AudioSide`)
  *
  * **denpa の `stream` (何本目の音声か) と Media3 の音声の並びは同じとみなす。** denpa 自身も `stream` を
- * ffmpeg の `-map 0:a:<stream>` (TS の PMT の並び) にそのまま渡して焼いているので、同じ前提に乗る。
+ * ffmpeg の `-map 0:a:<stream>` (TS の PMT の並び) にそのまま渡してエンコードしているので、同じ前提に乗る。
  * Media3 の TS の読み手も PMT の音声を PID の順に並べる (放送では主音声が先の PID)
  */
 fun audioChoices(groups: List<AudioTrack>, denpa: List<DenpaAudio>): List<AudioChoice> =
@@ -112,8 +112,8 @@ fun dualMonoCoefficients(side: AudioSide): FloatArray = when (side) {
 }
 
 /**
- * **焼いて流すライブ・追っかけで頼む音声** (`?audio=<id>`)。焼いたものには音声が1本しか入っていない (denpa が選んで焼く)
- * ので、選び直すには denpa に頼み直す。生の TS は全部の音声が入っているので使わない (`audioChoices` で選ぶ)。
+ * **変換して流すライブ・追っかけで頼む音声** (`?audio=<id>`)。エンコードしたものには音声が1本しか入っていない (denpa が選んでエンコードする)
+ * ので、選び直すには denpa に頼み直す。元の TS は全部の音声が入っているので使わない (`audioChoices` で選ぶ)。
  *
  * - 選べるものが1つ以下なら null (頼まない。denpa の既定のまま)
  * - この画面で選んだもの (`picked`) が並びにあれば、それ
@@ -127,6 +127,6 @@ fun bakedAudio(audios: List<DenpaAudio>, picked: String?, side: AudioSide): Denp
     return audios.firstOrNull { it.stream == default.stream && it.side == side.wire } ?: default
 }
 
-/** 焼いたものを頼む URL に足す `&audio=<id>` (頼まなければ空) */
+/** エンコードしたものを頼む URL に足す `&audio=<id>` (頼まなければ空) */
 fun audioQuery(audio: DenpaAudio?): String =
     audio?.id?.takeIf { it.isNotBlank() }?.let { "&audio=" + URLEncoder.encode(it, "UTF-8") }.orEmpty()

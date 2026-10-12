@@ -77,7 +77,7 @@ class DenpaApiTest {
         assertEquals(RecordResult.Failed("この番組は放送が終わっています"), api.recordNow(base, 1))
         // 通ったのに答えが読めない (版のずれ)。予約できたとは言わない
         denpa.enqueue("<html></html>")
-        assertEquals(RecordResult.Failed("denpa の答えを読めません (200)"), api.recordNow(base, 1))
+        assertEquals(RecordResult.Failed("denpa の応答を読めません (200)"), api.recordNow(base, 1))
     }
 
     /** 局の now に録画の印。無ければ false */

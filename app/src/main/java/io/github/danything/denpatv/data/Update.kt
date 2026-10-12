@@ -57,7 +57,7 @@ data class Version(val major: Int, val minor: Int, val patch: Int, val pre: List
     }
 }
 
-/** 手元で焼いた版 (`0.0.0-dev`)。リリースの鍵と署名が違うので上げない */
+/** 手元でビルドした版 (`0.0.0-dev`)。リリースの鍵と署名が違うので上げない */
 fun isDevBuild(versionName: String): Boolean = Version.parse(versionName)?.let { it.major == 0 && it.minor == 0 && it.patch == 0 } ?: true
 
 /** `sha256sum` の出力 (`<hash>  <name>`、バイナリ扱いなら `<hash> *<name>`) を名前 → ハッシュ (小文字) に */

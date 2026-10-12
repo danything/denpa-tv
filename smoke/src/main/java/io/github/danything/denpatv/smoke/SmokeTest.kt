@@ -57,9 +57,9 @@ class SmokeTest {
     }
 
     /**
-     * ライブのキーとメニュー。**左右で局を送る** (右で次の局を、左で元の局を denpa に頼む)。**決定の長押しで番組の詳しく**
+     * ライブのキーとメニュー。**左右で局を送る** (右で次の局を、左で元の局を denpa に頼む)。**決定の長押しで番組の詳細**
      * (`api/programs/<now.id>` の説明が出る。メニューは開かない。離しても決定にならない)。**繰り返しを送らずに押したままでも
-     * 長押しになる** (押した・離したの2つだけを送るリモコン)。戻るで詳しくだけが閉じる。**上で、局の列のいま映している局に合わせてメニューが開く。**
+     * 長押しになる** (押した・離したの2つだけを送るリモコン)。戻るで詳細だけが閉じる。**上で、局の列のいま映している局に合わせてメニューが開く。**
      * 局の列から上キーを押し続けても操作の列で止まり (閉じない)、**操作の列でもう一度上を押すと閉じて映像に戻る**。決定で操作の列と局の列が開き、「録画」で denpa にいまの番組を予約する。**戻るでメニューだけが閉じ**
      * (画面ごと戻らない。Android 12 以前では戻るキーが合いを外へ出すのに使われ、閉じずに合いだけが抜けていた)、
      * もう一度の戻るでいちばん上のメニューへ (「ライブ」に合う)。流している間は画面を点けたまま (スクリーンセーバーを出さない)、
@@ -82,16 +82,16 @@ class SmokeTest {
         assertTrue("左で前の局を頼みません: ${denpa.requests.filter { it.endsWith("/live") }}", poll(VIDEO_TIMEOUT_MS) { denpa.requests.count { it == LIVE_REQUEST } > before })
         awaitVideo(LIVE_COLOR)
 
-        // 決定の長押しで番組の詳しく (ダイアログ。別の窓なので windowTexts で見る)。メニューは開かず、離しても決定にならない
+        // 決定の長押しで番組の詳細 (ダイアログ。別の窓なので windowTexts で見る)。メニューは開かず、離しても決定にならない
         longPress(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertTrue("決定の長押しで番組の詳しくが開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { liveDetailOpen() })
+        assertTrue("決定の長押しで番組の詳細が開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { liveDetailOpen() })
         assertRequested("GET /api/programs/${FakeDenpa.PROGRAM_ID}")
         SystemClock.sleep(MENU_WAIT_MS)
         assertTrue("決定の長押しでメニューが開きました: ${windowTexts()}", "地上波" !in windowTexts())
         closeLiveDetail()
         // 繰り返しを送らずに押したまま (押した・離したの2つだけ) でも長押し
         holdWithoutRepeat(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertTrue("繰り返し無しの長押しで番組の詳しくが開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { liveDetailOpen() })
+        assertTrue("繰り返し無しの長押しで番組の詳細が開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { liveDetailOpen() })
         assertTrue("繰り返し無しの長押しでメニューが開きました: ${windowTexts()}", "地上波" !in windowTexts())
         closeLiveDetail()
 
@@ -103,7 +103,7 @@ class SmokeTest {
         )
         /*
          * 局の列から上キーを押し続けて操作の列へ上がっても閉じない (操作の列に届くのは繰り返しと離しだけ。押しはじめを見ていない)。
-         * 合いが移ったかは画面の木では見ない (Compose の入力の合いは、局の札から札へ移っても古いまま返ることがある)。
+         * 合いが移ったかは画面の木では見ない (Compose の入力の合いは、局のカードからカードへ移っても古いまま返ることがある)。
          * 続けて上をもう1回押して閉じれば、操作の列 (いちばん上) に居たことになる (局の列のままなら、上がるだけで閉じない)。
          * メニューは 8 秒触らなければ閉じるので、待つのは MENU_WAIT_MS まで (勝手に閉じたのを上キーで閉じたと取り違えない)
          */
@@ -126,7 +126,7 @@ class SmokeTest {
          */
         val recordRequest = "POST /api/services/${FakeDenpa.SERVICE_ID}/record"
         assertTrue("$recordRequest が来ていません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { recordRequest in denpa.requests })
-        // 「録画」はメニューを閉じる。閉じ終えるのを待ってから次の決定を送る (閉じている途中の決定は消える札に届いて捨てられる)
+        // 「録画」はメニューを閉じる。閉じ終えるのを待ってから次の決定を送る (閉じている途中の決定は消えるボタンに届いて捨てられる)
         assertTrue("「録画」でメニューが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "地上波" !in texts() })
 
         openMenu()
@@ -151,7 +151,7 @@ class SmokeTest {
     }
 
     /**
-     * **切れたら繋ぎ直す。** 偽の denpa のライブは 10 秒で流れを閉じる (denpa が番組の境目で焼き直した・入れ替わったのと同じ)。
+     * **切れたら繋ぎ直す。** 偽の denpa のライブは 10 秒で流れを閉じる (denpa が番組の境目で再エンコードした・入れ替わったのと同じ)。
      * アプリは同じ局を頼み直す。流れが閉じずに黙ったら (チューナーのドライバが止まった)、10 秒進まないのに気付いて頼み直す。そこで 503 (入れ替わりの最中) が続いても、Media3 が中で読み直し尽くしたあと、アプリが待って
      * 頼み直し続け、denpa が戻ればまた映す。その間「再生できません」は出さない (`watching`)。繋ぎ直した理由は logcat に1行ずつ (タグ denpa)
      */
@@ -181,7 +181,7 @@ class SmokeTest {
     }
 
     /**
-     * **denpa が 200 のまま何も送らずに閉じたら** (選局・焼くのに失敗した)、何度か頼み直してから「映像を送らずに閉じました」と言う
+     * **denpa が 200 のまま何も送らずに閉じたら** (選局・エンコードに失敗した)、何度か頼み直してから「映像を送らずに閉じました」と言う
      * (Media3 の `ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED` をそのまま出さない)。denpa が戻ってから局を替えれば、また映る。
      * 次の局を頼むので、`liveMenu` (まだ次の局を頼んでいないのを確かめてから送る) より後に走る名前にしておく
      */
@@ -267,9 +267,9 @@ class SmokeTest {
     private fun appLog(): String = shell("logcat -d -s denpa:I")
 
     /**
-     * 録画を映す。字幕 (文字の配置の `captions.json`。`FakeCaptions`) を描く。**決定で止めると帯が操作の列の「再生」に合って開き**、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる。
+     * 録画を映す。字幕 (文字の配置の `captions.json`。`FakeCaptions`) を描く。**決定で止めると操作バーが操作の列の「再生」に合って開き**、上でシークバーへ、シークバー (いちばん上の段) でもう一度上を押すと閉じる。
      * 下で開いたシークバーからも上で閉じる。偽の録画は 10 秒しかないので、映ったらすぐ止めてから見る
-     * (帯は止めている間も 5 秒触らなければ閉じる。キーを押すたびに数え直すので、続けて押している間は閉じない)
+     * (操作バーは止めている間も 5 秒触らなければ閉じる。キーを押すたびに数え直すので、続けて押している間は閉じない)
      * **決定の長押しで番組の詳しいところ** (一覧のカードの長押しと同じ) が開き、戻るで閉じて映像に戻る (止めたまま。長押しの離しで動き出さない)
      */
     @Test
@@ -295,47 +295,47 @@ class SmokeTest {
         // 操作の列から上でシークバーへ (閉じない)。シークバーに居たかは、次の上で閉じることで見る (画面の木の合いは古いことがある)
         press(KeyEvent.KEYCODE_DPAD_UP)
         SystemClock.sleep(FOCUS_SETTLE_MS)
-        assertTrue("操作の列から上で帯が閉じました: ${texts()}", barOpen())
+        assertTrue("操作の列から上で操作バーが閉じました: ${texts()}", barOpen())
         press(KeyEvent.KEYCODE_DPAD_UP)
-        assertTrue("シークバーで上を押しても帯が閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { !barOpen() })
-        assertTrue("帯を閉じたら止めた位置の帯が出ていません (画面ごと戻った?): ${texts()}", paused())
+        assertTrue("シークバーで上を押しても操作バーが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { !barOpen() })
+        assertTrue("操作バーを閉じたら止めた位置のバーが出ていません (画面ごと戻った?): ${texts()}", paused())
 
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertTrue("下でシークバーが開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { barOpen() })
         SystemClock.sleep(FOCUS_SETTLE_MS)
         press(KeyEvent.KEYCODE_DPAD_UP)
-        assertTrue("下で開いたシークバーで上を押しても帯が閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { !barOpen() })
-        assertTrue("帯を閉じたら止めた位置の帯が出ていません: ${texts()}", paused())
+        assertTrue("下で開いたシークバーで上を押しても操作バーが閉じません: ${texts()}", poll(TEXT_TIMEOUT_MS) { !barOpen() })
+        assertTrue("操作バーを閉じたら止めた位置のバーが出ていません: ${texts()}", paused())
 
-        // 詳しくはダイアログ (別の窓)。古い Android (API 24・28) では、閉じたあと rootInActiveWindow が空のまま返るので、アプリの窓を全部見る
+        // 詳細はダイアログ (別の窓)。古い Android (API 24・28) では、閉じたあと rootInActiveWindow が空のまま返るので、アプリの窓を全部見る
         longPress(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertTrue("決定の長押しで詳しくが開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().let { "閉じる" in it && FakeDenpa.RECORDING_DESCRIPTION in it } })
+        assertTrue("決定の長押しで詳細が開きません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().let { "閉じる" in it && FakeDenpa.RECORDING_DESCRIPTION in it } })
         press(KeyEvent.KEYCODE_BACK)
         // 窓が取れずに空なのを「閉じた」と取り違えない
-        assertTrue("戻るで詳しくが閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } })
+        assertTrue("戻るで詳細が閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().let { it.isNotEmpty() && "閉じる" !in it } })
         assertTrue(
-            "詳しくを閉じたら止めた位置の帯が出ていません (動き出した・画面ごと戻った?): ${windowTexts()}",
+            "詳細を閉じたら止めた位置のバーが出ていません (動き出した・画面ごと戻った?): ${windowTexts()}",
             poll(TEXT_TIMEOUT_MS) { windowTexts().any { it.startsWith("一時停止  ") } },
         )
     }
 
-    /** ライブの詳しくが開いている (番組の説明と「閉じる」) */
+    /** ライブの詳細が開いている (番組の説明と「閉じる」) */
     private fun liveDetailOpen() = windowTexts().let { "閉じる" in it && FakeDenpa.PROGRAM_DESCRIPTION in it }
 
     /**
-     * ライブの詳しくを戻るで閉じて、映像に戻ったのを見る。映像だけのライブの窓には字が無い (知らせが消えていれば空) ので、
-     * 閉じたかは映像の色で見る (詳しくが開いたままなら画面の多くを覆っている。画面ごと戻ったならライブの色は出ない)
+     * ライブの詳細を戻るで閉じて、映像に戻ったのを見る。映像だけのライブの窓には字が無い (知らせが消えていれば空) ので、
+     * 閉じたかは映像の色で見る (詳細が開いたままなら画面の多くを覆っている。画面ごと戻ったならライブの色は出ない)
      */
     private fun closeLiveDetail() {
         press(KeyEvent.KEYCODE_BACK)
-        assertTrue("戻るで番組の詳しくが閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in windowTexts() })
+        assertTrue("戻るで番組の詳細が閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in windowTexts() })
         awaitVideo(LIVE_COLOR)
     }
 
-    /** 録画を止めている (止めた位置の帯が出ている) */
+    /** 録画を止めている (止めた位置のバーが出ている) */
     private fun paused() = texts().any { it.startsWith("一時停止  ") }
 
-    /** 録画の帯 (操作の列) が開いている */
+    /** 録画の操作バー (操作の列) が開いている */
     private fun barOpen() = texts().any { it.startsWith("CM 飛ばし") }
 
     /** 録画の一覧から、左のメニュー (ナビゲーション ドロワー) で設定を開く */
@@ -399,7 +399,7 @@ class SmokeTest {
     /**
      * `done` になるまで `code` を押す (届かなかったときだけ押し直す)。ならなければ `message` で失敗にする。
      * **押す前に `done` でないのを確かめる** — 前の操作で閉じるはずのもの (「録画」で閉じるメニュー) は次のこまで消えるので、
-     * 押してすぐ読むと閉じかけのものを「開いた」と取り違え、キーが届いていない (閉じかけの札に届いて捨てられた) のに先へ進んでしまう
+     * 押してすぐ読むと閉じかけのものを「開いた」と取り違え、キーが届いていない (閉じかけのボタンに届いて捨てられた) のに先へ進んでしまう
      */
     private fun pressUntil(code: Int, message: String, done: () -> Boolean) {
         assertTrue("キーを送る前から待つ先の様子のままです ($message): ${texts()}", poll(TEXT_TIMEOUT_MS) { !done() })
@@ -410,7 +410,7 @@ class SmokeTest {
         fail("$message: ${texts()}")
     }
 
-    /** 合っているもの (入力の合い) とその中の文字。Compose の札は中の Text を子に持つ */
+    /** 合っているもの (入力の合い) とその中の文字。Compose のボタンは中の Text を子に持つ */
     private fun focusedTexts(): List<String> {
         val focused = activeWindow()?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return emptyList()
         val out = mutableListOf<String>()
@@ -631,8 +631,8 @@ class SmokeTest {
 
         /**
          * **画面の木を読む前に、毎回アクセシビリティのキャッシュを捨てる。** UiAutomation は読んだ部品をキャッシュし、アプリからの
-         * 「中身が替わった」の知らせで捨てる。Compose の画面では知らせで捨てられない枝が残り、**閉じた帯・ダイアログを何十秒も返し続ける**
-         * ことがある (CI の API 31 で、上キーで閉じた帯が 30 秒たっても木に残り、ダイアログを閉じたあとはアプリの窓が1つも取れなかった。
+         * 「中身が替わった」の知らせで捨てる。Compose の画面では知らせで捨てられない枝が残り、**閉じた操作バー・ダイアログを何十秒も返し続ける**
+         * ことがある (CI の API 31 で、上キーで閉じた操作バーが 30 秒たっても木に残り、ダイアログを閉じたあとはアプリの窓が1つも取れなかった。
          * 手元の API 31 でも、古い木が返っている間に部品ごとに取り直す (refresh) と閉じていて、キャッシュを捨てると読み直せた)。キャッシュは API 34 からは clearCache() で、
          * それより前は setServiceInfo (中で捨ててから設定する) で捨てる。ダイアログも読むので、アプリの窓を全部取る印も一緒に付ける
          */

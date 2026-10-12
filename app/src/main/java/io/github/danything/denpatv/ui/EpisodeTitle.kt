@@ -39,7 +39,7 @@ import io.github.danything.denpatv.data.keepEpisode
  * `Text` で描けば増えない)。読み上げ (と smoke) には、切っていない題を渡す。
  *
  * 字は放送の字 (`broadcast`。全角の英数字・記号は詰める)。`unwatched` なら**頭に小さな点** (まだ観ていない。ブラウザの denpa の一覧と同じ)。1行目を点のぶん下げて組み
- * (切りかたも下げた幅で測る)、空いたところに描く。札 (「NEW」) にしないのは、番組名に入っている [新] と紛れるため
+ * (切りかたも下げた幅で測る)、空いたところに描く。ラベル (「NEW」) にしないのは、番組名に入っている [新] と紛れるため
  */
 @Composable
 internal fun EpisodeTitle(

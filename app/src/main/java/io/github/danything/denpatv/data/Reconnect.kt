@@ -7,7 +7,7 @@ import androidx.media3.common.PlaybackException
  * `reconnect`) と同じ: 待ち時間は `RETRY_FIRST_MS` から倍々に伸ばして `RETRY_MOST_MS` で頭打ち、**回数の上限は置かない**
  * (点けっぱなしで戻ってきたときに映っていてほしい)。次の絵が出たら数え直す。
  *
- * 切れる理由でいちばん多いのは denpa の側の入れ替え (番組の境目での焼き直し・GPU からソフトウェアへ降りた・denpa の再起動) と、
+ * 切れる理由でいちばん多いのは denpa の側の入れ替え (番組の境目での再エンコード・GPU からソフトウェアへ降りた・denpa の再起動) と、
  * チューナーのドライバが黙ること。どれも待てば帰ってくるので、こちらから諦める理由が無い。
  * ただし**待っても直らないもの** (局が無い 404 など) は繋ぎ直さずに理由を出す (`verdict`)
  */
@@ -19,14 +19,14 @@ object Reconnect {
     const val RETRY_MOST_MS = 10_000L
 
     /**
-     * 直らないかもしれない失敗 (`Verdict.RetryFew`。中身が読めない・解けない、映る前に流れが終わった) を続けて繋ぎ直す回数。
+     * 直らないかもしれない失敗 (`Verdict.RetryFew`。中身が読めない・デコードできない、映る前に流れが終わった) を続けて繋ぎ直す回数。
      * 録画のファイルは、回線の失敗もこの回数まで (Media3 が中で読み直したうえでの失敗なので)
      */
     const val FEW = 3
 
     /**
      * 映していて (絵を1枚でも出したあと)、これだけ何も進まなければ止まったとみなして繋ぎ直す (ミリ秒)。
-     * 位置も溜まりも伸びないこと。**`RETRY_MOST_MS` と同じ 10 秒**: denpa が流れの中で焼き手を温め直す間 (`WARM_WAIT` 8 秒) より長く、
+     * 位置も溜まりも伸びないこと。**`RETRY_MOST_MS` と同じ 10 秒**: denpa が流れの中でエンコーダを温め直す間 (`WARM_WAIT` 8 秒) より長く、
      * 読みの待ち (`Http.READ_TIMEOUT_MS` 30 秒) より十分短い。前の絵を残すのは 6 秒 (`HOLD_MOST`) までなので、
      * 暗くなってから少しで繋ぎ直しに入る
      */
@@ -49,13 +49,13 @@ object Reconnect {
         /** 回線・denpa の入れ替え。流しっぱなしのもの (ライブ・追っかけ) は何度でも */
         Retry,
 
-        /** 直らないかもしれない (中身が読めない・解けない)。`FEW` 回まで */
+        /** 直らないかもしれない (中身が読めない・デコードできない)。`FEW` 回まで */
         RetryFew,
     }
 
     /**
      * Media3 のエラー (`PlaybackException.errorCode`) と、HTTP の応答の番号 (あれば) から決める。
-     * 番号は Media3 の `PlaybackException.ERROR_CODE_*` (1xxx その他・2xxx 読み・3xxx 中身・4xxx 解く・5xxx 音・6xxx DRM)
+     * 番号は Media3 の `PlaybackException.ERROR_CODE_*` (1xxx その他・2xxx 読み・3xxx 中身・4xxx デコード・5xxx 音・6xxx DRM)
      */
     fun verdict(errorCode: Int, httpStatus: Int?): Verdict = when {
         httpStatus == 401 -> Verdict.Unauthorized
@@ -125,7 +125,7 @@ enum class ChaseEnd { Finished, Lost }
 
 /**
  * 追っかけの流れが終わった (`STATE_ENDED`)。denpa は**録り終えて尻まで読んだときだけ**閉じるので、それ以外は切れたとみなして
- * いまの位置から繋ぎ直す (denpa の入れ替え・焼き直し)。
+ * いまの位置から繋ぎ直す (denpa の入れ替え・再エンコード)。
  *
  * - `stillRecording` … 終わったあとに denpa に聞いた、まだ録っているか。聞けなければ null (denpa が入れ替わっている最中なので、切れた)
  * - `durationMs` … 録り終えた長さ。分からなければ最後まで観たことにする

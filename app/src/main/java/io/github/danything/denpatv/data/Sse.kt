@@ -110,7 +110,7 @@ object Sse {
                 connection.inputStream.reader(Charsets.UTF_8).use { reader ->
                     while (true) {
                         val read = reader.read(buffer)
-                        if (read < 0) throw IOException("切れました $url")
+                        if (read < 0) throw IOException("接続が切れました $url")
                         parser.feed(String(buffer, 0, read)).forEach(onEvent)
                     }
                 }

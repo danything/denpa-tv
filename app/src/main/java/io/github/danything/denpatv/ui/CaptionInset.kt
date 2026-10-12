@@ -21,7 +21,7 @@ import io.github.danything.denpatv.data.captionLift
 import kotlin.math.roundToInt
 
 /**
- * **字幕を、下に重ねたものの上へ逃がす。** 操作の帯・ライブのメニュー・知らせ (下の端に出すもの) が自分の高さを知らせ
+ * **字幕を、下に重ねたものの上へ逃がす。** 操作バー・ライブのメニュー・知らせ (下の端に出すもの) が自分の高さを知らせ
  * (`rememberCoverReport`)、字幕の層 (`CaptionLayer`) はいちばん高いものの上へ
  * 持ち上がる (`liftCaptions`)。決め方は `captionLift`。`PlayerFrame` が1つ持って、上に重ねるものへ渡す (`LocalOverlayInsets`)
  */
@@ -60,7 +60,7 @@ internal fun rememberCoverReport(skipTop: Dp): (IntSize) -> Unit {
 
 /**
  * 字幕の層が読む、下に重ねたものの高さ (px)。**出したときは同じこまで上へ** (重なるこまを作らない)、**閉じたときは滑らかに下ろす**。
- * 読むのは配置の段 (`liftCaptions`) だけなので、帯を開け閉めしても組み直さない
+ * 読むのは配置の段 (`liftCaptions`) だけなので、操作バーを開け閉めしても組み直さない
  */
 @Composable
 fun rememberCaptionInset(insets: OverlayInsets): () -> Float {
@@ -82,7 +82,7 @@ private val CAPTION_GAP = 12.dp
 
 /**
  * 字幕の層を、下に重ねたもの (`inset`、px) の上へ持ち上げる。`span(height)` は層の高さに対する字幕の上の端と下の端 (px)。
- * どちらもこま (配置) のたびに読むので、帯の開け閉め・字幕の替わりで組み直さない
+ * どちらもこま (配置) のたびに読むので、操作バーの開け閉め・字幕の替わりで組み直さない
  */
 fun Modifier.liftCaptions(inset: () -> Float, span: (Int) -> Pair<Float, Float>): Modifier = layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)

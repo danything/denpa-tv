@@ -1,7 +1,7 @@
 package io.github.danything.denpatv.data
 
 /**
- * 録画のチャプター1つ (ミリ秒)。**動画そのものに入っているもの** (denpa が焼くときに
+ * 録画のチャプター1つ (ミリ秒)。**動画そのものに入っているもの** (denpa がエンコードするときに
  * `本編` / `CM` の名前で書く。denpa の `cm.ts` の `chapterMetadata`)。読むのは Media3
  * (Matroska の Chapters を `Chapter` として出す。1.11 から)
  */

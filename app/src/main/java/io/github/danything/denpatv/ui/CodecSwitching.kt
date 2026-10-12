@@ -32,15 +32,15 @@ class CodecSwitching internal constructor(
     private val switching: () -> (LiveQuality) -> Unit,
 ) {
     /**
-     * 局の知らせ・メニューと帯の題に添える画質 (切り替え中ならそう言う)。済んだ・切り替えられなかったは知らせ (`flash`) で言う —
-     * メニュー・帯を開いている間は、その題の2行目に出る (`LocalBarNotice`)
+     * 局の知らせ・メニューと操作バーのタイトルに添える画質 (切り替え中ならそう言う)。済んだ・切り替えられなかったは知らせ (`flash`) で言う —
+     * メニュー・操作バーを開いている間は、その題の2行目に出る (`LocalBarNotice`)
      */
     val label: String get() = state.value.label
 
-    /** 札で入っているもの。選んだものをすぐ入れる */
+    /** ボタンで選んでいるもの。選んだものをすぐ反映する */
     val chosen: LiveQuality get() = state.value.pending ?: state.value.shown
 
-    /** 札で選んだ。同じものなら何もしない */
+    /** ボタンで選んだ。同じものなら何もしない */
     fun choose(next: LiveQuality) {
         val switched = state.value.choose(next) ?: return
         state.value = switched
@@ -62,7 +62,7 @@ class CodecSwitching internal constructor(
 
 /**
  * `failure` は画面に出しているエラー (出ていなければ null)。**新しい画質の流れを頼んだあとにエラーが出たら、切り替えられなかったことにして
- * 元の画質に戻す。** 選んでから `SWITCH_GIVE_UP_MS` たっても映らないときも同じ (denpa が焼くのを断り続ける 503 などは、繋ぎ直しが
+ * 元の画質に戻す。** 選んでから `SWITCH_GIVE_UP_MS` たっても映らないときも同じ (denpa がエンコードを断り続ける 503 などは、繋ぎ直しが
  * 諦めずに続くので、前の絵が暗くなって回り続けるだけになる)。繋ぎ直しの1回目 (空の返事・一瞬の切れ) では諦めない
  */
 @Composable
@@ -123,5 +123,5 @@ fun rememberCodecSwitching(
     return remember(repo) { CodecSwitching(state, scope, repo, { flashing }, { switching }) }
 }
 
-/** 切り替えを諦めるまで (ミリ秒)。denpa が焼きはじめるのを待つ分 (ふつうは数秒) より十分に長く */
+/** 切り替えを諦めるまで (ミリ秒)。denpa がエンコードを始めるのを待つ分 (ふつうは数秒) より十分に長く */
 private const val SWITCH_GIVE_UP_MS = 15_000L

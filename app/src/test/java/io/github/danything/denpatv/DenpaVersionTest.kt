@@ -37,7 +37,7 @@ class DenpaVersionTest {
         assertNull(denpaTooOld("v1.50.0"))
         assertNull(denpaTooOld("v1.51.2"))
         assertNull(denpaTooOld("v2.0.0"))
-        // 手元・develop の dev や読めない札は分からないので言わない
+        // 手元・develop の dev や読めないタグは分からないので言わない
         assertNull(denpaTooOld("dev"))
         assertNull(denpaTooOld("something"))
     }

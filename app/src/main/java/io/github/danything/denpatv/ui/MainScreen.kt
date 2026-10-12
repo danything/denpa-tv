@@ -59,7 +59,7 @@ private enum class Destination(val label: String, val icon: Int) {
 }
 
 /**
- * いちばん上の画面。**左に Compose for TV のナビゲーション ドロワー** (畳むとアイコンだけの帯、
+ * いちばん上の画面。**左に Compose for TV のナビゲーション ドロワー** (畳むとアイコンだけの細い列、
  * 左キーで開く) を置き、録画・ライブ・設定へ行く。
  *
  * Android TV のデザインの指針は、行き先を 5〜6 までのドロワーにまとめるよう勧めている。
@@ -174,8 +174,8 @@ private fun Brand(open: Boolean) {
 }
 
 /**
- * 行き先の札。**畳んだときは印だけの小さな丸** (YouTube の Android TV と同じく細い帯にして、右の画面に幅を回す)、
- * 開くと名前も出して横に伸びる。選んでいるものは azure で塗り、合わせたものは白 (札と同じ縁と光)
+ * 行き先のボタン。**畳んだときは印だけの小さな丸** (YouTube の Android TV と同じく細い列にして、右の画面に幅を回す)、
+ * 開くと名前も出して横に伸びる。選んでいるものは azure で塗り、合わせたものは白 (ボタンと同じ縁と光)
  */
 @Composable
 private fun RailItem(destination: Destination, selected: Boolean, open: Boolean, onClick: () -> Unit, modifier: Modifier) {
@@ -215,7 +215,7 @@ private fun RailItem(destination: Destination, selected: Boolean, open: Boolean,
     }
 }
 
-/** 畳んだ帯の右の余白と、札 (畳んだときは丸) の大きさ・開いたときの幅、印の大きさ。畳んだ帯は 96dp (左は安全域の 48dp) */
+/** 畳んだ列の右の余白と、ボタン (畳んだときは丸) の大きさ・開いたときの幅、印の大きさ。畳んだ列は 96dp (左は安全域の 48dp) */
 private val RAIL_PADDING = 8.dp
 private val RAIL_ITEM = 40.dp
 private val RAIL_ITEM_OPEN = 200.dp

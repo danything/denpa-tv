@@ -61,12 +61,12 @@ class DenpaApi(
      * 予約は番組ごとに1本なので、何度押しても二重には録らない
      */
     suspend fun recordNow(base: URI, serviceId: Long): RecordResult = withContext(Dispatchers.IO) {
-        val res = call(base, "api/services/$serviceId/record", "POST") ?: return@withContext RecordResult.Failed("denpa に届きません")
+        val res = call(base, "api/services/$serviceId/record", "POST") ?: return@withContext RecordResult.Failed("denpa に接続できません")
         val body = runCatching { lenientJson.decodeFromString(RecordResponse.serializer(), res.text()) }.getOrNull()
         when {
             res.ok && body?.recorded != null -> RecordResult.Recorded(body.recorded, body.reserved)
             // 通ったのに答えが読めない (版のずれ?)。予約できたかは分からない
-            res.ok -> RecordResult.Failed("denpa の答えを読めません (${res.code})")
+            res.ok -> RecordResult.Failed("denpa の応答を読めません (${res.code})")
             else -> RecordResult.Failed(body?.message ?: "${res.code}")
         }
     }
@@ -78,7 +78,7 @@ class DenpaApi(
     }
 
     /**
-     * 番組表の番組の中身 (`GET api/programs/<id>`。ライブの詳しく)。`id` は局の `now.id`。
+     * 番組表の番組の中身 (`GET api/programs/<id>`。ライブの詳細)。`id` は局の `now.id`。
      * 番組表から消えた (404)・届かない・読めないは `Missing` (呼ぶ側は `now` のぶんだけを出す)。
      * 形がずれていても読めるところは読む (`parseProgramInfo`)
      */

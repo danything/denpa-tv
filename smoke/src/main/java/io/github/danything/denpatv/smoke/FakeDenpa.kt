@@ -35,7 +35,7 @@ class FakeDenpa(
 
     /**
      * この数だけ、次のライブの要求に 503 を返す (denpa が入れ替わっている最中のつもり。アプリが待って頼み直すかを見る)。
-     * ライブの映像 (live.mp4) は 10 秒で終わる — denpa が流れを閉じた (番組の境目での焼き直し・再起動) のと同じに見える
+     * ライブの映像 (live.mp4) は 10 秒で終わる — denpa が流れを閉じた (番組の境目での再エンコード・再起動) のと同じに見える
      */
     val failLive = AtomicInteger(0)
 
@@ -43,7 +43,7 @@ class FakeDenpa(
     val stallLive = AtomicInteger(0)
 
     /**
-     * この数だけ、次のライブの要求に 200 を返して何も送らずに閉じる (denpa が選局・焼くのに失敗したときと同じ。
+     * この数だけ、次のライブの要求に 200 を返して何も送らずに閉じる (denpa が選局・エンコードに失敗したときと同じ。
      * Media3 は「形が分からない」と言うので、アプリがそれを見分けて言い換えるかを見る)
      */
     val emptyLive = AtomicInteger(0)
@@ -99,7 +99,7 @@ class FakeDenpa(
         when {
             path == "/api/health" -> json(out, """{"ok":true,"version":"v1.50.0"}""")
             path == "/api/services" -> json(out, services())
-            // 局送りの行き先も同じ映像を流す
+            // 局の切り替えの行き先も同じ映像を流す
             live == SERVICE_ID || live == NEXT_SERVICE_ID ->
                 // 黙るのが先 (黙らせてから 503 を返し続ける並びを作れるように)
                 if (emptyLive.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) {
@@ -120,9 +120,9 @@ class FakeDenpa(
             recording != null && method == "POST" -> respond(out, 204, "text/plain", ByteArray(0))
             recording?.groupValues?.get(2) == "detail" -> json(out, """{"description":"$RECORDING_DESCRIPTION","extended":{}}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
-            // 焼いた録画の字幕 (文字の配置)
+            // エンコード済みの録画の字幕 (文字の配置)
             path == "/api/recordings/$RECORDING_ID/captions.json" -> json(out, FakeCaptions.smoke)
-            // 追っかけはライブと同じ焼き方の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリは居た場所から頼み直す)
+            // 追っかけはライブと同じエンコード方式の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリは居た場所から頼み直す)
             path == "/api/recordings/$CHASE_ID/chase" -> media(out, "live.mp4", "video/mp4", range)
             else -> respond(out, 404, "text/plain", "not found".toByteArray())
         }
@@ -166,7 +166,7 @@ class FakeDenpa(
         return true
     }
 
-    /** 局は2つ (左右の局送りで行き来する)。どちらも放送中 (番組名がある。サブチャンネルとして飛ばされない) */
+    /** 局は2つ (左右の局の切り替えで行き来する)。どちらも放送中 (番組名がある。サブチャンネルとして飛ばされない) */
     private fun services(): String {
         val now = System.currentTimeMillis()
         fun service(id: Long, name: String, key: Int, title: String) =
@@ -198,7 +198,7 @@ class FakeDenpa(
     }
 
     /**
-     * 知らせ (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る。作り物の録画を返すときは、焼いている進み (`encode`) も一緒に。
+     * 知らせ (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る。作り物の録画を返すときは、エンコードの進み (`encode`) も一緒に。
      * 頼まれた知らせ (`yieldLive`) は待たずに送る
      */
     private fun events(out: OutputStream) {
@@ -308,16 +308,16 @@ class FakeDenpa(
         const val SERVICE_ID = 3273601024L
         const val SERVICE_NAME = "偽の総合"
         const val PROGRAM_TITLE = "偽の番組"
-        /** いまの番組の番組 ID (`now.id`。局の id × 10) と、その説明 (`api/programs/<id>`。ライブの詳しくに出る) */
+        /** いまの番組の番組 ID (`now.id`。局の id × 10) と、その説明 (`api/programs/<id>`。ライブの詳細に出る) */
         const val PROGRAM_ID = SERVICE_ID * 10
         const val PROGRAM_DESCRIPTION = "偽の番組の説明"
-        /** 局送りで次に来る局 */
+        /** 左右の切り替えで次に来る局 */
         const val NEXT_SERVICE_ID = 3273601032L
         const val NEXT_SERVICE_NAME = "偽の教育"
         const val NEXT_PROGRAM_TITLE = "偽の講座"
         const val RECORDING_ID = 1L
         const val RECORDING_TITLE = "偽の録画"
-        /** 録画の説明 (`detail`)。詳しくに出る */
+        /** 録画の説明 (`detail`)。詳細に出る */
         const val RECORDING_DESCRIPTION = "偽の denpa の録画"
         /** 録っている最中の録画 (追っかけで観る) */
         const val CHASE_ID = 2L

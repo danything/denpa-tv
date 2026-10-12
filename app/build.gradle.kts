@@ -40,7 +40,7 @@ android {
     }
 
     /*
-     * 新しい版を引く GitHub のリリース (Updater)。**debug だけ** 焼くときに `DENPA_TV_UPDATE_API` で差し替えられる
+     * 新しい版を引く GitHub のリリース (Updater)。**debug だけ** ビルドのときに `DENPA_TV_UPDATE_API` で差し替えられる
      * (手元のエミュレータで、偽のリリースから上げる流れを確かめる。docs/release.md の「アプリの中のアップデートを確かめる」)。
      * release・minified は差し替えない
      */
@@ -81,7 +81,7 @@ android {
     }
 
     /*
-     * Denpa Font (assets の ttf、4.2MB) は **縮めずに入れる**。縮めてあると、読むときに丸ごと解いて heap (古い API は Native、
+     * Denpa Font (assets の ttf、4.2MB) は **縮めずに入れる**。縮めてあると、読むときに丸ごと展開して heap (古い API は Native、
      * 新しい API は Java) に 4.2MB 置きっぱなしになる。
      * 縮めなければ APK の中をそのまま mmap して、描いた字のところだけ読む (APK は 2MB ほど大きくなる)
      */
@@ -97,9 +97,9 @@ android {
 
 /*
  * 字幕の字 (denpa が字幕を描くのと同じ丸ゴシック。Denpa Font = danything/denpa-font のリリース、SIL OFL 1.1)。
- * 4.2MB あるのでリポジトリには置かず、**焼くときに取ってきて assets に入れる** (ui/DenpaFont.kt が読む)。
+ * 4.2MB あるのでリポジトリには置かず、**ビルドのときに取ってきて assets に入れる** (ui/DenpaFont.kt が読む)。
  * **留めるのはタグだけ** (denpa の Dockerfile の DENPA_FONT_VERSION と揃える。Renovate はタグを上げるだけ)。
- * 中身は同じリリースの SHA256SUMS で照らす (違えば焼くのを止める)
+ * 中身は同じリリースの SHA256SUMS で照らす (違えばビルドを止める)
  */
 // renovate: datasource=github-releases depName=danything/denpa-font
 val denpaFontVersion = "v3.2"

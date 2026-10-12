@@ -48,7 +48,7 @@ sealed interface WatchNextChange {
     data class Delete(val rowId: Long, val recordingId: Long) : WatchNextChange
 }
 
-/** 録画の長さ。焼いた長さ、無ければ予定の長さ (録画中)。分からなければ 0 */
+/** 録画の長さ。エンコードした長さ、無ければ予定の長さ (録画中)。分からなければ 0 */
 fun Recording.lengthMs(): Long = durationMs?.takeIf { it > 0 } ?: endAt?.let { it - startAt }?.takeIf { it > 0 } ?: 0L
 
 private fun watchNextLink(recordingId: Long) = "denpa://recording/$recordingId"
