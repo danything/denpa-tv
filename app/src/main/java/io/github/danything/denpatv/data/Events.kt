@@ -1,6 +1,7 @@
 package io.github.danything.denpatv.data
 
 import kotlinx.coroutines.delay
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -23,7 +24,14 @@ sealed interface DenpaEvent {
 
     /** 焼いている録画の進み (`percent` は 0..1) */
     data class Encode(val recordingId: Long, val percent: Float) : DenpaEvent
+
+    /** 局 `serviceId` のライブが、チューナーを録画 `recording` に譲った (`YieldPlan`) */
+    data class Yielded(val serviceId: Long, val recording: YieldedRecording) : DenpaEvent
 }
+
+/** `yielded` の中身 (denpa の docs/api.md) */
+@Serializable
+private data class YieldedBody(val serviceId: Long, val recording: YieldedRecording)
 
 /**
  * SSE の1件を読む。`ping` (繋ぎを保つだけ) は null。`encode` の中身が読めなければ `warn` に書いて null (止めない)
@@ -42,6 +50,14 @@ fun denpaEvent(event: SseEvent, warn: (String) -> Unit = {}): DenpaEvent? = when
             DenpaEvent.Encode(id, percent.toFloat().coerceIn(0f, 1f))
         }
     }
+    "yielded" -> runCatching { lenientJson.decodeFromString(YieldedBody.serializer(), event.data) }.fold(
+        onSuccess = { DenpaEvent.Yielded(it.serviceId, it.recording) },
+        onFailure = {
+            // 読めなくても止めない (譲ったときに追っかけへ切り替わらず、頼み直し続けるだけ)
+            warn("yielded の形が違います (denpa の版が違う?): ${event.data.take(200)}")
+            null
+        },
+    )
     else -> DenpaEvent.Changed(event.name)
 }
 

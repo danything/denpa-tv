@@ -185,7 +185,22 @@ class FakeDenpa(
             "recording":true,"chase":"api/recordings/$CHASE_ID/chase","files":[]}]"""
     }
 
-    /** 知らせ (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る。作り物の録画を返すときは、焼いている進み (`encode`) も一緒に */
+    /** 次の知らせで送るもの (`yieldLive`)。知らせに繋いでいる流れが拾って送る */
+    private val pendingEvents = ConcurrentLinkedQueue<String>()
+
+    /**
+     * **ライブがチューナーを録画に譲った**ことを知らせる (denpa の `yielded`)。局は [SERVICE_ID]、譲った録画は追っかけの [CHASE_ID]。
+     * ライブの流れは閉じない — 偽のライブは 10 秒で閉じるので、それを蹴られて閉じたのに見立てる
+     */
+    fun yieldLive() {
+        val endAt = System.currentTimeMillis() + 3_600_000
+        pendingEvents += "event: yielded\ndata: {\"serviceId\":$SERVICE_ID,\"recording\":{\"id\":$CHASE_ID,\"title\":\"$CHASE_TITLE\",\"serviceName\":\"$NEXT_SERVICE_NAME\",\"endAt\":$endAt}}\n\n"
+    }
+
+    /**
+     * 知らせ (SSE)。頭に書き添えを1行送り、閉じられるまで 5 秒おきに `ping` を送る。作り物の録画を返すときは、焼いている進み (`encode`) も一緒に。
+     * 頼まれた知らせ (`yieldLive`) は待たずに送る
+     */
     private fun events(out: OutputStream) {
         out.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n: connected\n\n".toByteArray())
         out.flush()
@@ -193,7 +208,12 @@ class FakeDenpa(
             while (!server.isClosed) {
                 if (showcase) out.write("event: encode\ndata: {\"recordingId\":${Showcase.ENCODING_ID},\"percent\":${Showcase.ENCODING_PERCENT}}\n\n".toByteArray())
                 out.flush()
-                Thread.sleep(5_000)
+                val until = System.currentTimeMillis() + 5_000
+                while (System.currentTimeMillis() < until && !server.isClosed) {
+                    generateSequence { pendingEvents.poll() }.forEach { out.write(it.toByteArray()) }
+                    out.flush()
+                    Thread.sleep(EVENT_POLL_MS)
+                }
                 out.write("event: ping\ndata: {}\n\n".toByteArray())
                 out.flush()
             }
@@ -308,6 +328,8 @@ class FakeDenpa(
         private const val SHOWCASE_LIVE_MS = 120_000L
         private const val HEAD_START_MS = 2_000L
         private const val PACE_MS = 200L
+        /** 知らせの流れが、頼まれた知らせ (`yieldLive`) を見に行く間 */
+        private const val EVENT_POLL_MS = 200L
         private val REASONS = mapOf(200 to "OK", 204 to "No Content", 206 to "Partial Content", 404 to "Not Found", 503 to "Service Unavailable", 416 to "Range Not Satisfiable")
     }
 }
