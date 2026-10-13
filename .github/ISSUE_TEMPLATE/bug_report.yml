@@ -34,7 +34,7 @@ body:
       attributes:
           label: denpa TV と denpa のバージョン
           description: denpa TV は設定の画面に出ています
-          placeholder: denpa TV v0.6.2 / denpa v1.39.0
+          placeholder: denpa TV v0.21.0 / denpa v1.56.0
     - type: input
       id: environment
       attributes:
