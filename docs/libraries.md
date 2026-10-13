@@ -166,7 +166,7 @@ EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta0
 素の関数にして単体テストで確かめ (`WatchNextTest`)、ContentResolver に書く所は薄くした。
 
 **ポスターはアプリが取って `content://` で渡す** (`WatchNextPosters`、読むだけの ContentProvider)。denpa のポスターの URL を
-そのまま渡すと、家の外の denpa (アクセストークンが要る) ではホームが読めず、家の LAN でもホームのアプリが素の HTTP を読むとは限らない。
+そのまま渡すと、ログインが要る denpa (アクセストークンが要る) ではホームが読めず、家の LAN でもホームのアプリが素の HTTP を読むとは限らない。
 ホームが読めるよう exported にしてあり、ほかのアプリからも「続きを視聴」に出ている録画のポスターは読める (出すのはそれだけ)。
 
 ### DI: 入れない (手で渡す)
