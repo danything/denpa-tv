@@ -366,7 +366,9 @@ fun ChasePlayerScreen(
      * 開いているものが急に消えたり、止めていたのに動き出したりしないように。閉じたら・動かしたら移る。
      *
      * **位置は denpa に直してもらう。** いまの位置は元の TS の時刻で、エンコード済み (CM を切ったもの・頭を捨てたもの) とは合わない。
-     * `ts` として預けてから一覧を読み直し、エンコード済みの時刻になった `resumeMs` で開く。読めなければ (観終えて消えたときも) いまの位置のまま
+     * `ts` として預けてから一覧を読み直し、エンコード済みの時刻になった `resumeMs` で開く。
+     * 預けるのだけしくじっても、一覧の `resumeMs` は 15 秒おきに預けた位置を直したもの (少し戻るだけで、時刻は合う) なのでそれを使う。
+     * 一覧が読めない・位置が無い (観終えて消えた) ときだけ、いまの位置のまま (時刻は合わないことがある)
      */
     LaunchedEffect(encodedAs, playing, bar, details, ended, deleted, ui.leaving, stoppedAt) {
         val fresh = encodedAs ?: return@LaunchedEffect

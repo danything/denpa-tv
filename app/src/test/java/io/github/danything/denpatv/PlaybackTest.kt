@@ -126,6 +126,20 @@ class PlaybackTest {
         // 録画の 0 より手前から流れる (頭からリクエストすると 1 秒手前から): 負になる。一周の向きを取り違えない
         assertEquals(-1_000L, StreamClock.tsBaseMs(-1_000_000_000, pts + 90_000))
     }
+
+    /**
+     * 観た位置の `source` は観ているファイル。ファイルはそのファイル、流してもらうときは元にしたファイル (`axis`)。
+     * エンコード済みが無い録画を変換・元の TS のまま流すなら `ts` (省くと denpa はエンコード済みの時刻とみなす)
+     */
+    @Test
+    fun 観た位置のsourceは観ているファイル() {
+        assertEquals("encoded", PlayChoice.File("av1", "encoded").resumeSource(encoded))
+        assertEquals("alt", PlayChoice.File("h264", "alt").resumeSource(encoded))
+        assertEquals("encoded", PlayChoice.Stream("h264").resumeSource(encoded))
+        assertEquals("encoded", PlayChoice.Stream("mpeg2").resumeSource(encoded))
+        assertEquals("ts", PlayChoice.Stream("h264").resumeSource(tsOnly))
+        assertEquals("ts", PlayChoice.Stream("mpeg2").resumeSource(tsOnly))
+    }
 }
 
 /** 観方まわりのエンドポイントを呼ぶ (docs/api.md の形式) */
@@ -169,19 +183,5 @@ class PlaybackApiTest {
         // 消した録画
         denpa.enqueue("", code = 404)
         assertNull(api.recordingState(base, 12))
-    }
-
-    /**
-     * 観た位置の `source` は観ているファイル。ファイルはそのファイル、流してもらうときは元にしたファイル (`axis`)。
-     * エンコード済みが無い録画を変換・元の TS のまま流すなら `ts` (省くと denpa はエンコード済みの時刻とみなす)
-     */
-    @Test
-    fun 観た位置のsourceは観ているファイル() {
-        assertEquals("encoded", PlayChoice.File("av1", "encoded").resumeSource(encoded))
-        assertEquals("alt", PlayChoice.File("h264", "alt").resumeSource(encoded))
-        assertEquals("encoded", PlayChoice.Stream("h264").resumeSource(encoded))
-        assertEquals("encoded", PlayChoice.Stream("mpeg2").resumeSource(encoded))
-        assertEquals("ts", PlayChoice.Stream("h264").resumeSource(tsOnly))
-        assertEquals("ts", PlayChoice.Stream("mpeg2").resumeSource(tsOnly))
     }
 }
