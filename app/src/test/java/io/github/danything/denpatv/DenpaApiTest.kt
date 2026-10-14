@@ -110,15 +110,15 @@ class DenpaApiTest {
         assertEquals(listOf(true, false, false, false), recordings.map { it.unwatched })
     }
 
-    /** 観た位置は秒で預ける (denpa の POST api/recordings/<id>/resume は {at, length} を秒で受ける) */
+    /** 観た位置は秒で預ける (denpa の POST api/recordings/<id>/resume は {at, length} を秒で受ける)。観ているファイル (`source`) も添える */
     @Test
     fun 観た位置を秒で預ける() = runTest {
         denpa.enqueue("{}")
-        api.saveResume(BaseUrl.normalize(denpa.url())!!, 12, 754.5, 1800.0)
+        api.saveResume(BaseUrl.normalize(denpa.url())!!, 12, 754.5, 1800.0, "ts")
         val request = denpa.requests.take()
         assertEquals("POST", request.method)
         assertEquals("/api/recordings/12/resume", request.target)
-        assertEquals("""{"at":754.5,"length":1800.0}""", request.body)
+        assertEquals("""{"at":754.5,"length":1800.0,"source":"ts"}""", request.body)
     }
 
     /**

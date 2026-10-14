@@ -45,13 +45,15 @@ class DenpaApi(
     /**
      * どこまで観たかを預ける (`POST /api/recordings/<id>/resume`)。秒で渡す。
      * 末尾 (尺の 30 秒手前より後) を渡すと、denpa は続きを消し (次に開いたときエンドロールから始まらないように)、
-     * 観終えた印 (`watchedAt`) を付ける
+     * 観終えた印 (`watchedAt`) を付ける。
+     * `source` は観ているファイル (`encoded` / `alt` / `ts`。追っかけは `ts`)。位置と尺はそのファイルの時刻で、denpa が元の TS の時刻に直して覚える
+     * (省くとエンコード済みの時刻とみなされ、元の TS で観た位置がずれる)
      */
-    suspend fun saveResume(base: URI, id: Long, atSeconds: Double, lengthSeconds: Double) =
+    suspend fun saveResume(base: URI, id: Long, atSeconds: Double, lengthSeconds: Double, source: String) =
         withContext(Dispatchers.IO) {
             val url = BaseUrl.resolve(base, "api/recordings/$id/resume") ?: return@withContext
             try {
-                Http.request(url, "POST", """{"at":$atSeconds,"length":$lengthSeconds}""", token())
+                Http.request(url, "POST", """{"at":$atSeconds,"length":$lengthSeconds,"source":"$source"}""", token())
             } catch (_: IOException) {
                 // 覚えられなくても観るのは止めない
             }
