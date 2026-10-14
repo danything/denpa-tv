@@ -58,6 +58,7 @@ import io.github.danything.denpatv.data.cmRunAt
 import io.github.danything.denpatv.data.cmSkipTarget
 import io.github.danything.denpatv.data.nextChapter
 import io.github.danything.denpatv.data.previousChapter
+import io.github.danything.denpatv.data.resumeSource
 import io.github.danything.denpatv.data.resumedInCm
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.awaitCancellation
@@ -197,6 +198,8 @@ private fun RecordingPlayback(
     /** denpa が変換した fMP4 (音声は denpa にリクエストして選ぶ) */
     val baked = stream != null && !raw
     val lengthMs = (info.duration * 1000).toLong()
+    /** 観た位置を預けるときの `source` (観ているファイル。位置と尺はその時刻で送る) */
+    val source = choice.resumeSource(info)
     val clock = remember { TsClock(mp4 = stream != null) }
     val timeline = remember { RecordingTimeline(clock, stream, recording.resumeMs ?: 0L, lengthMs) }
     /*
@@ -382,7 +385,7 @@ private fun RecordingPlayback(
                 stoppedAt = here
                 playOnLoad = player.playWhenReady
                 playing = false
-                if (here > 0 && !deleted) saveAt(repo, recording, here, length())
+                if (here > 0 && !deleted) saveAt(repo, recording, source, here, length())
                 player.stop()
             },
             onStart = {
@@ -405,7 +408,7 @@ private fun RecordingPlayback(
         if (stream != null && player.playbackState != Player.STATE_ENDED) player.stop()
         val length = length()
         repo.app.scope.launch {
-            repo.api.saveResume(repo.base, recording.id, length, length)
+            repo.api.saveResume(repo.base, recording.id, length, length, source)
             repo.watchNext(recording, (length * 1000).toLong(), (length * 1000).toLong(), finished = true)
             repo.positionSaved()
         }
@@ -489,7 +492,7 @@ private fun RecordingPlayback(
     LaunchedEffect(player) {
         while (true) {
             delay(15_000)
-            if (player.isPlaying) repo.api.saveResume(repo.base, recording.id, timeline.position() / 1000.0, length())
+            if (player.isPlaying) repo.api.saveResume(repo.base, recording.id, timeline.position() / 1000.0, length(), source)
         }
     }
     /**
@@ -499,7 +502,7 @@ private fun RecordingPlayback(
     fun saveNow() {
         if (deleted) return
         val here = timeline.position()
-        if (here > 0) saveAt(repo, recording, here, length(), finished = ended)
+        if (here > 0) saveAt(repo, recording, source, here, length(), finished = ended)
     }
     // 閉じるときに1回。player を畳むのは rememberPlayer の後始末で、こちらが先に走る
     DisposableEffect(Unit) { onDispose { saveNow() } }
@@ -652,9 +655,9 @@ private fun RecordingPlayback(
 }
 
 /** 観た位置を預け、「続きを視聴」を直す。画面はもう閉じる・裏に回るので、アプリの寿命で送る */
-private fun saveAt(repo: Repository, recording: Recording, atMs: Long, lengthSeconds: Double, finished: Boolean = false) {
+private fun saveAt(repo: Repository, recording: Recording, source: String, atMs: Long, lengthSeconds: Double, finished: Boolean = false) {
     repo.app.scope.launch {
-        repo.api.saveResume(repo.base, recording.id, atMs / 1000.0, lengthSeconds)
+        repo.api.saveResume(repo.base, recording.id, atMs / 1000.0, lengthSeconds, source)
         repo.watchNext(recording, atMs, (lengthSeconds * 1000).toLong(), finished = finished)
         repo.positionSaved()
     }

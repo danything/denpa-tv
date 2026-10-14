@@ -220,15 +220,18 @@ fun ChasePlayerScreen(
         pending = null
     }
 
+    val scheduled = recording.endAt?.let { (it - recording.startAt) / 1000.0 } ?: 0.0
     /**
      * 観た位置を預ける。尺は予定の長さ (録画中は分からない。最新の近くで「観終えた」と消されないように)。
-     * 閉じた・観終えたとき (`stopped`) は「続きを視聴」も直す
+     * 閉じた・観終えたとき (`stopped`) は「続きを視聴」も直す。追っかけは元の TS なので `source` は `ts`
      */
-    fun save(atMs: Long, finished: Boolean = false, stopped: Boolean = finished) {
+    suspend fun send(atMs: Long, finished: Boolean) {
         val seconds = atMs / 1000.0
-        val scheduled = recording.endAt?.let { (it - recording.startAt) / 1000.0 } ?: 0.0
+        repo.api.saveResume(repo.base, recording.id, seconds, if (finished) seconds else scheduled, "ts")
+    }
+    fun save(atMs: Long, finished: Boolean = false, stopped: Boolean = finished) {
         repo.app.scope.launch {
-            repo.api.saveResume(repo.base, recording.id, seconds, if (finished) seconds else scheduled)
+            send(atMs, finished)
             if (stopped) {
                 repo.watchNext(recording, atMs, (scheduled * 1000).toLong(), finished)
                 repo.positionSaved()
@@ -360,12 +363,27 @@ fun ChasePlayerScreen(
     }
     /*
      * 移るのは**観ている最中だけ** (止めている・操作バーや詳細を開いている・最後まで観た・離れる途中・裏に回っている間は待つ)。
-     * 開いているものが急に消えたり、止めていたのに動き出したりしないように。閉じたら・動かしたら移る。位置はいまの位置を続きとして渡す
+     * 開いているものが急に消えたり、止めていたのに動き出したりしないように。閉じたら・動かしたら移る。
+     *
+     * **位置は denpa に直してもらう。** いまの位置は元の TS の時刻で、エンコード済み (CM を切ったもの・頭を捨てたもの) とは合わない。
+     * `ts` として預けてから一覧を読み直し、エンコード済みの時刻になった `resumeMs` で開く。
+     * 預けるのだけしくじっても、一覧の `resumeMs` は 15 秒おきに預けた位置を直したもの (少し戻るだけで、時刻は合う) なのでそれを使う。
+     * 一覧が読めない・位置が無い (観終えて消えた) ときだけ、いまの位置のまま (時刻は合わないことがある)
      */
     LaunchedEffect(encodedAs, playing, bar, details, ended, deleted, ui.leaving, stoppedAt) {
         val fresh = encodedAs ?: return@LaunchedEffect
         if (!playing || bar != null || details || ended || deleted || ui.leaving || stoppedAt != null) return@LaunchedEffect
-        onEncoded(fresh.copy(resumeMs = position()))
+        val here = position()
+        val moved = try {
+            send(here, finished = false)
+            repo.refreshRecordings()
+            repo.recordings.firstOrNull { it.id == recording.id }?.resumeMs
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        onEncoded(fresh.copy(resumeMs = moved ?: here))
     }
 
     /**

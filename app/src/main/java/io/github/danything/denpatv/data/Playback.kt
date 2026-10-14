@@ -47,6 +47,15 @@ sealed interface PlayChoice {
 }
 
 /**
+ * 観た位置を預けるときの `source` (`POST api/recordings/<id>/resume`)。ファイルはそのファイル、流してもらうときは元にしたファイル
+ * (`axis`。変換・詰め替え・元の TS をそのまま、どれも時刻は物差しの上にある)
+ */
+fun PlayChoice.resumeSource(info: PlaybackInfo): String = when (this) {
+    is PlayChoice.File -> source
+    is PlayChoice.Stream -> info.axis
+}
+
+/**
  * **どれで観るか。** 端末がデコードできる中から:
  *
  * 1. エンコード済みのファイルそのまま (AV1 → H.264。軽いほうから)。denpa は読んで渡すだけ
