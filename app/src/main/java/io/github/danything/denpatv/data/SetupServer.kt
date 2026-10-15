@@ -8,6 +8,7 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketException
 import java.net.URLDecoder
 import java.security.SecureRandom
 import kotlin.concurrent.thread
@@ -80,12 +81,31 @@ class SetupServer(
         }
 
         /** テレビの LAN の IPv4 (192.168.x.x など)。Wi-Fi か有線の、上がっているもの */
-        private fun lanAddress(): String? = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
-            .filter { it.isUp && !it.isLoopback }
-            .flatMap { it.inetAddresses.toList() }
-            .filterIsInstance<Inet4Address>()
-            .firstOrNull { it.isSiteLocalAddress }
-            ?.hostAddress
+        private fun lanAddress(): String? {
+            val interfaces = try {
+                NetworkInterface.getNetworkInterfaces()
+                    ?.toList()
+                    .orEmpty()
+            } catch (_: SocketException) {
+                return null
+            }
+        
+            return interfaces.asSequence()
+                .filter { ni ->
+                    try {
+                        ni.isUp && !ni.isLoopback
+                    } catch (_: SocketException) {
+                        // 状態を取得できないインターフェースはスキップ
+                        false
+                    }
+                }
+                .flatMap { ni ->
+                    ni.inetAddresses.toList().asSequence()
+                }
+                .filterIsInstance<Inet4Address>()
+                .firstOrNull { it.isSiteLocalAddress }
+                ?.hostAddress
+        }
     }
 }
 
