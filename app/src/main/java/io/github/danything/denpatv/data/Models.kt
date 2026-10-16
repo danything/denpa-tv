@@ -152,11 +152,10 @@ data class RecordingDetail(
     val extended: Map<String, String> = emptyMap(),
 )
 
-/** 録画の出せるファイル。`source` は encoded / alt / ts、`codec` は av1 / h264 / mpeg2 */
+/** 録画の出せるファイル。`source` は encoded / alt / ts、`codec` は av1 / h264 / mpeg2。使う鍵だけ (開くのは `playback` が選んだもの。`PlaybackPaths.file`) */
 @Immutable
 @Serializable
 data class RecordingFile(
     val source: String,
     val codec: String,
-    val url: String,
 )

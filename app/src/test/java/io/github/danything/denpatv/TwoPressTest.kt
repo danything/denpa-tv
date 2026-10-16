@@ -30,7 +30,7 @@ class TwoPressTest {
 class RecordingCardTest {
     private fun rec(durationMs: Long? = 1_800_000, resumeMs: Long? = null, codecs: List<String> = emptyList()) =
         Recording(id = 1, title = "", startAt = 0, durationMs = durationMs, resumeMs = resumeMs,
-            files = codecs.map { RecordingFile(it, it, "") })
+            files = codecs.map { RecordingFile(it, it) })
 
     @Test
     fun 観た割合と長さと形式のラベル() {

@@ -24,10 +24,12 @@ import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.Chase
 import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.DenpaEvent
+import io.github.danything.denpatv.data.EMPTY_STREAM_MESSAGE
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.PlaybackLookup
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingCommand
+import io.github.danything.denpatv.data.Reconnect
 import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.chaseEnd
@@ -52,8 +54,11 @@ import kotlinx.coroutines.launch
  * - 録り終えて最後まで来たら「最後まで観ました」
  * - **観ている間にエンコードが終わったら、ファイルの再生へ移る** (`onEncoded`。位置は引き継ぐ)。denpa の `recordings` の通知のたびに
  *   `GET api/recordings/<id>` の `state` で録り終えたかを聞き、録画の再生がエンコード済みのファイルを開くか (`playback`) を見る (`Chase.handOff`)
- * - **切れたら (エラー・録り終える前にストリームが閉じた・10 秒進まない) いた位置からリクエストし直す** (`Recovery`。ライブと同じ決まり)
- * - H.264 / AV1 を denpa がエンコードできないと (ffmpeg が降りた・録画を読めない)、空の 200 が返る。映る前に終わった・空だったらそう出す
+ * - **切れたら (エラー・録り終える前にストリームが閉じた・10 秒進まない) いた位置からリクエストし直す** (`Recovery`。ライブと同じ決まり)。
+ *   H.264 / AV1 は番組が替わって映像・音声・字幕の並び (PMT) が変わったところでも denpa が閉じる。閉じるのは届いたぶんを観終えてからなので、
+ *   観ていた位置からリクエストし直せばよい (denpa は変わったところの近くをリクエストされたら、変わったところから流す)
+ * - H.264 / AV1 を denpa がエンコードできないと (ffmpeg が降りた・録画を読めない)、空の 200 が返る。映る前に終わった・空だったら
+ *   何度か (`Reconnect.FEW`) リクエストし直し、続いたらそう出す
  * - H.264 / AV1 は denpa の変換の枠を使う。埋まっていると 503 で断られる (`Reconnect.Verdict.Busy`)。何度かだけリクエストし直し、
  *   諦めたら「サーバが混んでいます」と出して、MPEG-2 をデコードできる端末なら MPEG-2 を勧める (`withBusyAdvice`)
  *
@@ -99,7 +104,7 @@ fun ChasePlayerScreen(
     val flasher = rememberFlash()
     val (overlay, flash) = flasher
     val scope = rememberCoroutineScope()
-    /** エンコードを断られた。リクエストし直すまで、ふつうのエラーの代わりにそう出す */
+    /** 映る前に終わるのが続いた (エンコードを断られた空の 200 など)。リクエストし直すまで、ふつうのエラーの代わりにそう出す */
     var refused by remember { mutableStateOf(false) }
     /** 追っかけのエンドポイントが 404 を返した (録画が無い・まだ何も録れていない)。リクエストし直すまで、ふつうのエラーの代わりに `Chase.NOT_FOUND` を出す */
     var notFound by remember { mutableStateOf(false) }
@@ -283,9 +288,12 @@ fun ChasePlayerScreen(
              */
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != Player.STATE_ENDED || ended) return
-                // 映る前に終わった: H.264 / AV1 のエンコードを断られた (空の 200)。録り終えたのではない
+                /*
+                 * 映る前に終わった: H.264 / AV1 のエンコードを断られた (空の 200) か、番組が替わって作り直したすぐあとにまた閉じた。録り終えたのではない。
+                 * denpa の docs/api.md のとおりリクエストし直し、何度か (`Reconnect.FEW`) 続いたら諦めてそう出す
+                 */
                 if (!started && quality != LiveQuality.Raw) {
-                    refused = true
+                    if (!recovery.retry("ended 映る前に終わった (位置 ${position() / 1000} 秒)", Reconnect.Verdict.RetryFew)) refused = true
                     return
                 }
                 val at = position()
@@ -316,16 +324,9 @@ fun ChasePlayerScreen(
             }
 
             override fun onPlayerError(e: PlaybackException) {
-                val code = (e.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
-                when {
-                    // 繋ぎ直さずに止まる (`Reconnect.Verdict.GiveUp`)。ふつうの 404 の文の代わりに、追っかけの 404 の意味で言う
-                    code == 404 -> notFound = true
-                    // エンコードを断られた (空の返事)。繋ぎ直さずにそう出す
-                    Chase.refused(started, baked = quality != LiveQuality.Raw, httpStatus = code, errorCode = e.errorCode) -> {
-                        refused = true
-                        recovery.cancel()
-                    }
-                }
+                // 繋ぎ直さずに止まる (`Reconnect.Verdict.GiveUp`)。ふつうの 404 の文の代わりに、追っかけの 404 の意味で言う。
+                // 空の返事 (エンコードを断られた) は、ほかの読めないものと同じく何度かリクエストし直してから出す (`rememberPlayer`。下の `shownError`)
+                if ((e.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode == 404) notFound = true
             }
         }
         player.addListener(listener)
@@ -345,7 +346,8 @@ fun ChasePlayerScreen(
             if (encodedAs != null) return@collectLatest
             delay(1_000)
             val (fresh, playback) = try {
-                if (!repo.api.recordingFinished(repo.base, recording.id)) return@collectLatest
+                // 録画中・消した (404) なら移らない
+                if (repo.api.recordingState(repo.base, recording.id)?.finished != true) return@collectLatest
                 repo.refreshRecordings()
                 // 録画の再生と同じ選び方で、エンコード済みのファイルを開けるかを見る
                 repo.recordings.firstOrNull { it.id == recording.id } to
@@ -437,7 +439,8 @@ fun ChasePlayerScreen(
     // 操作バー (終わり・止めている間・操作の列) を出している間は、通知を操作バーのタイトルに添える (録画の再生と同じ)
     val covered = ended || bar != null || !playing
     val shownError = when {
-        refused -> REFUSED
+        // 映る前に終わる・空の返事が続いた。追っかけでは局の空きではなく変換のことなので、追っかけの言い方で
+        refused || error == EMPTY_STREAM_MESSAGE -> REFUSED
         error == null -> null
         notFound -> Chase.NOT_FOUND
         else -> withBusyAdvice(error, quality, repo.app.decoders)
