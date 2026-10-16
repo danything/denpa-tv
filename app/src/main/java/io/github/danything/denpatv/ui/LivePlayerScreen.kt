@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
+import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
 import io.github.danything.denpatv.data.LiveQuality
@@ -36,6 +37,7 @@ import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.YieldPlan
 import io.github.danything.denpatv.data.YieldedRecording
 import io.github.danything.denpatv.data.audioQuery
+import io.github.danything.denpatv.data.chaseEnd
 import io.github.danything.denpatv.data.liveCenter
 import io.github.danything.denpatv.data.liveChannelKey
 import io.github.danything.denpatv.data.liveCommand
@@ -315,7 +317,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                     }
                     // 聞いている間に局を替えた・ライブに戻った・リクエストし直した
                     if (yielded !== chase || chase.serviceId != playing?.id || returning || chaseLoads != loads) return@launch
-                    if (still == false) return@launch
+                    // 録り終えていれば終わったまま (長さは聞かない。譲った録画は録れているところの少し手前から観ているので、録り終えたなら最後まで観た)
+                    if (chaseEnd(still, positionMs = 0, durationMs = null, pictured = pictured) == ChaseEnd.Finished) return@launch
                     // 映る前に終わったのは、何度かだけ (ライブと同じ)
                     recovery.retry(
                         "ended 追っかけが終わった (録画中=$still、映して ${recovery.playedSeconds()} 秒)",
