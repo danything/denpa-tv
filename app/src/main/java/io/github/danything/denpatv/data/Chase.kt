@@ -22,14 +22,6 @@ object Chase {
     fun atEdge(positionMs: Long, recordedMs: Long): Boolean = recordedMs - positionMs < 20_000
 
     /**
-     * 映る前のエラーが、エンコードを断られた (空の 200) ものか。空の返事は `EmptyStreamException` (`ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED`。HTTP の番号が無い) になる。
-     * 元の TS (`baked` でない) は断られない。**繋がらない・読めない (`Reconnect.Verdict.Retry`。denpa の入れ替えの最中) は
-     * 断られたのではない** ので、繋ぎ直しに任せる
-     */
-    fun refused(started: Boolean, baked: Boolean, httpStatus: Int?, errorCode: Int): Boolean =
-        !started && baked && httpStatus == null && Reconnect.verdict(errorCode, null) != Reconnect.Verdict.Retry
-
-    /**
      * 追っかけのエンドポイントが 404 を返したときに出す文。denpa の追っかけの 404 は**録画が無い (消された) か、まだ何も録れていない** (録りはじめた直後)。
      * エンコードが終わったのとは関係ない (終わればファイルの再生へ移る)
      */

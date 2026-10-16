@@ -84,7 +84,7 @@ class ChaseTest {
         val decoders = Decoders(av1 = false, h264 = true, mpeg2 = false)
         val finished = Recording(
             id = 12, title = "番組", startAt = 0,
-            files = listOf(RecordingFile("encoded", "h264", "api/recordings/12/file?source=encoded")),
+            files = listOf(RecordingFile("encoded", "h264")),
         )
         val encoded = PlaybackInfo(
             duration = 1800.0,

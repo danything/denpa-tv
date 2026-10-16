@@ -91,15 +91,6 @@ class DenpaApi(
     }
 
     /**
-     * 録り終えたか (`GET api/recordings/<id>` の `state`。denpa の docs/api.md「録画の状態」)。追っかけの画面が、ファイルの再生へ移れるかを聞く入口。
-     * 録画中・録画が無い (404)・届かない・読めないは false (移らずに追っかけを続ける)。エンコード済みのファイルで観られるかは、呼ぶ側が `playback` で見る (`Chase.handOff`)
-     */
-    suspend fun recordingFinished(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
-        val res = call(base, "api/recordings/$id")?.takeIf { it.ok } ?: return@withContext false
-        parseFinished(res.text(), warn)
-    }
-
-    /**
      * 録画を何で観られるか (`GET api/recordings/<id>/playback`)。観られない (404。録画中・ファイルが無い・このエンドポイントの無い古い denpa) は `Missing`、
      * 届かない・読めないは `Failed`
      */
@@ -121,7 +112,9 @@ class DenpaApi(
     }
 
     /**
-     * 録画の状態 (`GET api/recordings/<id>`。`state` と録れた長さ)。追っかけのストリームが終わったとき、録り終えて最後まで観たのかを確かめる。
+     * 録画の状態 (`GET api/recordings/<id>`。`state` と録れた長さ。denpa の docs/api.md「録画の状態」)。追っかけが使う:
+     * ストリームが終わったとき、録り終えて最後まで観たのかを確かめる (`chaseEnd`) のと、録り終えたか (`RecordingState.finished`) を聞いて
+     * ファイルの再生へ移れるかを見る (移るかは `playback` で決める。`Chase.handOff`)。
      * 無い・消した (404) は null。届かない・読めなければ投げる (呼ぶ側は「分からない」と読む)
      */
     suspend fun recordingState(base: URI, id: Long): RecordingState? = withContext(Dispatchers.IO) {
@@ -242,16 +235,6 @@ sealed interface TokenResult {
     /** `authorization_pending` / `slow_down` / `expired_token` / `invalid_grant` など */
     data class Error(val error: String) : TokenResult
 }
-
-/**
- * `api/recordings/<id>` の答え (`{"id":12,"encoded":false,"state":"recording"}`) から、録り終えたかを読む。
- * `state` が `recorded` (録り終えた) か `available` (ファイルが揃った) なら終わった。`recording`・`failed` は終わっていない扱い。
- *
- * **`encoded` (エンコード済みのファイルがあるか) は見ない。** エンコード済みがあっても、この端末でデコードできるとは限らない。
- * ファイルの再生へ移るかは、録画の再生と同じ選び方 (`playback` と `pickPlayback`) がエンコード済みのファイルを開くかで決める (`Chase.handOff`)。
- * `state` が読めなければ版のずれとして `warn` に書き、終わっていないとみなす
- */
-fun parseFinished(body: String, warn: (String) -> Unit = {}): Boolean = parseRecordingState(body, warn)?.finished == true
 
 /**
  * `api/recordings/<id>` の答えを読む。`state` が読めなければ版のずれとして `warn` に書き、null。

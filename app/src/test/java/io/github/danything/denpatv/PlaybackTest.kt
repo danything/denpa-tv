@@ -35,9 +35,9 @@ class PlaybackTest {
         duration = 1790.5,
         axis = "encoded",
         offers = listOf(
-            PlayOffer("av1", "file", "encoded", "av01.0.08M.08,opus"),
-            PlayOffer("h264", "stream", codecs = "avc1.640029,mp4a.40.2"),
-            PlayOffer("av1", "stream", codecs = "av01.0.08M.08,opus"),
+            PlayOffer("av1", "file", "encoded"),
+            PlayOffer("h264", "stream"),
+            PlayOffer("av1", "stream"),
             PlayOffer("mpeg2", "raw"),
         ),
     )

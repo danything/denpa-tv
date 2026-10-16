@@ -25,16 +25,19 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
+import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.NowProgram
 import io.github.danything.denpatv.data.RecordResult
+import io.github.danything.denpatv.data.Reconnect
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.YieldPlan
 import io.github.danything.denpatv.data.YieldedRecording
 import io.github.danything.denpatv.data.audioQuery
+import io.github.danything.denpatv.data.chaseEnd
 import io.github.danything.denpatv.data.liveCenter
 import io.github.danything.denpatv.data.liveChannelKey
 import io.github.danything.denpatv.data.liveCommand
@@ -148,7 +151,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     /*
      * **切れた・終わった・止まったら、同じ局をリクエストし直す** (`Recovery`。ブラウザのライブの `reconnect` と同じく何度でも、待ちを倍々に)。
      * リクエストし直すのは裏から戻ったときと同じ経路 (`returns`)。再リクエストが映らずに終わったのが取り上げられたあと・「ライブに戻る」なら、
-     * リクエストし直さずに譲った録画の追っかけへ。追っかけを観ている間は、切れたら追っかけをリクエストし直す (ストリームが終わったのは録り終えたのでリクエストしない)
+     * リクエストし直さずに譲った録画の追っかけへ。追っかけを観ている間は、切れたら追っかけをリクエストし直す (ストリームが終わったときは、録り終えたのかを聞いてから。下)
      */
     val (player, error, dualMono, recovery) = rememberPlayer(
         repo,
@@ -286,6 +289,42 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             override fun onRenderedFirstFrame() = pictured()
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) pictured()
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+    /*
+     * **譲った録画の追っかけが終わった。** H.264 / AV1 の追っかけは、番組が替わって映像・音声・字幕の並び (PMT) が変わったところでも
+     * denpa が閉じる (録り終えたのではない。denpa の docs/api.md「追っかけ再生」)。まだ録っているかを denpa に聞いて、録っていれば
+     * (聞けなければ) リクエストし直す (追っかけの画面の `chaseEnd` と同じ)。録り終えていれば、終わったまま
+     */
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state != Player.STATE_ENDED) return
+                val chase = yielded?.takeIf { it.serviceId == playing?.id && !returning } ?: return
+                val loads = chaseLoads
+                val pictured = recovery.pictured
+                scope.launch {
+                    val still = try {
+                        repo.api.recordingState(repo.base, chase.recording.id)?.recording ?: false
+                    } catch (_: Unauthorized) {
+                        return@launch onUnauthorized()
+                    } catch (_: Exception) {
+                        // 聞けない: denpa が入れ替わっている最中
+                        null
+                    }
+                    // 聞いている間に局を替えた・ライブに戻った・リクエストし直した
+                    if (yielded !== chase || chase.serviceId != playing?.id || returning || chaseLoads != loads) return@launch
+                    // 録り終えていれば終わったまま (長さは聞かない。譲った録画は録れているところの少し手前から観ているので、録り終えたなら最後まで観た)
+                    if (chaseEnd(still, positionMs = 0, durationMs = null, pictured = pictured) == ChaseEnd.Finished) return@launch
+                    // 映る前に終わったのは、何度かだけ (ライブと同じ)
+                    recovery.retry(
+                        "ended 追っかけが終わった (録画中=$still、映して ${recovery.playedSeconds()} 秒)",
+                        if (pictured) Reconnect.Verdict.Retry else Reconnect.Verdict.RetryFew,
+                    )
+                }
             }
         }
         player.addListener(listener)

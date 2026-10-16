@@ -23,10 +23,10 @@ data class PlaybackInfo(
     val offers: List<PlayOffer> = emptyList(),
 )
 
-/** 出せるもの1つ。`way` は `file` (エンコード済みのファイルそのまま) / `stream` (fMP4 で流す) / `raw` (元の TS を流す) */
+/** 出せるもの1つ。`way` は `file` (エンコード済みのファイルそのまま) / `stream` (fMP4 で流す) / `raw` (元の TS を流す)。使う鍵だけ (`codecs` は読まない。デコードできるかは端末のデコーダで見る) */
 @Immutable
 @Serializable
-data class PlayOffer(val codec: String, val way: String, val source: String? = null, val codecs: String? = null)
+data class PlayOffer(val codec: String, val way: String, val source: String? = null)
 
 @Immutable
 @Serializable
