@@ -22,10 +22,10 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 }
 
 /**
- * このアプリが要る denpa の版 (docs/pairing.md の「要る denpa の版」)。いちばん新しく足されたエンドポイントに合わせる:
- * 録画の観方と流し方 (`api/recordings/<id>/playback`・`stream`) と、録画の状態の `durationMs` が 1.55.0 から
+ * このアプリが要る denpa の版 (docs/pairing.md の「要る denpa の版」)。いちばん新しく頼るようになった denpa の動きに合わせる:
+ * 番組が替わって映像・音声・字幕の並び (PMT) が変わったら、ライブを閉じて作り直させる (denpa #795) のが 1.59.0 から
  */
-val MIN_DENPA = DenpaVersion(1, 55, 0)
+val MIN_DENPA = DenpaVersion(1, 59, 0)
 
 /**
  * 繋いだ denpa が古すぎれば、画面に出す1行。足りていれば・分からなければ (`dev` など) null。

@@ -543,7 +543,8 @@ fun rememberPlayer(
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != Player.STATE_ENDED || !recovery.plan.endedIsLost) return
-                // 映したあとに終わったのは denpa の入れ替え。映る前に終わったのは、エンコードを断られたのかもしれない (何度か)
+                // 映したあとに終わったのは denpa の入れ替え (続けて来たら待ちを伸ばす)。映る前に終わったのは、エンコードを断られたのかもしれない (何度か)
+                if (recovery.pictured) recovery.restarted()
                 val verdict = if (recovery.pictured) Reconnect.Verdict.Retry else Reconnect.Verdict.RetryFew
                 if (!recovery.retry("ended ストリームが終わった (映して ${recovery.playedSeconds()} 秒)", verdict)) error = EMPTY_STREAM_MESSAGE
             }

@@ -110,7 +110,7 @@ class FakeDenpa(
         val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file|poster)").matchEntire(path)
         val live = Regex("/api/services/(\\d+)/live").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
-            path == "/api/health" -> json(out, """{"ok":true,"version":"v1.55.0"}""")
+            path == "/api/health" -> json(out, """{"ok":true,"version":"v1.59.0"}""")
             path == "/api/services" -> json(out, services())
             // 局の切り替えの行き先も同じ映像を流す
             live == SERVICE_ID || live == NEXT_SERVICE_ID ->

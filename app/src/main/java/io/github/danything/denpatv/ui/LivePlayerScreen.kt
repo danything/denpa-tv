@@ -69,9 +69,11 @@ import kotlinx.coroutines.launch
  * - **録画** はいま観ている番組を denpa に予約する (ブラウザのライブの録画ボタンと同じ。何度押しても二重には録らない)
  * - 局を替えている間は前の局の映像を残し、長くかかったら (1.5 秒) 回るものと「選局しています」→「映像を待っています」を出す (PlayerFrame)
  * - **切れたら (エラー・denpa がストリームを閉じた・10 秒進まない) 同じ局をリクエストし直す** (`Recovery`)。前の映像を残し、1.5 秒たったら
- *   回るものと「繋ぎ直しています」。待ちは 1 秒から倍々で 10 秒まで、回数の上限は無い。局が無い (404) などは理由を出して止める
+ *   回るものと「繋ぎ直しています」。待ちは 1 秒から倍々で 10 秒まで、回数の上限は無い。映したあとに閉じたのが 30 秒以内に続いたら、
+ *   映っても待ちを戻さずに伸ばす (`Recovery.restarted`)。局が無い (404) などは理由を出して止める
  * - **録画にチューナーを譲ったら** (denpa の通知 `yielded`)、同じ局をリクエストし直し、映らなかったときだけ譲った録画の追っかけに切り替えて
  *   通知を出しっぱなしにする。メニューは「ライブに戻る」(再リクエストを試し、だめなら追っかけに戻る) と画質と局の列だけ (`YieldPlan`)。
+ *   その録画を録り終えて追っかけが終わったら、ライブに戻る。
  *   追っかけは denpa の変換の枠を使うので、埋まっていれば断られる。何度かだけリクエストし直し、諦めたら「サーバが混んでいます」(MPEG-2 を勧める)
  * - アプリが裏に回ったら (ホーム・別のアプリ) 止めて denpa から降りる (チューナーを空ける)。戻ったら同じ局を映し直す
  * - **決定の長押しと情報キーで、いま放送中の番組の詳細** (`LiveDetailDialog`。録画の詳細と同じもの)。そこからも録画できる
@@ -297,7 +299,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     /*
      * **譲った録画の追っかけが終わった。** H.264 / AV1 の追っかけは、番組が替わって映像・音声・字幕の並び (PMT) が変わったところでも
      * denpa が閉じる (録り終えたのではない。denpa の docs/api.md「追っかけ再生」)。まだ録っているかを denpa に聞いて、録っていれば
-     * (聞けなければ) リクエストし直す (追っかけの画面の `chaseEnd` と同じ)。録り終えていれば、終わったまま
+     * (聞けなければ) リクエストし直す (追っかけの画面の `chaseEnd` と同じ)。**録り終えていればライブに戻る** (チューナーが空いたので。
+     * 譲ったことは忘れて、いつもどおり同じ局をリクエストする)
      */
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -317,8 +320,13 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                     }
                     // 聞いている間に局を替えた・ライブに戻った・リクエストし直した
                     if (yielded !== chase || chase.serviceId != playing?.id || returning || chaseLoads != loads) return@launch
-                    // 録り終えていれば終わったまま (長さは聞かない。譲った録画は録れているところの少し手前から観ているので、録り終えたなら最後まで観た)
-                    if (chaseEnd(still, positionMs = 0, durationMs = null, pictured = pictured) == ChaseEnd.Finished) return@launch
+                    // 録り終えていればライブへ (長さは聞かない。譲った録画は録れているところの少し手前から観ているので、録り終えたなら最後まで観た)
+                    if (chaseEnd(still, positionMs = 0, durationMs = null, pictured = pictured) == ChaseEnd.Finished) {
+                        yielded = null
+                        kicked = null
+                        playing?.let { flash(describe(it, codecLabel)) }
+                        return@launch
+                    }
                     // 映る前に終わったのは、何度かだけ (ライブと同じ)
                     recovery.retry(
                         "ended 追っかけが終わった (録画中=$still、映して ${recovery.playedSeconds()} 秒)",
