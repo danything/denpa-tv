@@ -25,17 +25,17 @@ class DenpaVersionTest {
         assertTrue(DenpaVersion(1, 10, 0) > DenpaVersion(1, 9, 9))
         assertTrue(DenpaVersion(2, 0, 0) > DenpaVersion(1, 99, 99))
         assertTrue(DenpaVersion(1, 40, 1) > DenpaVersion(1, 40, 0))
-        assertEquals("v1.55.0", MIN_DENPA.toString())
+        assertEquals("v1.59.0", MIN_DENPA.toString())
     }
 
     @Test
     fun 古すぎれば要る版と今の版を言う() {
-        assertEquals("denpa v1.55.0 以上が必要です (いまは v1.54.0)", denpaTooOld("v1.54.0"))
-        assertEquals("denpa v1.55.0 以上が必要です (いまは v1.23.1)", denpaTooOld("1.23.1"))
+        assertEquals("denpa v1.59.0 以上が必要です (いまは v1.58.1)", denpaTooOld("v1.58.1"))
+        assertEquals("denpa v1.59.0 以上が必要です (いまは v1.23.1)", denpaTooOld("1.23.1"))
         // 版を返さないとても古い denpa
-        assertEquals("denpa v1.55.0 以上が必要です", denpaTooOld(null))
-        assertNull(denpaTooOld("v1.55.0"))
-        assertNull(denpaTooOld("v1.56.2"))
+        assertEquals("denpa v1.59.0 以上が必要です", denpaTooOld(null))
+        assertNull(denpaTooOld("v1.59.0"))
+        assertNull(denpaTooOld("v1.60.2"))
         assertNull(denpaTooOld("v2.0.0"))
         // 手元・develop の dev や読めないタグは分からないので言わない
         assertNull(denpaTooOld("dev"))

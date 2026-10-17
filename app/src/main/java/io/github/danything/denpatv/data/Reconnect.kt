@@ -33,6 +33,20 @@ object Reconnect {
      */
     const val STALL_MS = 10_000L
 
+    /**
+     * 映したあとにライブが終わった (denpa が番組の替わり目で作り直した) のが、これより短い間に続いたら待ちを伸ばす (ミリ秒)。
+     * ブラウザの `RESTART_CALM` と同じ。替わり目の前後で並びが行き来する局で、リクエストし直しを連打しない
+     */
+    const val RESTART_CALM_MS = 30_000L
+
+    /**
+     * 映したあとにライブが終わったとき、何回失敗したものとして待つか (`delayMs` に渡す)。`sinceLastMs` は前に終わってからの長さ
+     * (初めてなら null)、`last` は前に終わったときの回数。間が空いていれば 0 (1 秒)、続けて来たら前の次 (倍々に伸ばす)。
+     * 失敗の回数は映れば 0 に戻るので、こちらは別に数える
+     */
+    fun restartAttempts(sinceLastMs: Long?, last: Int): Int =
+        if (sinceLastMs == null || sinceLastMs >= RESTART_CALM_MS) 0 else last + 1
+
     /** `attempts` 回失敗したあと、次に繋ぎ直すまで待つ時間。0 回目は `RETRY_FIRST_MS` */
     fun delayMs(attempts: Int): Long {
         val shift = attempts.coerceIn(0, 30)

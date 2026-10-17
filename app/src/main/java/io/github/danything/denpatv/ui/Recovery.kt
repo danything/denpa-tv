@@ -37,6 +37,7 @@ class ReconnectPlan(
  * - 見つけたら (エラー・ストリームが終わった・止まった) `Reconnect.delayMs` だけ待って `ReconnectPlan.reload`。待っている間も前の映像は残る
  *   (Media3 は面を消さない)。`active` の間は幕が「繋ぎ直しています」を出す (`LoadingVeil`。1.5 秒待ってから)
  * - 次の映像が出たら (`pictured`) 数え直す。局を替えた・画面がリクエストし直した (`requested`) ら、待っている繋ぎ直しは捨てる
+ * - 映したあとにライブが終わったのが続いたら、待ちを伸ばす (`restarted`)
  * - **裏に回っている間は繋ぎ直さない** (`started`。戻れば画面がリクエストし直す)。止めている (一時停止) 間は、動かしたときに繋ぎ直す
  * - 繋ぎ直すたびに、理由を logcat に1行 (`Log.i`、タグ `denpa`)。チューナーのドライバ・denpa・アプリのどこで切れたかを追うため
  */
@@ -70,6 +71,9 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope,
         private set
     private var picturedAt = 0L
     private val stall = StallWatch()
+    /** 映したあとにライブが終わった時刻 (uptime ミリ秒) と、そのときの回数 (`restarted`) */
+    private var restartedAt: Long? = null
+    private var restarts = 0
 
     /** 画面がリクエストし直した (局を替えた・位置を変えた・裏から戻った・タイマーでリクエストし直した) */
     fun requested() {
@@ -79,8 +83,21 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope,
             cancel()
             attempts = 0
             few = 0
+            restartedAt = null
+            restarts = 0
         }
         pictured = false
+    }
+
+    /**
+     * 映したあとにライブが終わった (denpa が番組の替わり目で作り直した)。このあとの `retry` の待ちを決める —
+     * **続けて来たら** (`Reconnect.RESTART_CALM_MS`) 前より長く待つ (ブラウザのライブの `restart` と同じ)
+     */
+    fun restarted() {
+        val now = SystemClock.uptimeMillis()
+        restarts = Reconnect.restartAttempts(restartedAt?.let { now - it }, restarts)
+        restartedAt = now
+        attempts = maxOf(attempts, restarts)
     }
 
     /**

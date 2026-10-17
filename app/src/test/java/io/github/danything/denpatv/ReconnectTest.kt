@@ -22,6 +22,16 @@ class ReconnectTest {
     }
 
     @Test
+    fun ライブの作り直しは30秒以内に続いたら待ちを伸ばす() {
+        // 初めて・間が空いていれば 1 秒
+        assertEquals(0, Reconnect.restartAttempts(null, 0))
+        assertEquals(0, Reconnect.restartAttempts(30_000, 3))
+        // 続けて来たら前の次 (2・4 秒…)
+        assertEquals(1, Reconnect.restartAttempts(5_000, 0))
+        assertEquals(2, Reconnect.restartAttempts(29_999, 1))
+    }
+
+    @Test
     fun 失敗の見分け() {
         val badStatus = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
         assertEquals(Verdict.Unauthorized, Reconnect.verdict(badStatus, 401))
