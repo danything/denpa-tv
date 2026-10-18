@@ -148,7 +148,7 @@ fun ProgramDetailDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     actions.forEachIndexed { index, action ->
                         val modifier = if (index == start) Modifier.focusRequester(first) else Modifier
-                        // ボタンの文字は1行のまま伸ばす (「もう一度押すと削除」になっても切れないように)
+                        // ボタンの文字は1行のまま伸ばす (「削除を確定」になっても切れないように)
                         DenpaButton(onClick = action.onClick, modifier = modifier, primary = action.primary) {
                             Text(action.label, maxLines = 1, softWrap = false)
                         }

@@ -150,7 +150,7 @@ fun BoxScope.ControlBar(
         var focused = false
         /*
          * **1080p・720p (どちらも 960dp 幅) で1行に収める。** ボタンは短く (「前へ」「次へ」)、組の間も詰める。
-         * それでもはみ出したら (音声の名前が長い・「もう一度押すと削除」・文字を大きくしたテレビ)、フォーカスしたものが
+         * それでもはみ出したら (音声の名前が長い・「削除を確定」・文字を大きくしたテレビ)、フォーカスしたものが
          * 見えるところまで横に送る
          */
         Row(
@@ -293,7 +293,7 @@ private fun Chip(control: Control, modifier: Modifier) {
             Icon(painterResource(it), contentDescription = null, modifier = Modifier.size(18.dp))
             if (!iconOnly) Spacer(Modifier.width(6.dp))
         }
-        // 1行のまま中身に合わせて伸ばす (「もう一度押すと削除」のように押すと長くなるボタンが切れないように)
+        // 1行のまま中身に合わせて伸ばす (「削除を確定」のように押すと長くなるボタンが切れないように)
         if (!iconOnly) Text(control.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
     }
     // オン・オフで部品を替えない (Button と OutlinedButton を替えると、押したボタンからフォーカスが外れて列の頭に飛ぶ・

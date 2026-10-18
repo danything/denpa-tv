@@ -13,7 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TwoPressTest {
-    /** 1回目は「もう一度押すと…」、間を空けずにもう1回で実行。間が空いたら数え直し */
+    /** 1回目は「削除を確定」などに変わり、間を空けずにもう1回で実行。間が空いたら数え直し */
     @Test
     fun 二回押しで実行し_間が空いたら数え直す() {
         val press = TwoPress(windowMs = 4_000)
