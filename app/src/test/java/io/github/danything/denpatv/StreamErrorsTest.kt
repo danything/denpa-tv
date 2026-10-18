@@ -108,7 +108,7 @@ class StreamErrorsTest {
             "受け取ったデータを映像として読み取れませんでした (ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED)",
             message(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED),
         )
-        assertEquals("この端末では再生できない形式です (ERROR_CODE_DECODER_INIT_FAILED)", message(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED))
+        assertEquals("再生できない形式です (ERROR_CODE_DECODER_INIT_FAILED)", message(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED))
         // 当てはまらないものは番号の名前だけ
         assertEquals("ERROR_CODE_UNSPECIFIED", message(PlaybackException.ERROR_CODE_UNSPECIFIED))
     }
