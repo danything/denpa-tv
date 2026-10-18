@@ -108,7 +108,7 @@ fun playbackMessage(errorCode: Int, codeName: String, httpStatus: Int?, contentT
         errorCode in 2000..2999 || errorCode == PlaybackException.ERROR_CODE_TIMEOUT ->
             "denpa との繋がりが切れました。denpa とネットワークを確かめてください"
         errorCode in 3000..3999 -> "受け取ったデータを映像として読み取れませんでした"
-        errorCode in 4000..4999 -> "再生できない形式です"
+        errorCode in 4000..4999 -> "この形式には対応していません"
         errorCode in 5000..5999 -> "音声を再生できませんでした"
         else -> null
     }
