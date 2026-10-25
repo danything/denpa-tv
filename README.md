@@ -81,3 +81,7 @@ Menu・メディアキー・緑のボタンと、メニューの中のキーは 
 
 - `app/src/main/java/io/nayuki/qrcodegen/` は [Project Nayuki の QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) を取り込んだもので **MIT License** (各ファイルの頭の表示のまま)
 - 字幕と放送の字 ([Denpa Font](https://github.com/danything/denpa-font)。ビルドのときに取ってきて APK に入れる) は **SIL Open Font License 1.1**
+
+APK に入っているもの (AndroidX・Kotlin・kotlinx・Guava・Okio などの Apache License 2.0 のライブラリと、上の2つ) のライセンスの全文は、
+アプリの **設定 → ライセンス** で読めます。一覧は `app/src/main/assets/licenses/licenses.json` にあり、
+CI (`./gradlew checkLicenses`) がリリースの APK に入る依存と突き合わせます (依存を足して一覧に無ければ止まります。[docs/libraries.md](docs/libraries.md) の「ライセンスの表示」)。

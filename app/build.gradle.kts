@@ -131,9 +131,97 @@ val fetchCaptionFont = tasks.register<FetchCaptionFont>("fetchCaptionFont") {
     outputDir.set(layout.buildDirectory.dir("generated/captionFont"))
 }
 
-androidComponents {
-    onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(fetchCaptionFont, FetchCaptionFont::outputDir) }
+/*
+ * 設定の「ライセンス」(ui/LicensesScreen.kt) に出すこのアプリの AGPL の全文。リポジトリの頭の LICENSE を
+ * ビルドのときに assets の `licenses/LICENSE` へ写す (同じものを2つ置かない)
+ */
+abstract class CopyAppLicense : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val license: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val dir = outputDir.get().asFile.apply { deleteRecursively(); mkdirs() }
+        license.get().asFile.copyTo(dir.resolve("licenses/LICENSE"))
+    }
 }
+
+val copyAppLicense = tasks.register<CopyAppLicense>("copyAppLicense") {
+    license.set(rootProject.layout.projectDirectory.file("LICENSE"))
+    outputDir.set(layout.buildDirectory.dir("generated/appLicense"))
+}
+
+/*
+ * ライセンスの一覧 (assets の licenses/licenses.json) が、**リリースの APK に入る依存** と合っているかを確かめる。
+ * 依存 (推移的なものも) の Maven のグループが、どれかの `groups` (`androidx.*` は前方一致、ほかは完全一致) に入っていなければ止める。
+ * 逆に、どの依存にも当たらない `groups` (外した依存の書き残し) も止める。CI の build の列で走らせる (`check` にも入れてある)
+ */
+abstract class CheckLicenses : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val manifest: RegularFileProperty
+
+    /** リリースの APK に入る依存のグループ */
+    @get:Input
+    abstract val groups: SetProperty<String>
+
+    @get:OutputFile
+    abstract val report: RegularFileProperty
+
+    @TaskAction
+    fun check() {
+        @Suppress("UNCHECKED_CAST")
+        val components = (groovy.json.JsonSlurper().parse(manifest.get().asFile) as Map<String, Any?>)["components"] as List<Map<String, Any?>>
+        val patterns = components.flatMap { (it["groups"] as List<*>?).orEmpty().map(Any?::toString) }
+        val matches = { pattern: String, group: String ->
+            if (pattern.endsWith(".*")) group.startsWith(pattern.removeSuffix("*")) else group == pattern
+        }
+        val used = groups.get().sorted()
+        val missing = used.filter { group -> patterns.none { matches(it, group) } }
+        val stale = patterns.filter { pattern -> used.none { matches(pattern, it) } }
+        check(missing.isEmpty() && stale.isEmpty()) {
+            buildString {
+                append("ライセンスの一覧 (app/src/main/assets/licenses/licenses.json) が依存と合っていません。")
+                if (missing.isNotEmpty()) append("\n一覧に無いグループ (ライセンスを確かめて components に足す): ${missing.joinToString()}")
+                if (stale.isNotEmpty()) append("\nどの依存にも当たらない groups (外した依存なら消す): ${stale.joinToString()}")
+            }
+        }
+        report.get().asFile.writeText(used.joinToString("\n", postfix = "\n"))
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(fetchCaptionFont, FetchCaptionFont::outputDir)
+        variant.sources.assets?.addGeneratedSourceDirectory(copyAppLicense, CopyAppLicense::outputDir)
+    }
+    onVariants(selector().withBuildType("release")) { variant ->
+        val runtime = variant.runtimeConfiguration.incoming.resolutionResult.rootComponent
+        tasks.register<CheckLicenses>("checkLicenses") {
+            manifest.set(layout.projectDirectory.file("src/main/assets/licenses/licenses.json"))
+            groups.set(
+                runtime.map { root ->
+                    val seen = mutableSetOf<ResolvedComponentResult>()
+                    val queue = ArrayDeque(listOf(root))
+                    while (queue.isNotEmpty()) {
+                        val next = queue.removeFirst()
+                        if (!seen.add(next)) continue
+                        next.dependencies.filterIsInstance<ResolvedDependencyResult>().forEach { queue.add(it.selected) }
+                    }
+                    // プロジェクト自身 (:app) は除く
+                    seen.mapNotNull { (it.id as? ModuleComponentIdentifier)?.group }.toSet()
+                },
+            )
+            report.set(layout.buildDirectory.file("reports/licenses/groups.txt"))
+        }
+    }
+}
+
+tasks.named("check") { dependsOn("checkLicenses") }
 
 dependencies {
     implementation(platform(libs.compose.bom))

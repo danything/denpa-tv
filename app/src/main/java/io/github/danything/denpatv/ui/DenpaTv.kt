@@ -53,6 +53,9 @@ import kotlinx.serialization.Serializable
 @Serializable data class Live(val link: Long = 0) : NavKey
 /** 録画を観る。`fromStart` なら続きではなく頭から (詳細の「最初から」) */
 @Serializable data class Watch(val recordingId: Long, val fromStart: Boolean = false) : NavKey
+/** 設定の「ライセンス」と、その全文 (`index` は licenses.json の components の何番目か) */
+@Serializable data object LicenseList : NavKey
+@Serializable data class LicenseText(val index: Int) : NavKey
 
 @Composable
 fun DenpaTv(app: DenpaApp, link: MutableState<DeepLink?>) {
@@ -113,8 +116,11 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
                     onLive = { backStack.add(Live()) },
                     onWatch = { recording, fromStart -> backStack.add(Watch(recording.id, fromStart)) },
                     onUnauthorized = unauthorized,
+                    onLicenses = { backStack.add(LicenseList) },
                 )
             }
+            entry<LicenseList> { LicensesScreen(onOpen = { backStack.add(LicenseText(it)) }) }
+            entry<LicenseText> { key -> LicenseTextScreen(key.index) }
             entry<Live> { LivePlayerScreen(repo, onLeave = { backStack.removeAt(backStack.lastIndex) }, onUnauthorized = unauthorized) }
             entry<Watch> { key ->
                 val leave = { backStack.removeAt(backStack.lastIndex); Unit }
