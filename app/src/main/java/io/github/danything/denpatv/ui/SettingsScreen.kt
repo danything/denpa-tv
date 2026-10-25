@@ -11,6 +11,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -23,18 +26,22 @@ import io.github.danything.denpatv.notice
 import kotlinx.coroutines.launch
 
 /**
- * 設定。**繋ぐ先と、アプリの版だけ** (下に繋いだ denpa の版)。 ライブの画質・録画の速さ・CM 飛ばしは、ブラウザの denpa と同じく
+ * 設定。**繋ぐ先と、アプリのバージョン (下に繋いだ denpa のバージョン) と、ライセンスだけ**。 ライブの画質・録画の速さ・CM 飛ばしは、ブラウザの denpa と同じく
  * 再生の画面の操作バー (メニュー) で変える (観ながら変えて、端末ごとに覚えるもの)
  */
 @Composable
-fun SettingsScreen(repo: Repository) {
+fun SettingsScreen(repo: Repository, onLicenses: () -> Unit) {
     val app = repo.app
     val scope = rememberCoroutineScope()
-    // 開いたら (メニューで選んだとき・ライブから戻ったとき) ボタンにフォーカスする。どこにもフォーカスが無いとリモコンが空振りする
+    // 開いたら (メニューで選んだとき・ライブから戻ったとき) ボタンにフォーカスする。どこにもフォーカスが無いとリモコンが空振りする。
+    // ライセンスの画面から戻ったときは「ライセンス」に
     val button = remember { FocusRequester() }
+    val licenses = remember { FocusRequester() }
+    var fromLicenses by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         withFrameNanos { }
-        runCatching { button.requestFocus() }
+        runCatching { (if (fromLicenses) licenses else button).requestFocus() }
+        fromLicenses = false
     }
 
     Column(
@@ -85,8 +92,19 @@ fun SettingsScreen(repo: Repository) {
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
             }
+            // このアプリ (AGPL) と、APK に入っているもののライセンス (LicensesScreen)
+            WideButton(
+                "ライセンス",
+                "このアプリと、使っているオープンソースソフトウェアのライセンス",
+                modifier = Modifier.focusRequester(licenses),
+                onClick = {
+                    fromLicenses = true
+                    onLicenses()
+                },
+            )
         }
     }
 }
 
-private val PANEL_WIDTH = 760.dp
+/** 設定の行の幅 (ライセンスの一覧も同じ) */
+internal val PANEL_WIDTH = 760.dp

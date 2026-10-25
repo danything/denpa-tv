@@ -206,6 +206,29 @@ DataStore と通信の待ちに使う。AndroidX が既に依存しているの�
 - 許諾は SIL OFL 1.1 (元の BIZ UDゴシック (モリサワ) と同じ。原文は denpa-font の README)。
   字幕・データ放送・番組表で使う字 (denpa の字の表から作る) に絞ってある
 
+### ライセンスの表示: 入れない (assets の一覧と全文を自分で出す)
+
+2026-10-25 に足した。Apache License 2.0 (AndroidX・Kotlin・kotlinx・Guava・Okio・JSpecify・JetBrains の注釈・Material のアイコン)、
+MIT (QR Code generator)、SIL OFL 1.1 (Denpa Font) は、配る写しにライセンスの全文 (と著作権表示) を付ける決まりなので、
+アプリの **設定 → ライセンス** で読めるようにした (`ui/LicensesScreen.kt`)。いちばん上はこのアプリ (AGPL-3.0 とソースコードの置き場)。
+
+| 候補 | 見たところ |
+| --- | --- |
+| `com.google.android.gms:play-services-oss-licenses` | Play 開発者サービスの依存と Gradle の plugin が増える。Fire TV には Play 開発者サービスが無い |
+| AboutLibraries | Gradle の plugin とライブラリ (Compose の画面) が増える。TV のフォーカスの見せ方はアプリのものに揃わない |
+| **assets に一覧と全文を置いて自分で出す** | 依存が増えない。画面は設定と同じ幅いっぱいのボタン (`WideButton`) で、全文は上下キーで 1 画面ずつ送る |
+
+- 一覧は `app/src/main/assets/licenses/licenses.json`。もの (`components`) ごとに名前・ライセンスの ID (SPDX)・全文のファイル
+  (同じ所)・あれば NOTICE (`notice`)・Maven のグループ (`groups`) を書く。Apache License 2.0 の全文は1つを使い回す。
+  MIT と OFL は著作権表示の入った全文を置く (MIT は同梱したソースの頭の表示のまま、OFL は denpa-font の LICENSE のまま)。
+  このアプリの AGPL はリポジトリの頭の `LICENSE` をビルドのときに写す (`copyAppLicense`)。
+  いま入っている依存には NOTICE を付けているものが無い (jar・aar の中を見た) ので、`notice` はまだどれにも無い
+- **`./gradlew checkLicenses`** (`app/build.gradle.kts`。CI の build の列と `check` で走る) が、リリースの APK に入る依存
+  (推移的なものも) の Maven のグループを集め、一覧の `groups` と突き合わせる。`androidx.*` は前方一致、ほかは完全一致。
+  一覧に無いグループがあれば止まる (依存を足したら、ライセンスを確かめて `components` に足す)。どの依存にも当たらない `groups` も止まる (外した依存の書き残し)
+- 依存ではないもの (同梱したソース・ビルドのときに取ってくる字・アイコン) は `groups` を持たず、突き合わせの外。足したら手で載せる
+- 一覧の形と全文のファイルがあるかは単体テスト (`LicensesTest`) が見る
+
 ## まとめ: AndroidX / Kotlin の外から入れているもの
 
 なし。kotlinx.serialization と kotlinx.coroutines は Kotlin 公式 (JetBrains) のライブラリで、

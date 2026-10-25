@@ -25,8 +25,9 @@ jobs:
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
       # Android SDK はランナーに入っている。足りない platform は AGP が取ってくる
-      - name: Lint / unit tests / debug APK
-        run: ./gradlew lintDebug testDebugUnitTest assembleDebug --console=plain
+      # checkLicenses: 設定の「ライセンス」の一覧 (assets の licenses/licenses.json) がリリースの APK に入る依存と合っているか
+      - name: Licenses / lint / unit tests / debug APK
+        run: ./gradlew checkLicenses lintDebug testDebugUnitTest assembleDebug --console=plain
       - uses: actions/upload-artifact@v7
         with:
           name: denpa-tv-debug

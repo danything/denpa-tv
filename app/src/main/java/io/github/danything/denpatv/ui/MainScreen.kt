@@ -72,6 +72,7 @@ fun MainScreen(
     onLive: () -> Unit,
     onWatch: (Recording, Boolean) -> Unit,
     onUnauthorized: () -> Unit,
+    onLicenses: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf(Destination.Recordings) }
     val items = remember { Destination.entries.associateWith { FocusRequester() } }
@@ -147,7 +148,7 @@ fun MainScreen(
     ) {
         // 観て戻ったら右の画面がフォーカスを取る (録画の一覧なら開いた録画、設定なら頭のボタン)
         when (selected) {
-            Destination.Settings -> SettingsScreen(repo)
+            Destination.Settings -> SettingsScreen(repo, onLicenses)
             else -> RecordingsScreen(repo, onWatch, onUnauthorized, onLive = onLive, takeFocus = !toMenu)
         }
     }
