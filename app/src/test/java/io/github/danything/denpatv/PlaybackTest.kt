@@ -59,6 +59,19 @@ class PlaybackTest {
     }
 
     @Test
+    fun AV1_をソフトでしかデコードできない端末はファイルより元の_TS_か変換を先にする() {
+        // Chromecast with Google TV など: ソフトの AV1 はあるがハードは無い。MPEG-2 はハード
+        val chromecast = tv.copy(av1Hardware = false)
+        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(encoded, chromecast))
+        // MPEG-2 もハードで無ければ H.264 に変換してもらう (AV1 の変換も選ばない)
+        val softOnly = chromecast.copy(mpeg2Hardware = false)
+        assertEquals(PlayChoice.Stream("h264"), pickPlayback(encoded, softOnly))
+        // 変換も元の TS も無ければ、最後の手として AV1 のファイルをソフトで
+        val fileOnly = encoded.copy(offers = encoded.offers.filter { it.way == "file" })
+        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(fileOnly, softOnly))
+    }
+
+    @Test
     fun ファイルをデコードできなければ_MPEG2_をハードでデコードできる端末は元の_TS_をそのまま() {
         val noAv1 = tv.copy(av1 = false, av1Hardware = false)
         assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(encoded, noAv1))
