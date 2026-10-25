@@ -27,8 +27,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -146,8 +146,8 @@ fun SetupScreen(app: DenpaApp) {
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 6.sp,
                             ),
-                            // 読み上げは 1 字ずつ
-                            modifier = Modifier.semantics { contentDescription = current.userCode.toList().joinToString(" ") },
+                            // 読み上げは 1 字ずつ (字のままの読みは消す)
+                            modifier = Modifier.clearAndSetSemantics { contentDescription = current.userCode.toList().joinToString(" ") },
                         )
                     }
                     Text("スマホが移らないときは、左の QR か次の URL を開いてください: ${current.verificationUrl}", style = MaterialTheme.typography.bodySmall)
