@@ -221,13 +221,17 @@ private data class DeviceTokenRequest(val deviceCode: String)
 @Serializable
 private data class DeviceToken(val token: String)
 
-/** `api/device/code` の答え。URL は denpa のルートからの相対 */
+/**
+ * `api/device/code` の答え。URL は denpa のルートからの相対。
+ * `userCode` (`ABCD-EFGH`) はテレビに出し、スマホの denpa の画面に出るものと見比べてもらう (RFC 8628 §5.4)
+ */
 @Serializable
 data class DeviceCode(
     val deviceCode: String,
     val verificationUriComplete: String,
     val expiresIn: Int,
     val interval: Int = 5,
+    val userCode: String = "",
 )
 
 sealed interface TokenResult {

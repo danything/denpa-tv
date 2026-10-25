@@ -97,6 +97,8 @@ class ConnectTest {
             denpa.enqueue(code)
             val step = connect(DenpaApi(), denpa.url("/denpa"), "denpa TV (emu)") as ConnectStep.NeedsLogin
             assertEquals(denpa.url("/denpa/device?code=ABCD-EFGH"), step.verificationUrl)
+            // テレビに出して、スマホの画面のコードと見比べてもらう
+            assertEquals("ABCD-EFGH", step.code.userCode)
             denpa.requests.take(); denpa.requests.take()
             val request = denpa.requests.take()
             assertEquals("/denpa/api/device/code", request.target)
