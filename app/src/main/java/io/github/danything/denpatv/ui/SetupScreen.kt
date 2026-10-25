@@ -27,9 +27,14 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -55,7 +60,7 @@ private sealed interface SetupState {
     data object Waiting : SetupState
     data object Checking : SetupState
     /** denpa にログインして、テレビを登録してもらうのを待っている */
-    data class Login(val verificationUrl: String) : SetupState
+    data class Login(val verificationUrl: String, val userCode: String) : SetupState
 }
 
 /**
@@ -63,8 +68,8 @@ private sealed interface SetupState {
  *
  * 1. スマホがテレビの中のページ (`SetupServer`) を開き、denpa の URL を送る
  * 2. テレビが確かめる。家の LAN から入れればそれで終わり
- * 3. 家の外の denpa なら、テレビを denpa に登録する。スマホは denpa の画面に移ってログインし、
- *    済めばテレビが受け取ったアクセストークンを覚えて終わる (RFC 8628 の device authorization)
+ * 3. 家の外の denpa なら、テレビを denpa に登録する。スマホは denpa の画面に移ってログインし、テレビに出したコードと
+ *    見比べて「ペアリング」を押す。済めばテレビが受け取ったアクセストークンを覚えて終わる (RFC 8628 の device authorization)
  */
 @Composable
 fun SetupScreen(app: DenpaApp) {
@@ -95,7 +100,7 @@ fun SetupScreen(app: DenpaApp) {
                 donePage()
             }
             is ConnectStep.NeedsLogin -> {
-                state = SetupState.Login(step.verificationUrl)
+                state = SetupState.Login(step.verificationUrl, step.code.userCode)
                 message = null
                 polling = scope.launch {
                     val outcome = pollForToken(step.code, { api.deviceToken(step.base, step.code.deviceCode) })
@@ -131,7 +136,20 @@ fun SetupScreen(app: DenpaApp) {
                 QrCodeView(current.verificationUrl, 280.dp)
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("スマホで denpa にログインしてください", style = MaterialTheme.typography.headlineSmall)
-                    Text("スマホが denpa の画面に移ります。ログインが済むと、テレビは自動で次に進みます。", style = MaterialTheme.typography.bodyLarge)
+                    Text("スマホが denpa の画面に移ります。ログインしたら、スマホに出るコードが下のコードと同じか確かめてから「ペアリング」を押してください。済むと、テレビは自動で次に進みます。", style = MaterialTheme.typography.bodyLarge)
+                    // 見比べるもの。離れて読めるよう大きく、字の幅を揃えて少し離す (denpa の画面のコードと同じ見せ方)
+                    if (current.userCode.isNotEmpty()) {
+                        Text(
+                            current.userCode,
+                            style = MaterialTheme.typography.displayMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 6.sp,
+                            ),
+                            // 読み上げは 1 字ずつ (字のままの読みは消す)
+                            modifier = Modifier.clearAndSetSemantics { contentDescription = current.userCode.toList().joinToString(" ") },
+                        )
+                    }
                     Text("スマホが移らないときは、左の QR か次の URL を開いてください: ${current.verificationUrl}", style = MaterialTheme.typography.bodySmall)
                     DenpaButton(onClick = { polling?.cancel(); state = SetupState.Waiting }, primary = false) { Text("キャンセル") }
                 }
@@ -152,7 +170,7 @@ fun SetupScreen(app: DenpaApp) {
                     if (serverUrl != null) {
                         Text("1. スマホをテレビと同じ Wi-Fi に繋ぎ、左の QR を読む", style = MaterialTheme.typography.bodyLarge)
                         Text("2. 開いたページに、ブラウザで denpa を開いている URL を入力する", style = MaterialTheme.typography.bodyLarge)
-                        Text("3. 家の外の denpa なら、スマホが denpa の画面に移るのでログインする", style = MaterialTheme.typography.bodyLarge)
+                        Text("3. 家の外の denpa なら、スマホが denpa の画面に移るので、ログインして「ペアリング」を押す", style = MaterialTheme.typography.bodyLarge)
                         Text("4. テレビが自動で次に進む", style = MaterialTheme.typography.bodyLarge)
                     } else {
                         Text("ネットワークに繋がっていないため、QR を出せません", style = MaterialTheme.typography.bodyLarge)
