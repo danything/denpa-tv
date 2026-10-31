@@ -102,7 +102,7 @@ android {
  * 中身は同じリリースの SHA256SUMS で照らす (違えばビルドを止める)
  */
 // renovate: datasource=github-releases depName=danything/denpa-font
-val denpaFontVersion = "v3.5"
+val denpaFontVersion = "v3.6"
 
 abstract class FetchCaptionFont : DefaultTask() {
     /** リリースの置き場 (…/releases/download/<タグ>) */
