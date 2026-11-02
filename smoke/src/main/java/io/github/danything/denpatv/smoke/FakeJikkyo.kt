@@ -15,7 +15,7 @@ import kotlin.concurrent.thread
  * (`DENPA_TV_JIKKYO_KAKOLOG=http://127.0.0.1:18080`。app/build.gradle.kts・docs/development.md)。
  *
  * `GET /api/kakolog/<channel>?starttime=&endtime=` に、区間の中に 0.25 秒おきのコメントを返す。どれも緑の大きな「■」なので、
- * スクリーンショットで流れたかが分かる ([COLOR])。届いた要求は `requests` に、付いてきた Authorization・Referer と一緒に溜める
+ * スクリーンショットで流れたかが分かる (`SmokeTest` の緑の点)。届いた要求は `requests` に、付いてきた Authorization・Referer と一緒に溜める
  */
 class FakeJikkyo : AutoCloseable {
     private val server = ServerSocket(PORT, 50, InetAddress.getByName("127.0.0.1")).apply { reuseAddress = true }
@@ -72,7 +72,5 @@ class FakeJikkyo : AutoCloseable {
         /** コメントの間 (ミリ秒) */
         private const val STEP_MS = 250L
         const val TEXT = "■■■■■■"
-        /** 流れるコメントの色。緑 (#00ff00) を透明度 0.5 で録画の地の色 (#c02080) に重ねたもの */
-        const val COLOR = 0xFF608F40.toInt()
     }
 }

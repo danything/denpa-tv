@@ -384,25 +384,39 @@ class SmokeTest {
         clickInWindows("実況 オフ")
         assertTrue("押しても「実況 オン」になりません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "実況 オン" in windowTexts() })
 
-        // 頭から開き直す (止めたままでは放送時刻が進まず、流れない)
+        // 頭から開き直す (偽の録画は 10 秒しかない)。止まっていたら動かす (止めたままでは放送時刻が進まず、流れない)
         open("denpa://recording/${FakeDenpa.RECORDING_ID}")
         awaitVideo(RECORDING_COLOR)
+        if (windowTexts().any { it.startsWith("一時停止") }) press(KeyEvent.KEYCODE_DPAD_CENTER)
         var dots = 0
         assertTrue(
             "実況のコメントが流れません (緑の点 $dots)。過去ログ API への要求: ${jikkyo.requests.toList()}",
-            poll(COMMENT_TIMEOUT_MS) { dots = screenshot()?.let { count(it, FakeJikkyo.COLOR) } ?: 0; dots >= COMMENT_DOTS },
+            poll(COMMENT_TIMEOUT_MS) { dots = screenshot()?.let(::greenDots) ?: 0; dots >= COMMENT_DOTS },
         )
         assertTrue("過去ログ API を訊いていません: ${jikkyo.requests.toList()}", jikkyo.requests.any { it.startsWith("GET /api/kakolog/jk1") })
         assertTrue("過去ログ API にアクセストークンか Referer を付けました: ${jikkyo.requests.toList()}", jikkyo.requests.none { " [" in it })
     }
 
-    /** 決定で止めて操作の列を開く (届かなかったときだけ押し直す)。開いたかはアプリの窓を全部見る */
+    /** 下でシークバーと操作の列を開く (止めない。届かなかったときだけ押し直す)。開いたかはアプリの窓を全部見る */
     private fun openBarInWindows() {
         for (i in 0 until MENU_TRIES) {
-            press(KeyEvent.KEYCODE_DPAD_CENTER)
+            press(KeyEvent.KEYCODE_DPAD_DOWN)
             if (poll(MENU_WAIT_MS) { windowTexts().any { it.startsWith("CM 飛ばし") } }) return
         }
-        fail("決定で操作の列が開きません: ${windowTexts()}")
+        fail("下で操作の列が開きません: ${windowTexts()}")
+    }
+
+    /**
+     * 流れるコメント (緑の「■」を透明度 0.5 で重ねたもの) の点の数。`CAPTION_STEP` おきに見て、緑が赤・青よりはっきり強い点を数える
+     * (録画の地は赤紫、字幕は白と青なので当たらない。色の管理で少しずれても数えられるよう、決まった色とは比べない)
+     */
+    private fun greenDots(bitmap: Bitmap): Int {
+        var near = 0
+        for (y in 0 until bitmap.height step CAPTION_STEP) for (x in 0 until bitmap.width step CAPTION_STEP) {
+            val p = bitmap.getPixel(x, y)
+            if (Color.green(p) - Color.red(p) > GREEN_MARGIN && Color.green(p) - Color.blue(p) > GREEN_MARGIN) near++
+        }
+        return near
     }
 
     /** アプリの窓を全部見て、`label` のボタンを押す */
@@ -832,6 +846,8 @@ class SmokeTest {
         private const val CAPTION_DOTS = 100
         /** 流れるコメント (緑の大きな「■」) が出たとみなす点の数 (`CAPTION_STEP` おきに見て) */
         private const val COMMENT_DOTS = 20
+        /** 流れるコメントの点とみなす、緑が赤・青より強い幅 */
+        private const val GREEN_MARGIN = 30
 
         // CI のエミュレータ (KVM はあるが GPU は無い) は遅いので長めに待つ
         private const val VIDEO_TIMEOUT_MS = 60_000L
