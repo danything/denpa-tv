@@ -726,4 +726,3 @@ private const val LOADING_QUALITY = "\u0000loading"
 
 /** 番組の終わりから取り直すまでの間 (ミリ秒)。denpa の時計とのずれのぶん */
 private const val PROGRAM_END_GRACE_MS = 3_000L
-

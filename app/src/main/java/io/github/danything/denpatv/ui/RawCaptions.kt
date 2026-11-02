@@ -234,6 +234,8 @@ fun rememberRawCaptions(
             val query = CaptionPaths.query(fromMs?.invoke()?.let { it.coerceAtLeast(0) / 1000 })
             val url = repo.url(path + query)?.let { URI(it) } ?: return@LaunchedEffect
             state.timeline.clear()
+            // 繋ぎ直したストリームは時刻の起点が替わりうる (変換したライブは映像をリクエストし直すと fMP4 の時刻が替わる)。新しい時計が届くまで前のもので数えない
+            state.clock = null
             val finished = try {
                 follow(url, repo.token, state, keepGoing = { reading }, keepCues = { enabled }).also { refused = 0 }
             } catch (_: Unauthorized) {
