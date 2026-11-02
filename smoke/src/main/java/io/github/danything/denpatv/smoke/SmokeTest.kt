@@ -393,6 +393,16 @@ class SmokeTest {
         )
         assertTrue("過去ログ API を訊いていません: ${jikkyo.requests.toList()}", jikkyo.requests.any { it.startsWith("GET /api/kakolog/jk1") })
         assertTrue("過去ログ API にアクセストークンか Referer を付けました: ${jikkyo.requests.toList()}", jikkyo.requests.none { " [" in it })
+
+        // 操作の列の「コメントの一覧」で、右の列にいままでのコメントと勢いが並ぶ
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue("決定で操作の列が開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { barOpen() })
+        val list = node { it.text?.toString() == "コメントの一覧" }?.let(::clickable) ?: throw AssertionError("「コメントの一覧」がありません: ${texts()}")
+        assertTrue("「コメントの一覧」を押せません", list.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        assertTrue(
+            "コメントの一覧が出ません: ${texts()}",
+            poll(TEXT_TIMEOUT_MS) { texts().let { shown -> shown.any { it.startsWith("勢い ") } && FakeJikkyo.TEXT in shown } },
+        )
     }
 
     /**

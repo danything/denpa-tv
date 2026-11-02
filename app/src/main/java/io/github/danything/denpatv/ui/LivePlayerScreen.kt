@@ -618,7 +618,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 describe(current, codec.label),
                 groups = listOf(
                     qualities,
-                    "" to tracks.controls(jikkyo.control()) + baked.controls(),
+                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + baked.controls(),
                     "" to listOf(recordControl(now) { record(fromDetail = false) }),
                 ),
                 // 上で開いたときは、操作の列ではなく局の列のいま映している局にフォーカスする (下の LaunchedEffect)

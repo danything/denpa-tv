@@ -76,13 +76,19 @@ class JikkyoState internal constructor(
     val down: Boolean,
     /** いま映しているコマの放送時刻 */
     val air: AirClock,
+    /** 右にコメントの一覧を出す設定 (端末ごと) */
+    val listOn: Boolean,
     /** 追っかけ。新しいところ (過去ログにまだ無い 10 分以内) に来たら NX-Jikkyo で1回だけ遡る */
     val backfill: Boolean,
     private val toggle: () -> Unit,
+    private val toggleList: () -> Unit,
     private val missing: () -> Unit,
 ) {
     /** 流している */
     val active: Boolean get() = supported && on && channel != null
+
+    /** 右にコメントの一覧を出している (流しているときだけ) */
+    val listShown: Boolean get() = active && listOn
 
     /**
      * 操作の列の「実況」(「字幕」の隣)。出さないなら null。実況の無い局は「実況 (この局にはありません)」、
@@ -94,6 +100,10 @@ class JikkyoState internal constructor(
         val label = (if (on) "実況 オン" else "実況 オフ") + if (on && down) " (いまは読めません)" else ""
         return Control(label, on = on, icon = R.drawable.ic_jikkyo) { toggle() }
     }
+
+    /** 操作の列の「コメントの一覧」(流しているときだけ)。押すたびに右の列を出す・しまう */
+    fun listControl(): Control? =
+        if (!active) null else Control("コメントの一覧", on = listOn, icon = R.drawable.ic_jikkyo_list) { toggleList() }
 }
 
 /** 世帯の設定で実況がオンか。オフなら局の一覧の `jikkyo` がどれも null (実況のある局が1つも無い) */
@@ -121,6 +131,7 @@ fun rememberJikkyo(
     onUnauthorized: () -> Unit = {},
 ): JikkyoState {
     val on by repo.app.settings.jikkyo.collectAsState(initial = false)
+    val listOn by repo.app.settings.jikkyoList.collectAsState(initial = false)
     val supported = household && jikkyoSupported(repo.denpaVersion)
     val scope = rememberCoroutineScope()
     // 繋ぐ出来事と取り足しは1本のスレッドで回す (NxJikkyo)。画面を離れたら閉じてから止める
@@ -157,10 +168,15 @@ fun rememberJikkyo(
         on = on,
         down = down,
         air = air,
+        listOn = listOn,
         backfill = backfill,
         toggle = {
             scope.launch { repo.app.settings.setJikkyo(!on) }
             onChange(if (on) "実況 オフ" else "実況 オン")
+        },
+        toggleList = {
+            scope.launch { repo.app.settings.setJikkyoList(!listOn) }
+            onChange(if (listOn) "コメントの一覧 オフ" else "コメントの一覧 オン")
         },
         missing = { onChange("この局には実況がありません") },
     )

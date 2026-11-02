@@ -17,7 +17,10 @@ import kotlin.concurrent.thread
  * `GET /api/kakolog/<channel>?starttime=&endtime=` に、区間の中に 0.25 秒おきのコメントを返す。どれも緑の大きな「■」なので、
  * スクリーンショットで流れたかが分かる (`SmokeTest` の緑の点)。届いた要求は `requests` に、付いてきた Authorization・Referer と一緒に溜める
  */
-class FakeJikkyo : AutoCloseable {
+class FakeJikkyo(
+    /** スクリーンショットを撮るとき。作り物の普通のコメント ([SHOWCASE]) を、ところどころ色・大きさを替えて返す */
+    private val showcase: Boolean = false,
+) : AutoCloseable {
     private val server = ServerSocket(PORT, 50, InetAddress.getByName("127.0.0.1")).apply { reuseAddress = true }
     val requests = ConcurrentLinkedQueue<String>()
 
@@ -45,7 +48,10 @@ class FakeJikkyo : AutoCloseable {
             val from = (query["starttime"]?.toLongOrNull() ?: 0) * 1000
             val to = (query["endtime"]?.toLongOrNull() ?: 0) * 1000
             val chats = generateSequence(from - Math.floorMod(from, STEP_MS)) { it + STEP_MS }.takeWhile { it < to }.filter { it >= from }
-                .joinToString(",") { """{"chat":{"thread":"1","no":"1","date":"${it / 1000}","date_usec":"${it % 1000 * 1000}","mail":"184 green big","content":"$TEXT"}}""" }
+                .joinToString(",") { ms ->
+                    val (mail, text) = if (showcase) SHOWCASE[Math.floorMod(ms / STEP_MS, SHOWCASE.size.toLong()).toInt()] else "184 green big" to TEXT
+                    """{"chat":{"thread":"1","no":"1","date":"${ms / 1000}","date_usec":"${ms % 1000 * 1000}","mail":"$mail","content":"$text"}}"""
+                }
             val body = """{"packet":[$chats]}""".toByteArray()
             out.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray())
             out.write(body)
@@ -72,5 +78,23 @@ class FakeJikkyo : AutoCloseable {
         /** コメントの間 (ミリ秒) */
         private const val STEP_MS = 250L
         const val TEXT = "■■■■■■"
+        /** スクリーンショットのコメント (作り物)。`mail` と本文 */
+        private val SHOWCASE = listOf(
+            "184" to "わこつ",
+            "184" to "きたー",
+            "184" to "作画いいな",
+            "184 yellow" to "鍛冶師かっこいい",
+            "184" to "草",
+            "184" to "この剣ほしい",
+            "184 big" to "8888888",
+            "184" to "OP いい曲",
+            "184" to "勇者ざまぁ",
+            "184 cyan" to "村の人やさしい",
+            "184" to "ロイドさん有能",
+            "184" to "王都編たのしみ",
+            "184 ue" to "神回",
+            "184" to "もう一話見たい",
+        )
+
     }
 }

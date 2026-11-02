@@ -37,6 +37,7 @@ class Screenshots {
     @Test
     fun shoot() {
         assumeTrue("撮るときだけ (-e shots 1)", InstrumentationRegistry.getArguments().getString("shots") != null)
+        val jikkyo = FakeJikkyo(showcase = true)
         FakeDenpa(instrumentation.context.assets, showcase = true).use { denpa ->
             shell("pm clear $APP")
             shell("rm -rf $DIR")
@@ -56,6 +57,7 @@ class Screenshots {
             live(denpa)
             settings()
             recording()
+            jikkyo()
             chase()
 
             // 軽さ: 一覧で上下に送るあいだのフレームを数える (読むのは scripts/shots-run.sh の dumpsys gfxinfo)
@@ -72,6 +74,35 @@ class Screenshots {
             }
             SystemClock.sleep(SETTLE_MS)
         }
+        jikkyo.close()
+    }
+
+    /**
+     * 実況のコメントと、右の列のコメントの一覧 (作り物の過去ログ。`FakeJikkyo`)。操作の列で「実況」と「コメントの一覧」をオンにして撮り、
+     * 撮ったらオフに戻す (ほかの画像に出さない)
+     */
+    private fun jikkyo() {
+        open("denpa://recording/${Showcase.CAPTION_ID}")
+        await("字幕が出ません") { nodes().any { it.contentDescription?.contains("字幕を文字で描く") == true } }
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        await("下で操作の列が開きません") { barOpen() }
+        click("実況 オフ")
+        await("実況がオンになりません") { "実況 オン" in texts() }
+        click("コメントの一覧")
+        await("コメントの一覧が出ません") { texts().any { it.startsWith("勢い") } }
+        press(KeyEvent.KEYCODE_BACK)
+        await("戻るで操作の列が閉じません") { !barOpen() }
+        SystemClock.sleep(JIKKYO_SETTLE_MS)
+        shot("jikkyo")
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        await("下で操作の列が開きません") { barOpen() }
+        click("コメントの一覧")
+        await("コメントの一覧がしまえません") { texts().none { it.startsWith("勢い") } }
+        click("実況 オン")
+        await("実況がオフになりません") { "実況 オフ" in texts() }
+        press(KeyEvent.KEYCODE_BACK)
+        SystemClock.sleep(KEY_GAP_MS)
+        press(KeyEvent.KEYCODE_BACK)
     }
 
     /** 録画の一覧 (下の端・頭・長いタイトル)・録画の詳細。終わりは長いタイトル (行の左の端) にフォーカスしておく (続けて左でメニューを開く) */
@@ -410,6 +441,8 @@ class Screenshots {
 
         /** フォーカスしてから撮るまで (上の段の画像を替える・ポスターを読む・膨らむのを待つ) */
         const val SETTLE_MS = 3_000L
+        /** 実況をオンにしてから撮るまで (コメントが画面に行き渡るまで。右の端から左の端まで 4 秒) */
+        const val JIKKYO_SETTLE_MS = 4_000L
         /** キーでフォーカスを移してから撮るまで */
         const val FOCUS_MS = 1_000L
         /** 選局の間を撮るときの偽の denpa の選局の長さと、ふだんの長さ */

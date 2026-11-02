@@ -158,7 +158,7 @@ internal object Showcase {
         val now = System.currentTimeMillis()
         return stations.joinToString(",", "[", "]") { s ->
             """{"id":${s.id},"type":"${s.type}","name":${q(s.name)},"remoteControlKey":${s.key},"logo":"api/services/${s.id}/logo",
-            "live":"api/services/${s.id}/live","now":{"id":${s.id * 10},"title":${q(s.title)},"startAt":${now - s.since * 60_000L},
+            "live":"api/services/${s.id}/live","jikkyo":"jk${s.key}","now":{"id":${s.id * 10},"title":${q(s.title)},"startAt":${now - s.since * 60_000L},
             "endAt":${now + s.left * 60_000L},"audios":[],"reserved":${s.reserved},"recording":${s.recording}}}"""
         }
     }
