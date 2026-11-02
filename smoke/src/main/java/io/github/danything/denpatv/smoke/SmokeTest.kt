@@ -395,7 +395,7 @@ class SmokeTest {
         assertTrue("過去ログ API にアクセストークンか Referer を付けました: ${jikkyo.requests.toList()}", jikkyo.requests.none { " [" in it })
 
         // 操作の列の「コメントの一覧」で、右の列にいままでのコメントと勢いが並ぶ
-        // (偽の録画は 10 秒で終わるので、開き直して少し流してから止める)
+        // (偽の録画は 10 秒で終わるので、開き直して少し流してから開く)
         open("denpa://recording/${FakeDenpa.RECORDING_ID}")
         awaitVideo(RECORDING_COLOR)
         SystemClock.sleep(LIST_PLAY_MS)
