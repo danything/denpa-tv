@@ -410,8 +410,8 @@ class Screenshots {
         }
         val automation = automation()
         automation.rootInActiveWindow?.takeIf { it.packageName?.toString() == APP }?.let(::walk)
-        // 最後まで観た画面から戻って録画を開き直したあとなど、いちばん前の窓のツリーが空で返ることがある。そのときはアプリの窓を全部見る
-        if (out.size <= 1) automation.windows.mapNotNull { it.root }.filter { it.packageName?.toString() == APP }.forEach(::walk)
+        // いちばん前の窓のツリーが古いまま (中身の無いまま) 返ることがあるので、アプリの窓を全部足して見る (いちばん前の窓が先)
+        automation.windows.mapNotNull { it.root }.filter { it.packageName?.toString() == APP }.forEach(::walk)
         return out
     }
 
