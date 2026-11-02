@@ -379,11 +379,10 @@ class SmokeTest {
     fun recordingJikkyo() = watching {
         open("denpa://recording/${FakeDenpa.RECORDING_ID}")
         awaitVideo(RECORDING_COLOR)
-        press(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertTrue("決定で操作の列が開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { barOpen() })
-        val button = node { it.text?.toString() == "実況 オフ" }?.let(::clickable) ?: throw AssertionError("「実況 オフ」がありません: ${texts()}")
-        assertTrue("「実況 オフ」を押せません", button.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-        assertTrue("押しても「実況 オン」になりません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "実況 オン" in texts() })
+        // 前の試し (詳細のダイアログを閉じた) のあとは、いちばん前の窓のツリーが空で返ることがあるので、アプリの窓を全部見る
+        openBarInWindows()
+        clickInWindows("実況 オフ")
+        assertTrue("押しても「実況 オン」になりません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "実況 オン" in windowTexts() })
 
         // 頭から開き直す (止めたままでは放送時刻が進まず、流れない)
         open("denpa://recording/${FakeDenpa.RECORDING_ID}")
@@ -395,6 +394,21 @@ class SmokeTest {
         )
         assertTrue("過去ログ API を訊いていません: ${jikkyo.requests.toList()}", jikkyo.requests.any { it.startsWith("GET /api/kakolog/jk1") })
         assertTrue("過去ログ API にアクセストークンか Referer を付けました: ${jikkyo.requests.toList()}", jikkyo.requests.none { " [" in it })
+    }
+
+    /** 決定で止めて操作の列を開く (届かなかったときだけ押し直す)。開いたかはアプリの窓を全部見る */
+    private fun openBarInWindows() {
+        for (i in 0 until MENU_TRIES) {
+            press(KeyEvent.KEYCODE_DPAD_CENTER)
+            if (poll(MENU_WAIT_MS) { windowTexts().any { it.startsWith("CM 飛ばし") } }) return
+        }
+        fail("決定で操作の列が開きません: ${windowTexts()}")
+    }
+
+    /** アプリの窓を全部見て、`label` のボタンを押す */
+    private fun clickInWindows(label: String) {
+        val target = windowNode(label)?.let(::clickable) ?: throw AssertionError("「$label」がありません: ${windowTexts()}")
+        assertTrue("「$label」を押せません", target.performAction(AccessibilityNodeInfo.ACTION_CLICK))
     }
 
     /**
@@ -772,6 +786,17 @@ class SmokeTest {
             }
             automation.windows.mapNotNull { it.root }.filter { it.packageName?.toString() == APP }.forEach(::walk)
             return out
+        }
+
+        /** アプリの窓 (ダイアログも) すべてから、`text` の文字を持つ部品 */
+        private fun windowNode(text: String): AccessibilityNodeInfo? {
+            val found = mutableListOf<AccessibilityNodeInfo>()
+            fun walk(node: AccessibilityNodeInfo) {
+                if (node.text?.toString() == text) found += node
+                for (i in 0 until node.childCount) node.getChild(i)?.let(::walk)
+            }
+            freshAutomation().windows.mapNotNull { it.root }.filter { it.packageName?.toString() == APP }.forEach(::walk)
+            return found.firstOrNull()
         }
 
         /** いちばん前のアプリの窓の文字 */
