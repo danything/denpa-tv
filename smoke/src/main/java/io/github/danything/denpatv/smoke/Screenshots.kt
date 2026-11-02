@@ -57,8 +57,9 @@ class Screenshots {
             live(denpa)
             settings()
             recording()
-            jikkyo()
             chase()
+            // 実況はオンにしたまま終える (ほかの画像に出さないよう、いちばん後に撮る)
+            jikkyo()
 
             // 軽さ: 一覧で上下に送るあいだのフレームを数える (読むのは scripts/shots-run.sh の dumpsys gfxinfo)
             await("録画の一覧に戻りません") { texts().any { "名城" in it } }
@@ -79,7 +80,7 @@ class Screenshots {
 
     /**
      * 実況のコメントと、右の列のコメントの一覧 (作り物の過去ログ。`FakeJikkyo`)。操作の列で「実況」と「コメントの一覧」をオンにして撮り、
-     * 撮ったらオフに戻す (ほかの画像に出さない)
+     * いちばん後に撮る (オンのまま終える。ほかの画像に出さない)。終わったら録画の一覧へ戻る
      */
     private fun jikkyo() {
         // エミュレータはアニメーションを切ってあり、そのままでは流れずに上の行に置かれる。撮る間だけ戻す (開く前に。流し方は開いたときに決まる)
@@ -98,14 +99,6 @@ class Screenshots {
         SystemClock.sleep(JIKKYO_SETTLE_MS)
         shot("jikkyo")
         if (scale == "null" || scale.isEmpty()) shell("settings delete global animator_duration_scale") else shell("settings put global animator_duration_scale $scale")
-        press(KeyEvent.KEYCODE_DPAD_DOWN)
-        await("下で操作の列が開きません") { barOpen() }
-        click("コメントの一覧")
-        await("コメントの一覧がしまえません") { texts().none { it.startsWith("勢い") } }
-        click("実況 オン")
-        await("実況がオフになりません") { "実況 オフ" in texts() }
-        press(KeyEvent.KEYCODE_BACK)
-        SystemClock.sleep(KEY_GAP_MS)
         press(KeyEvent.KEYCODE_BACK)
     }
 
