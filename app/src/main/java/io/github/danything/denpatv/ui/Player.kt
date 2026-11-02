@@ -271,6 +271,21 @@ fun PlayerFrame(
             }
             .focusable(),
     ) {
+        // 字幕より下に置く (上に重ねた View の下にある字幕は、読み上げのツリーから外れる)
+        AndroidView(
+            factory = ::View,
+            /*
+             * **流している間は画面を点けたままにする** (スクリーンセーバーを出さない)。この画面の View に付けるので、
+             * 画面を離れれば一緒に外れる (ComposeView に付けると、次の画面と取り合って消し合う)
+             */
+            update = { view ->
+                // 繋ぎ直している間も (点けっぱなしで戻ってきたときに映っていてほしい)
+                view.keepScreenOn = loading.awake || recovery.active
+            },
+            // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
+            onReset = { view -> view.keepScreenOn = false },
+            onRelease = { view -> view.keepScreenOn = false },
+        )
         /*
          * 実況のコメントの一覧を出している間は、映像を左に寄せて 16:9 のまま縮め、右に一覧の列を置く (コメントと字幕は縮めた映像の中)。
          * 木の形は出していないときも同じにしておく (映像の面を作り直さない)
@@ -287,20 +302,6 @@ fun PlayerFrame(
             }
             if (listed && jikkyo != null) JikkyoListColumn(jikkyo, Modifier.width(JIKKYO_LIST_WIDTH))
         }
-        AndroidView(
-            factory = ::View,
-            /*
-             * **流している間は画面を点けたままにする** (スクリーンセーバーを出さない)。この画面の View に付けるので、
-             * 画面を離れれば一緒に外れる (ComposeView に付けると、次の画面と取り合って消し合う)
-             */
-            update = { view ->
-                // 繋ぎ直している間も (点けっぱなしで戻ってきたときに映っていてほしい)
-                view.keepScreenOn = loading.awake || recovery.active
-            },
-            // 画面を離れたら必ず外す (外した View が窓の印を持ったまま残らないように)
-            onReset = { view -> view.keepScreenOn = false },
-            onRelease = { view -> view.keepScreenOn = false },
-        )
         if (error == null) LoadingVeil(loading, busyLabel, recovery)
         val notice = error ?: overlay
         CompositionLocalProvider(LocalOverlayInsets provides insets, LocalBarNotice provides notice.takeIf { covered }) {
