@@ -82,6 +82,9 @@ class Screenshots {
      * 撮ったらオフに戻す (ほかの画像に出さない)
      */
     private fun jikkyo() {
+        // エミュレータはアニメーションを切ってあり、そのままでは流れずに上の行に置かれる。撮る間だけ戻す (開く前に。流し方は開いたときに決まる)
+        val scale = shell("settings get global animator_duration_scale").trim()
+        shell("settings put global animator_duration_scale 1")
         open("denpa://recording/${Showcase.CAPTION_ID}")
         await("字幕が出ません") { nodes().any { it.contentDescription?.contains("字幕を文字で描く") == true } }
         press(KeyEvent.KEYCODE_DPAD_DOWN)
@@ -94,6 +97,7 @@ class Screenshots {
         await("戻るで操作の列が閉じません") { !barOpen() }
         SystemClock.sleep(JIKKYO_SETTLE_MS)
         shot("jikkyo")
+        if (scale == "null" || scale.isEmpty()) shell("settings delete global animator_duration_scale") else shell("settings put global animator_duration_scale $scale")
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         await("下で操作の列が開きません") { barOpen() }
         click("コメントの一覧")
