@@ -17,7 +17,7 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 data class Connection(val server: String, val token: String?)
 
 /**
- * 覚えておくもの: 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・
+ * 覚えておくもの: 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・実況を流すか・音声 (名前とデュアルモノの側)・
  * アップデートを確かめた時刻と、押して許可の画面へ送った版。
  *
  * **アクセストークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
@@ -33,6 +33,7 @@ class Settings(private val context: Context) {
     private val lastServiceKey = longPreferencesKey("last_service")
     private val speedKey = floatPreferencesKey("playback_speed")
     private val subtitlesKey = booleanPreferencesKey("subtitles")
+    private val jikkyoKey = booleanPreferencesKey("jikkyo")
     private val audioKey = stringPreferencesKey("audio_label")
     private val dualMonoKey = stringPreferencesKey("dual_mono_side")
     private val updateCheckedKey = longPreferencesKey("update_checked_at")
@@ -96,6 +97,16 @@ class Settings(private val context: Context) {
 
     suspend fun setSubtitles(on: Boolean) {
         context.dataStore.edit { it[subtitlesKey] = on }
+    }
+
+    /**
+     * 実況のコメントを流すか。既定は流さない。端末ごと (ブラウザの denpa の「実況」と同じく観ながら変える。設定の画面には置かない)。
+     * 出すのは世帯の設定 (denpa の連携の「実況」) がオンのときだけ
+     */
+    val jikkyo: Flow<Boolean> = context.dataStore.data.map { it[jikkyoKey] ?: false }
+
+    suspend fun setJikkyo(on: Boolean) {
+        context.dataStore.edit { it[jikkyoKey] = on }
     }
 
     /** 最後に選んだ音声の名前 (「解説ステレオ」など)。同じ名前の音声があればそれで始める */

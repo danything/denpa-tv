@@ -61,7 +61,7 @@ Menu・メディアキー・緑のボタンと、メニューの中のキーは 
 
 ## ドキュメント
 
-- [docs/usage.md](docs/usage.md) — 画面ごとの動き (ライブ・録画・追っかけ再生・字幕と音声・リンクで開く・できないこと)
+- [docs/usage.md](docs/usage.md) — 画面ごとの動き (ライブ・録画・追っかけ再生・字幕と音声・実況のコメント・リンクで開く・できないこと)
 - [docs/controls.md](docs/controls.md) — キーの全部と、そう決めた理由
 - [docs/playback.md](docs/playback.md) — 再生できる形式・MPEG-2・切れたときの繋ぎ直し
 - [docs/pairing.md](docs/pairing.md) — denpa に繋ぐ (詳しい手順・安全のために)

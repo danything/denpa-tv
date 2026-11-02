@@ -21,7 +21,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CaptionPaths
+import io.github.danything.denpatv.data.AirClock
+import io.github.danything.denpatv.data.AirTime
 import io.github.danything.denpatv.data.Chase
+import io.github.danything.denpatv.data.JikkyoFeed
 import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.EMPTY_STREAM_MESSAGE
@@ -133,6 +136,13 @@ fun ChasePlayerScreen(
         fromMs = { from + player.currentPosition },
         onUnauthorized = onUnauthorized,
     )
+    // 実況のコメント。放送時刻 W は元の TS の頭の放送時刻 + 元の TS の頭からの位置。過去ログの新しいところは 5 分おきに取り足す
+    val jikkyo = rememberRecordingJikkyo(repo, recording.id, flash, onUnauthorized, live = true) { j ->
+        Pair(
+            AirClock { AirTime.chase(j.head, position()) },
+            JikkyoPast(j.head, System::currentTimeMillis, every = JikkyoFeed.REFRESH_MS),
+        )
+    }
     // デュアルモノの主・副は、元の TS のときだけ配り直す (変換した追っかけは denpa が選んだ1つだけをエンコードする。下の `baked`)
     val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { quality == LiveQuality.Raw }.orEmpty())
     // 変換した追っかけの音声は denpa にリクエストして選ぶ (`?audio=<id>`)。替えたら、いまの位置からリクエストし直す
@@ -445,7 +455,7 @@ fun ChasePlayerScreen(
         notFound -> Chase.NOT_FOUND
         else -> withBusyAdvice(error, quality, repo.app.decoders)
     }
-    PlayerFrame(player, overlay, shownError, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, covered = covered, above = {
+    PlayerFrame(player, overlay, shownError, active = bar == null && !details && !ended && !ui.leaving, captions = captions, jikkyo = jikkyo, recovery = recovery, covered = covered, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました (録画は終わっています)",
@@ -474,7 +484,7 @@ fun ChasePlayerScreen(
                             codec.choose(choice)
                         }
                     },
-                    "" to tracks.controls() + baked.controls(),
+                    "" to tracks.controls(jikkyo.control()) + baked.controls(),
                 ),
                 header = { actions ->
                     // シークバーが操作バーのいちばん上の列。そこで上キーを押すと閉じて映像に戻る (録画と同じ)

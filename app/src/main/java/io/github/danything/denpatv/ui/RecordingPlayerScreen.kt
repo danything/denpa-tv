@@ -28,6 +28,8 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import io.github.danything.denpatv.R
+import io.github.danything.denpatv.data.AirClock
+import io.github.danything.denpatv.data.AirTime
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.RecordingCenter
@@ -250,6 +252,14 @@ private fun RecordingPlayback(
         )
     } else {
         rememberCaptionPages(repo, player, CaptionPaths.recordingText(recording.id), onUnauthorized) { timeline.position() }
+    }
+    val jikkyo = rememberRecordingJikkyo(repo, recording.id, flash, onUnauthorized) { j ->
+        // 物差しがエンコードしたものなら、元の TS の時刻に直してから頭の放送時刻を足す
+        val ruler = info.ruler.takeIf { info.axis == "encoded" }
+        Pair(
+            AirClock { AirTime.recording(j.head, timeline.position(), ruler) },
+            JikkyoPast(j.head, { j.end ?: AirTime.recording(j.head, lengthMs, ruler) }),
+        )
     }
     // デュアルモノの主・副は、元の TS のときだけ配り直す (エンコード済みの録画は denpa が主・副の2本に割ってある。変換は denpa が選んだ1つだけ)
     val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { raw }.orEmpty())
@@ -591,7 +601,7 @@ private fun RecordingPlayback(
 
     // 操作バー (終わり・止めている間・操作の列) を出している間は、通知を操作バーのタイトルに添える (`covered`)
     val covered = ended || bar != null || !playing
-    PlayerFrame(player, overlay, error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, recovery = recovery, covered = covered, above = {
+    PlayerFrame(player, overlay, error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, jikkyo = jikkyo, recovery = recovery, covered = covered, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
@@ -624,7 +634,7 @@ private fun RecordingPlayback(
                             toggleCm()
                         },
                     ),
-                    "" to tracks.controls() + bakedAudio.controls(),
+                    "" to tracks.controls(jikkyo.control()) + bakedAudio.controls(),
                     "" to listOf(deleteControl),
                 ),
                 header = { actions ->

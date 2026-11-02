@@ -19,6 +19,8 @@ data class Service(
     val live: String,
     /** いま放送中の番組。番組表に無ければ null */
     val now: NowProgram? = null,
+    /** 実況のチャンネル (`jk1` など)。実況の無い局と、世帯の設定 (連携の「実況」) がオフなら null */
+    val jikkyo: String? = null,
 )
 
 /**

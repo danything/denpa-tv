@@ -35,6 +35,9 @@ jobs:
       - name: Build APKs
         env:
           GH_TOKEN: ${{ github.token }}
+          # 実況の取得先は smoke の偽物 (FakeJikkyo) へ向ける (ci.yml と同じ)
+          DENPA_TV_JIKKYO_NX: ws://127.0.0.1:18080
+          DENPA_TV_JIKKYO_KAKOLOG: http://127.0.0.1:18080
         run: |
           tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName || true)
           if [ -n "$tag" ]; then

@@ -110,7 +110,7 @@ class FakeDenpa(
         val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file|poster)").matchEntire(path)
         val live = Regex("/api/services/(\\d+)/live").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
-            path == "/api/health" -> json(out, """{"ok":true,"version":"v1.59.0"}""")
+            path == "/api/health" -> json(out, """{"ok":true,"version":"v2.26.0"}""")
             path == "/api/services" -> json(out, services())
             // 局の切り替えの行き先も同じ映像を流す
             live == SERVICE_ID || live == NEXT_SERVICE_ID ->
@@ -134,7 +134,10 @@ class FakeDenpa(
             recording?.groupValues?.get(2) == "detail" -> json(out, """{"description":"$RECORDING_DESCRIPTION","extended":{}}""")
             // 録画の観方。エンコード済みのファイル (H.264) をそのまま開く
             path == "/api/recordings/$RECORDING_ID/playback" ->
-                json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"}]}""")
+                json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"}],"ruler":{"kept":null,"skip":0}}""")
+            // 録画の状態。実況のチャンネルと元の TS の頭の放送時刻 (コメントは偽の過去ログ API `FakeJikkyo` から)
+            path == "/api/recordings/$RECORDING_ID" ->
+                json(out, """{"id":$RECORDING_ID,"encoded":true,"state":"available","durationMs":10000,"jikkyo":{"channel":"jk1","head":$JIKKYO_HEAD,"end":${JIKKYO_HEAD + 10_000}}}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)
             // エンコード前の録画: ファイルは元の TS だけなので、変換して流してもらう (エミュレータは MPEG-2 をデコードできない)。
             // ストリームはライブと同じ fMP4 (塊の時刻は 0 から)。CM は 4〜6 秒 (CM 飛ばしでリクエストし直す)
@@ -216,7 +219,7 @@ class FakeDenpa(
     private fun services(): String {
         val now = System.currentTimeMillis()
         fun service(id: Long, name: String, key: Int, title: String) =
-            """{"id":$id,"type":"GR","name":"$name","remoteControlKey":$key,"live":"api/services/$id/live",
+            """{"id":$id,"type":"GR","name":"$name","remoteControlKey":$key,"live":"api/services/$id/live","jikkyo":"jk$key",
             "now":{"id":${id * 10},"title":"$title","startAt":${now - 600_000},"endAt":${now + 3_000_000}}}"""
         return "[${service(SERVICE_ID, SERVICE_NAME, 1, PROGRAM_TITLE)},${service(NEXT_SERVICE_ID, NEXT_SERVICE_NAME, 2, NEXT_PROGRAM_TITLE)}]"
     }
@@ -383,6 +386,8 @@ class FakeDenpa(
         const val RECORDING_TITLE = "偽の録画"
         /** 録画の説明 (`detail`)。詳細に出る */
         const val RECORDING_DESCRIPTION = "偽の denpa の録画"
+        /** 録画 [RECORDING_ID] の元の TS の頭の放送時刻 (実況のコメントはここから) */
+        const val JIKKYO_HEAD = 1_790_000_000_000L
         /** 録っている最中の録画 (追っかけで観る) */
         const val CHASE_ID = 2L
         const val CHASE_TITLE = "偽の録画中"

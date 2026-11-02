@@ -370,6 +370,72 @@ class SmokeTest {
     }
 
     /**
+     * **実況のコメントを流す。** 操作の列の「実況 オフ」を押してオンにし (端末ごとに覚える)、録画を頭から開き直すと、録画の元の TS の頭の放送時刻
+     * (`api/recordings/<id>` の `jikkyo`) から過去ログ API (偽物の `FakeJikkyo`) を訊いて、映像に合わせて緑の「■」が流れる。
+     * 過去ログ API には denpa のアクセストークンも Referer も付けない。
+     * 縮めた APK を `DENPA_TV_JIKKYO_KAKOLOG=http://127.0.0.1:18080` でビルドしていないと、本物の過去ログ API を訊いて流れない
+     */
+    @Test
+    fun recordingJikkyo() = watching {
+        open("denpa://recording/${FakeDenpa.RECORDING_ID}")
+        awaitVideo(RECORDING_COLOR)
+        // 前の試し (詳細のダイアログを閉じた) のあとは、いちばん前の窓のツリーが空で返ることがあるので、アプリの窓を全部見る
+        openBarInWindows()
+        clickInWindows("実況 オフ")
+        assertTrue("押しても「実況 オン」になりません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "実況 オン" in windowTexts() })
+
+        // 頭から開き直す (偽の録画は 10 秒しかない)
+        reopenRecording()
+        var dots = 0
+        assertTrue(
+            "実況のコメントが流れません (緑の点 $dots)。過去ログ API への要求: ${jikkyo.requests.toList()}",
+            poll(COMMENT_TIMEOUT_MS) { dots = screenshot()?.let(::greenDots) ?: 0; dots >= COMMENT_DOTS },
+        )
+        assertTrue("過去ログ API を訊いていません: ${jikkyo.requests.toList()}", jikkyo.requests.any { it.startsWith("GET /api/kakolog/jk1") })
+        assertTrue("過去ログ API にアクセストークンか Referer を付けました: ${jikkyo.requests.toList()}", jikkyo.requests.none { " [" in it })
+    }
+
+    /**
+     * 録画を頭から開き直す。同じ録画のリンクを続けて開くと、アプリは観ている画面をそのまま続ける (同じ行き先なので作り直さない) ので、
+     * いったん録画の一覧へ戻ってから開く。止まっていたら動かす (止めたままでは放送時刻が進まず、コメントが流れない)
+     */
+    private fun reopenRecording() {
+        open("denpa://recordings")
+        assertTrue("録画の一覧に戻りません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().any { FakeDenpa.RECORDING_TITLE in it } })
+        open("denpa://recording/${FakeDenpa.RECORDING_ID}")
+        awaitVideo(RECORDING_COLOR)
+        if (windowTexts().any { it.startsWith("一時停止") }) press(KeyEvent.KEYCODE_DPAD_CENTER)
+    }
+
+    /** 下でシークバーと操作の列を開く (止めない。届かなかったときだけ押し直す)。開いたかはアプリの窓を全部見る */
+    private fun openBarInWindows() {
+        for (i in 0 until MENU_TRIES) {
+            press(KeyEvent.KEYCODE_DPAD_DOWN)
+            if (poll(MENU_WAIT_MS) { windowTexts().any { it.startsWith("CM 飛ばし") } }) return
+        }
+        fail("下で操作の列が開きません: ${windowTexts()}")
+    }
+
+    /**
+     * 流れるコメント (緑の「■」を透明度 0.5 で重ねたもの) の点の数。`CAPTION_STEP` おきに見て、緑が赤・青よりはっきり強い点を数える
+     * (録画の地は赤紫、字幕は白と青なので当たらない。色の管理で少しずれても数えられるよう、決まった色とは比べない)
+     */
+    private fun greenDots(bitmap: Bitmap): Int {
+        var near = 0
+        for (y in 0 until bitmap.height step CAPTION_STEP) for (x in 0 until bitmap.width step CAPTION_STEP) {
+            val p = bitmap.getPixel(x, y)
+            if (Color.green(p) - Color.red(p) > GREEN_MARGIN && Color.green(p) - Color.blue(p) > GREEN_MARGIN) near++
+        }
+        return near
+    }
+
+    /** アプリの窓を全部見て、`label` のボタンを押す */
+    private fun clickInWindows(label: String) {
+        val target = windowNode(label)?.let(::clickable) ?: throw AssertionError("「$label」がありません: ${windowTexts()}")
+        assertTrue("「$label」を押せません", target.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+    }
+
+    /**
      * エンコード前の録画 (元の TS だけ) は、denpa に変換して流してもらう (`playback` で選ぶ。エミュレータは MPEG-2 をデコードできない)。
      * チャプターは denpa から読み、CM (4〜6 秒) に来たら CM の終わりからリクエストし直して飛ぶ
      */
@@ -597,12 +663,14 @@ class SmokeTest {
         private const val APP = "io.github.danything.denpatv"
         private val instrumentation: Instrumentation get() = InstrumentationRegistry.getInstrumentation()
         private lateinit var denpa: FakeDenpa
+        private lateinit var jikkyo: FakeJikkyo
 
         /** 偽の denpa を立て、まっさらのアプリを起動して、繋ぐ画面の欄から繋ぐ */
         @BeforeClass
         @JvmStatic
         fun connect() {
             denpa = FakeDenpa(instrumentation.context.assets)
+            jikkyo = FakeJikkyo()
             shell("pm clear $APP")
             shell("logcat -b crash -c")
             val launch = (instrumentation.context.packageManager.getLeanbackLaunchIntentForPackage(APP) ?: error("$APP が入っていません"))
@@ -637,7 +705,10 @@ class SmokeTest {
 
         @AfterClass
         @JvmStatic
-        fun stop() = denpa.close()
+        fun stop() {
+            denpa.close()
+            jikkyo.close()
+        }
 
         /**
          * ホームから戻る (ランチャーから開き直すのと同じ。いまの画面のまま前に出る)。シェルから開く — 新しい Android は、
@@ -741,6 +812,17 @@ class SmokeTest {
             return out
         }
 
+        /** アプリの窓 (ダイアログも) すべてから、`text` の文字を持つ部品 */
+        private fun windowNode(text: String): AccessibilityNodeInfo? {
+            val found = mutableListOf<AccessibilityNodeInfo>()
+            fun walk(node: AccessibilityNodeInfo) {
+                if (node.text?.toString() == text) found += node
+                for (i in 0 until node.childCount) node.getChild(i)?.let(::walk)
+            }
+            freshAutomation().windows.mapNotNull { it.root }.filter { it.packageName?.toString() == APP }.forEach(::walk)
+            return found.firstOrNull()
+        }
+
         /** いちばん前のアプリの窓の文字 */
         private fun texts(): List<String> = nodes().mapNotNull { it.text?.toString() }
 
@@ -772,10 +854,16 @@ class SmokeTest {
          */
         private const val CAPTION_STEP = 8
         private const val CAPTION_DOTS = 100
+        /** 流れるコメント (緑の大きな「■」) が出たとみなす点の数 (`CAPTION_STEP` おきに見て) */
+        private const val COMMENT_DOTS = 20
+        /** 流れるコメントの点とみなす、緑が赤・青より強い幅 */
+        private const val GREEN_MARGIN = 30
 
         // CI のエミュレータ (KVM はあるが GPU は無い) は遅いので長めに待つ
         private const val VIDEO_TIMEOUT_MS = 60_000L
         private const val TEXT_TIMEOUT_MS = 30_000L
+        /** 開き直した録画 (10 秒) が流れている間にコメントが出るまで */
+        private const val COMMENT_TIMEOUT_MS = 9_000L
         /** 混んでいて断られたとき、リクエストしてよい数 (1回目とリクエストし直しの `Reconnect.FEW` 回。開いてすぐリクエストし直すことがあるので、その倍まで) と、諦めたあとリクエストしないのを見る長さ (リクエストし直しの待ちの上限 10 秒より長く) */
         private const val BUSY_MOST_REQUESTS = 8
         private const val BUSY_QUIET_MS = 12_000L

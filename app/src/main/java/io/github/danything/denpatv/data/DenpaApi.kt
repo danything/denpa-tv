@@ -126,6 +126,15 @@ class DenpaApi(
         parseRecordingState(res.text(), warn) ?: throw IOException("録画の状態を読めません: $url")
     }
 
+    /**
+     * 実況の NG ワード (`GET api/jikkyo/ng`。世帯で1つの一覧)。無い (古い denpa・世帯の設定がオフ)・届かないは空 (NG ワード無しで流す)。
+     * 形式が違えば `warn` に書いて空
+     */
+    suspend fun jikkyoNg(base: URI): List<String> = withContext(Dispatchers.IO) {
+        val res = call(base, "api/jikkyo/ng")?.takeIf { it.ok } ?: return@withContext emptyList()
+        JikkyoNg.parse(res.text()) ?: emptyList<String>().also { warn("実況の NG ワードの形式が違います (denpa の版のずれ?): ${res.text().take(200)}") }
+    }
+
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。もう無い (404) のも消せたとみなして true。録画中 (409) などは false */
     suspend fun deleteRecording(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
         val res = call(base, "api/recordings/$id", "DELETE") ?: return@withContext false
@@ -252,7 +261,7 @@ fun parseRecordingState(body: String, warn: (String) -> Unit = {}): RecordingSta
         return null
     }
     val duration = json?.get("durationMs")?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
-    return RecordingState(state, duration)
+    return RecordingState(state, duration, parseRecordingJikkyo(json, warn))
 }
 
 /** `api/health` の答え。`version` はリリースのタグ (`v1.44.0`。手元・develop は `dev`)、版を返さないとても古い denpa では null */

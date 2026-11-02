@@ -47,6 +47,13 @@ android {
     val githubReleases = "https://api.github.com/repos/danything/denpa-tv"
     defaultConfig.buildConfigField("String", "UPDATE_API", "\"$githubReleases\"")
 
+    /*
+     * 実況のコメントの取得先 (NX-Jikkyo の WebSocket・過去ログ API。ui/Jikkyo.kt)。**minified (smoke) だけ** ビルドのときに
+     * `DENPA_TV_JIKKYO_NX`・`DENPA_TV_JIKKYO_KAKOLOG` で偽物へ差し替えられる (smoke の `FakeJikkyo`。docs/development.md)。release は差し替えない
+     */
+    defaultConfig.buildConfigField("String", "JIKKYO_NX", "\"wss://nx-jikkyo.tsukumijima.net\"")
+    defaultConfig.buildConfigField("String", "JIKKYO_KAKOLOG", "\"https://jikkyo.tsukumijima.net\"")
+
     buildTypes {
         debug {
             System.getenv("DENPA_TV_UPDATE_API")?.let { buildConfigField("String", "UPDATE_API", "\"$it\"") }
@@ -66,6 +73,8 @@ android {
             initWith(getByName("release"))
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += "release"
+            System.getenv("DENPA_TV_JIKKYO_NX")?.let { buildConfigField("String", "JIKKYO_NX", "\"$it\"") }
+            System.getenv("DENPA_TV_JIKKYO_KAKOLOG")?.let { buildConfigField("String", "JIKKYO_KAKOLOG", "\"$it\"") }
         }
     }
 

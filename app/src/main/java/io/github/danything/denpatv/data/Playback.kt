@@ -21,6 +21,8 @@ data class PlaybackInfo(
     /** `stream?audio=` に渡す音声 */
     val audios: List<PlayAudio> = emptyList(),
     val offers: List<PlayOffer> = emptyList(),
+    /** エンコードしたものの物差しを元の TS に直すもの (`axis` が `encoded` のときだけ。実況の放送時刻に使う)。古い denpa には無い */
+    val ruler: Ruler? = null,
 )
 
 /** 出せるもの1つ。`way` は `file` (エンコード済みのファイルそのまま) / `stream` (fMP4 で流す) / `raw` (元の TS を流す)。使う鍵だけ (`codecs` は読まない。デコードできるかは端末のデコーダで見る) */
@@ -163,6 +165,8 @@ data class RecordingState(
     val state: String,
     /** 録れた長さ (ミリ秒。一覧の `durationMs` と同じ)。録画中は null */
     val durationMs: Long? = null,
+    /** 実況 (チャンネルと元の TS の頭の放送時刻)。実況の無い局・世帯の設定がオフ・古い denpa は null */
+    val jikkyo: RecordingJikkyo? = null,
 ) {
     val recording: Boolean get() = state == "recording"
 
