@@ -370,6 +370,34 @@ class SmokeTest {
     }
 
     /**
+     * **実況のコメントを流す。** 操作の列の「実況 オフ」を押してオンにし (端末ごとに覚える)、録画を頭から開き直すと、録画の元の TS の頭の放送時刻
+     * (`api/recordings/<id>` の `jikkyo`) から過去ログ API (偽物の `FakeJikkyo`) を訊いて、映像に合わせて緑の「■」が流れる。
+     * 過去ログ API には denpa のアクセストークンも Referer も付けない。
+     * 縮めた APK を `DENPA_TV_JIKKYO_KAKOLOG=http://127.0.0.1:18080` でビルドしていないと、本物の過去ログ API を訊いて流れない
+     */
+    @Test
+    fun recordingJikkyo() = watching {
+        open("denpa://recording/${FakeDenpa.RECORDING_ID}")
+        awaitVideo(RECORDING_COLOR)
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue("決定で操作の列が開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { barOpen() })
+        val button = node { it.text?.toString() == "実況 オフ" }?.let(::clickable) ?: throw AssertionError("「実況 オフ」がありません: ${texts()}")
+        assertTrue("「実況 オフ」を押せません", button.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        assertTrue("押しても「実況 オン」になりません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "実況 オン" in texts() })
+
+        // 頭から開き直す (止めたままでは放送時刻が進まず、流れない)
+        open("denpa://recording/${FakeDenpa.RECORDING_ID}")
+        awaitVideo(RECORDING_COLOR)
+        var dots = 0
+        assertTrue(
+            "実況のコメントが流れません (緑の点 $dots)。過去ログ API への要求: ${jikkyo.requests.toList()}",
+            poll(COMMENT_TIMEOUT_MS) { dots = screenshot()?.let { count(it, FakeJikkyo.COLOR) } ?: 0; dots >= COMMENT_DOTS },
+        )
+        assertTrue("過去ログ API を訊いていません: ${jikkyo.requests.toList()}", jikkyo.requests.any { it.startsWith("GET /api/kakolog/jk1") })
+        assertTrue("過去ログ API にアクセストークンか Referer を付けました: ${jikkyo.requests.toList()}", jikkyo.requests.none { " [" in it })
+    }
+
+    /**
      * エンコード前の録画 (元の TS だけ) は、denpa に変換して流してもらう (`playback` で選ぶ。エミュレータは MPEG-2 をデコードできない)。
      * チャプターは denpa から読み、CM (4〜6 秒) に来たら CM の終わりからリクエストし直して飛ぶ
      */
@@ -597,12 +625,14 @@ class SmokeTest {
         private const val APP = "io.github.danything.denpatv"
         private val instrumentation: Instrumentation get() = InstrumentationRegistry.getInstrumentation()
         private lateinit var denpa: FakeDenpa
+        private lateinit var jikkyo: FakeJikkyo
 
         /** 偽の denpa を立て、まっさらのアプリを起動して、繋ぐ画面の欄から繋ぐ */
         @BeforeClass
         @JvmStatic
         fun connect() {
             denpa = FakeDenpa(instrumentation.context.assets)
+            jikkyo = FakeJikkyo()
             shell("pm clear $APP")
             shell("logcat -b crash -c")
             val launch = (instrumentation.context.packageManager.getLeanbackLaunchIntentForPackage(APP) ?: error("$APP が入っていません"))
@@ -637,7 +667,10 @@ class SmokeTest {
 
         @AfterClass
         @JvmStatic
-        fun stop() = denpa.close()
+        fun stop() {
+            denpa.close()
+            jikkyo.close()
+        }
 
         /**
          * ホームから戻る (ランチャーから開き直すのと同じ。いまの画面のまま前に出る)。シェルから開く — 新しい Android は、
@@ -772,10 +805,14 @@ class SmokeTest {
          */
         private const val CAPTION_STEP = 8
         private const val CAPTION_DOTS = 100
+        /** 流れるコメント (緑の大きな「■」) が出たとみなす点の数 (`CAPTION_STEP` おきに見て) */
+        private const val COMMENT_DOTS = 20
 
         // CI のエミュレータ (KVM はあるが GPU は無い) は遅いので長めに待つ
         private const val VIDEO_TIMEOUT_MS = 60_000L
         private const val TEXT_TIMEOUT_MS = 30_000L
+        /** 開き直した録画 (10 秒) が流れている間にコメントが出るまで */
+        private const val COMMENT_TIMEOUT_MS = 9_000L
         /** 混んでいて断られたとき、リクエストしてよい数 (1回目とリクエストし直しの `Reconnect.FEW` 回。開いてすぐリクエストし直すことがあるので、その倍まで) と、諦めたあとリクエストしないのを見る長さ (リクエストし直しの待ちの上限 10 秒より長く) */
         private const val BUSY_MOST_REQUESTS = 8
         private const val BUSY_QUIET_MS = 12_000L

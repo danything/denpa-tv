@@ -44,9 +44,10 @@ class TrackControls(
     val toggleSubtitles: () -> Unit,
     val nextAudio: () -> Unit,
 ) {
-    /** 操作の列に足すボタン (出すものが無ければ空) */
-    fun controls(): List<Control> = buildList {
+    /** 操作の列に足すボタン (出すものが無ければ空)。`jikkyo` (実況のボタン) は「字幕」の隣に置く */
+    fun controls(jikkyo: Control? = null): List<Control> = buildList {
         if (hasText) add(Control(if (subtitles) "字幕 オン" else "字幕 オフ", on = subtitles, icon = R.drawable.ic_subtitles) { toggleSubtitles() })
+        jikkyo?.let(::add)
         if (audio.size >= 2) {
             add(Control(audio.getOrNull(selectedAudio)?.label ?: "音声", icon = R.drawable.ic_audio) { nextAudio() })
         }

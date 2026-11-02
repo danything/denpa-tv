@@ -224,6 +224,8 @@ fun PlayerFrame(
     progress: Pair<Long, Long>? = null,
     /** denpa から受け取る字幕 (`rememberRawCaptions`・`rememberCaptionPages`)。通知の下に重ねる */
     captions: CaptionState,
+    /** 実況のコメント (`rememberJikkyo`)。映像の上・字幕の下に流す */
+    jikkyo: JikkyoState? = null,
     /** 映るまでの間に出す、何をしているか (ライブは「選局しています」)。ストリームが届いたら「映像を待っています」に替わる */
     busyLabel: String = "読み込んでいます",
     /** 繋ぎ直しの様子 (`rememberPlayer` の `recovery`)。繋ぎ直している間は前の映像を残して「繋ぎ直しています」 */
@@ -279,6 +281,8 @@ fun PlayerFrame(
             onReset = { view -> view.keepScreenOn = false },
             onRelease = { view -> view.keepScreenOn = false },
         )
+        // 重ねる順は 映像 < 実況のコメント < 字幕 < 操作バー (コメントは操作バーの影の下を通り、字幕のように持ち上げない)
+        jikkyo?.let { JikkyoLayer(it) }
         CaptionLayer(captions, inset)
         if (error == null) LoadingVeil(loading, busyLabel, recovery)
         val notice = error ?: overlay

@@ -28,6 +28,7 @@ import io.github.danything.denpatv.data.CaptionFrame
 import io.github.danything.denpatv.data.CaptionPage
 import io.github.danything.denpatv.data.CaptionPages
 import io.github.danything.denpatv.data.CaptionPaths
+import io.github.danything.denpatv.data.ClockNotice
 import io.github.danything.denpatv.data.CueTimeline
 import io.github.danything.denpatv.data.Http
 import io.github.danything.denpatv.data.ORIGIN_HEADER
@@ -172,6 +173,10 @@ class CaptionState(
     var available by mutableStateOf(false)
     /** いま重ねている文字の配置 */
     var page by mutableStateOf<CaptionPage?>(null)
+    /** 元の TS のライブの時計 (`clock` の通知)。実況の放送時刻に使う。まだ届いていなければ null */
+    @Volatile
+    var clock: ClockNotice? = null
+        internal set
     internal val timeline = CueTimeline()
     internal var key: Any? = null
 }
@@ -188,6 +193,7 @@ class CaptionState(
  *
  * @param path 字幕のエンドポイント (denpa のルートからの相対、`?from=` は付けない)。null なら元の TS ではないので何もしない
  * @param fromMs 録画で読ませる位置 (ミリ秒、頭から)。ライブは null
+ * @param keepOpen 字幕をオフにしていても読み続ける (実況がオンのライブ。時計の通知 (`clock`) で放送時刻を出すため)
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -198,22 +204,26 @@ fun rememberRawCaptions(
     path: String?,
     generation: Any?,
     fromMs: (() -> Long)? = null,
+    keepOpen: Boolean = false,
     onUnauthorized: () -> Unit = {},
 ): CaptionState {
     val state = remember { CaptionState(repo.app.denpaFont) }
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
+    /** 読み続けるか (字幕か実況) */
+    val reading = enabled || keepOpen
 
-    LaunchedEffect(path, generation, enabled) {
+    LaunchedEffect(path, generation, reading) {
         // 選べる字幕は局 (録画) ごと。再リクエスト・シークでは消さない (ボタンがちらつく)
         if (state.key != path) {
             state.key = path
             state.available = false
+            state.clock = null
         }
         state.timeline.clear()
         state.page = null
         if (path == null) return@LaunchedEffect
         // オフにしてあって、選べる字幕があるかはもう分かっている
-        if (!enabled && state.available) return@LaunchedEffect
+        if (!reading && state.available) return@LaunchedEffect
         /** 続けて断られた回数。元のTSが無い・映像が開かないままのときにリクエストし続けない */
         var refused = 0
         while (true) {
@@ -225,7 +235,7 @@ fun rememberRawCaptions(
             val url = repo.url(path + query)?.let { URI(it) } ?: return@LaunchedEffect
             state.timeline.clear()
             val finished = try {
-                follow(url, repo.token, state, keepGoing = { enabled }).also { refused = 0 }
+                follow(url, repo.token, state, keepGoing = { reading }, keepCues = { enabled }).also { refused = 0 }
             } catch (_: Unauthorized) {
                 return@LaunchedEffect onUnauthorized()
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -244,7 +254,7 @@ fun rememberRawCaptions(
                 false
             }
             // オフにしてある間に選べる字幕が分かった・録画を読み切った
-            if (!enabled && state.available) return@LaunchedEffect
+            if (!reading && state.available) return@LaunchedEffect
             if (finished && fromMs != null) return@LaunchedEffect
             delay(RETRY_MS)
         }
@@ -337,7 +347,7 @@ fun rememberCaptionPages(
  * 字幕のエンドポイントを読み続ける。きれいに閉じたら true。`keepGoing` が false を返す間 (字幕をオフにしてある) は、
  * 選べる字幕が分かったところでやめる
  */
-private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGoing: () -> Boolean): Boolean = coroutineScope {
+private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGoing: () -> Boolean, keepCues: () -> Boolean): Boolean = coroutineScope {
     val connection = withContext(Dispatchers.IO) { CaptionFeed.connect(url, token) }
     // 読むのは止まったままになる (ブロックする) ので、取り消されたら繋がりごと切って抜けさせる
     val watcher = launch {
@@ -356,6 +366,8 @@ private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGo
                     when (val frame = CaptionFeed.read(input)) {
                         null -> finished = true
                         is CaptionFrame.Cue -> {
+                            // 字幕をオフにして実況のために読んでいる間は溜めない (出す側が捨てないので、溜まって読むのが止まる)
+                            if (!keepCues()) continue
                             state.timeline.add(frame.cue)
                             // 先読みしすぎない (録画は denpa が倍速で先へ読む)。読まずに待てば denpa も録画を読むのを止める
                             while (state.timeline.size() > MAX_AHEAD) {
@@ -367,6 +379,7 @@ private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGo
                             state.available = frame.count > 0
                             if (!keepGoing()) finished = false
                         }
+                        is CaptionFrame.Clock -> state.clock = frame.notice
                         CaptionFrame.Other -> Unit
                     }
                 }

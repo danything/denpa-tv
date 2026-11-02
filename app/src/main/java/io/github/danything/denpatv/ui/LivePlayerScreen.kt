@@ -24,12 +24,15 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import io.github.danything.denpatv.R
+import io.github.danything.denpatv.data.AirClock
+import io.github.danything.denpatv.data.AirTime
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.NowProgram
+import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.RecordResult
 import io.github.danything.denpatv.data.Reconnect
 import io.github.danything.denpatv.data.Service
@@ -37,6 +40,7 @@ import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.YieldPlan
 import io.github.danything.denpatv.data.YieldedRecording
 import io.github.danything.denpatv.data.audioQuery
+import io.github.danything.denpatv.data.jikkyoSupported
 import io.github.danything.denpatv.data.chaseEnd
 import io.github.danything.denpatv.data.liveCenter
 import io.github.danything.denpatv.data.liveChannelKey
@@ -116,7 +120,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     /** 裏から戻った回数。戻るたびに同じ局をリクエストし直す */
     var returns by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
-    val clock = remember { TsClock() }
+    // 変換したライブ (fMP4) も Extractor が頭を寄せた幅を控える (字幕と実況の時計は fMP4 の時刻で来る)
+    val clock = remember { TsClock(mp4 = true) }
     /*
      * ---- 録画に譲ったとき (denpa の docs/stream.md「録画に譲る」。ブラウザのライブと同じ動き) ----
      *
@@ -168,19 +173,38 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     )
     val flasher = rememberFlash()
     val (overlay, flash) = flasher
-    // 元の TS の字幕は denpa がデコードした文字の配置を別のエンドポイントで受け取る (変換したライブには字幕が載らない)
+    /** 世帯の設定で実況がオンか (局の一覧の `jikkyo` がどれか入っている) と、端末の設定 (流すか) */
+    val household = householdJikkyo(services)
+    val jikkyoOn by repo.app.settings.jikkyo.collectAsState(initial = false)
+    /*
+     * 変換したライブの音声は denpa にリクエストして選ぶ (`?audio=<id>`)。変わればリクエストし直す。
+     * **番組が替わって音声の並びが変わったときもリクエストし直す** (二カ国語の映画が終わってステレオに戻るなど)。denpa はエンコードの始めに
+     * 選んだ音声のままエンコードし続けるので、リクエストし直さないと、ステレオの番組の片側だけを両耳に配ったままになる。並びが同じならリクエストし直さない
+     */
+    val baked = rememberBakedAudio(
+        repo,
+        audios = playing?.takeIf { quality != LiveQuality.Raw }?.now?.audios.orEmpty(),
+        key = playing?.id,
+        onChange = flash,
+    )
+    // 字幕は denpa がデコードした文字の配置を別のエンドポイントで受け取る (元の TS は放送の PTS、変換したライブは fMP4 の時刻で来る)
     val captions = rememberRawCaptions(
         repo,
         player,
         clock,
         // 裏に回っている間は字幕のストリームも閉じる。追っかけを観ている間は録画の字幕 (映像と同じく、録れているところの少し手前から)
         path = when {
-            quality != LiveQuality.Raw || background -> null
-            chasing != null -> CaptionPaths.recording(chasing.recording.id)
-            else -> playing?.let { CaptionPaths.live(it.live) }
+            background -> null
+            chasing != null -> CaptionPaths.recording(chasing.recording.id).takeIf { quality == LiveQuality.Raw }
+            quality == LiveQuality.Raw -> playing?.let { CaptionPaths.live(it.live) }
+            // 変換したライブの字幕と時計は、映像と同じ形式・音声を渡すと同じストリームのものが fMP4 の時刻で来る (新しい denpa だけ)
+            jikkyoSupported(repo.denpaVersion) -> playing?.let { CaptionPaths.live(it.live) }?.let { "$it?codec=${quality.codec}${audioQuery(baked.audio)}" }
+            else -> null
         },
         generation = chasing?.let { "chase ${it.recording.id} $chaseLoads" } ?: playing?.id,
         fromMs = chasing?.let { { YieldPlan.EDGE_MS } },
+        // 実況がオンなら、字幕がオフでも読み続ける (時計の通知で放送時刻を出す)
+        keepOpen = household && jikkyoOn && chasing == null,
         onUnauthorized = onUnauthorized,
     )
     // デュアルモノの主・副は、元の TS のときだけ配り直す (変換したライブは denpa が選んだ1つだけをエンコードする。下の `baked`)。追っかけの音声は分からないので並べない
@@ -193,15 +217,21 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         denpaAudios = playing?.takeIf { quality == LiveQuality.Raw && chasing == null }?.now?.audios.orEmpty(),
     )
     /*
-     * 変換したライブの音声は denpa にリクエストして選ぶ (`?audio=<id>`)。変わればリクエストし直す。
-     * **番組が替わって音声の並びが変わったときもリクエストし直す** (二カ国語の映画が終わってステレオに戻るなど)。denpa はエンコードの始めに
-     * 選んだ音声のままエンコードし続けるので、リクエストし直さないと、ステレオの番組の片側だけを両耳に配ったままになる。並びが同じならリクエストし直さない
+     * 実況のコメント。**いま映しているコマの放送時刻 W** は、字幕のストリームの時計 (`clock` の通知) と、いま映しているコマの時刻から出す
+     * (元の TS は放送の PTS、変換したライブは fMP4 の時刻。どちらも Extractor が寄せた幅から戻す)。録画に譲って追っかけを観ている間は流さない
      */
-    val baked = rememberBakedAudio(
+    val jikkyo = rememberJikkyo(
         repo,
-        audios = playing?.takeIf { quality != LiveQuality.Raw }?.now?.audios.orEmpty(),
-        key = playing?.id,
+        live = true,
+        channel = playing?.takeIf { chasing == null }?.jikkyo,
+        household = household && (chasing == null),
+        air = if (chasing != null) AirClock { null } else AirClock {
+            val notice = captions.clock ?: return@AirClock null
+            val offset = clock.offsetUs() ?: return@AirClock null
+            AirTime.live(notice, Pts.broadcast(player.currentPosition, offset))
+        },
         onChange = flash,
+        onUnauthorized = onUnauthorized,
     )
     CatchUp(player, buffering)
     val codec = rememberCodecSwitching(repo, player, quality, error, flash)
@@ -543,6 +573,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         progress = (stepping ?: current.takeIf { chasing == null })?.now
             ?.let { System.currentTimeMillis() - it.startAt to it.endAt - it.startAt },
         captions = captions,
+        jikkyo = jikkyo,
         busyLabel = "選局しています",
         recovery = recovery,
         covered = menu != null,
@@ -587,7 +618,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 describe(current, codec.label),
                 groups = listOf(
                     qualities,
-                    "" to tracks.controls() + baked.controls(),
+                    "" to tracks.controls(jikkyo.control()) + baked.controls(),
                     "" to listOf(recordControl(now) { record(fromDetail = false) }),
                 ),
                 // 上で開いたときは、操作の列ではなく局の列のいま映している局にフォーカスする (下の LaunchedEffect)
@@ -695,3 +726,4 @@ private const val LOADING_QUALITY = "\u0000loading"
 
 /** 番組の終わりから取り直すまでの間 (ミリ秒)。denpa の時計とのずれのぶん */
 private const val PROGRAM_END_GRACE_MS = 3_000L
+

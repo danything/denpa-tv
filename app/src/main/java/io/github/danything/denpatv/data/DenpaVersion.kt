@@ -28,6 +28,19 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 val MIN_DENPA = DenpaVersion(1, 59, 0)
 
 /**
+ * 実況を流すのに要る denpa の版。元の TS のライブの字幕のストリームが時計 (`clock`) を送り、録画の観方が `ruler` を返し、
+ * NG ワード (`api/jikkyo/ng`) を読めるのがこの版から。古ければ操作の列に「実況」を出さない (`jikkyoSupported`)
+ */
+val JIKKYO_DENPA = DenpaVersion(2, 26, 0)
+
+/** 繋いだ denpa で実況を流せるか。版が分からない (`dev` など) なら流せるとみなす (`denpaTooOld` と同じ)。版を確かめる前 (null) は流さない */
+fun jikkyoSupported(version: String?): Boolean {
+    if (version == null) return false
+    val running = DenpaVersion.parse(version) ?: return true
+    return running >= JIKKYO_DENPA
+}
+
+/**
  * 繋いだ denpa が古すぎれば、画面に出す1行。足りていれば・分からなければ (`dev` など) null。
  * `version` が無い (null) のは版を返さないとても古い denpa。
  * **古くても止めない** (あるエンドポイントは読み、無いものは出ないだけ)。言うだけ

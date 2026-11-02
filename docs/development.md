@@ -25,4 +25,16 @@ Android TV のエミュレータ (API 36、1080p) で、作り物の局・番組
 2. 終わったら artifact (`shots`) を取ってきて (`gh run download <run id> -n shots`)、`docs/images/` にあるのと同じ名前の webp を上書きする
 3. 画像が変わったら、README・usage.md の alt も合わせる
 
-ライブの字幕は撮れません (元の TS でしか出ないが、エミュレータには MPEG-2 のデコーダが無く、元の TS を選べない)。字幕は録画の再生の画像に出ています。
+ライブの字幕は撮っていません (偽の denpa がライブの字幕を返さない)。字幕は録画の再生の画像に出ています。
+
+## 実況の取得先を偽物にする
+
+実況のコメントの取得先 (NX-Jikkyo の WebSocket・過去ログ API) は、**縮めた APK (minified) だけ** ビルドのときに差し替えられます
+(`DENPA_TV_JIKKYO_NX`・`DENPA_TV_JIKKYO_KAKOLOG`。release は差し替えない)。smoke は偽の過去ログ API (`FakeJikkyo`) を `127.0.0.1:18080` に立てるので、
+手元で smoke を走らせるときは CI と同じく
+
+```sh
+DENPA_TV_JIKKYO_NX=ws://127.0.0.1:18080 DENPA_TV_JIKKYO_KAKOLOG=http://127.0.0.1:18080 ./gradlew :smoke:connectedMinifiedAndroidTest
+```
+
+でビルドします (付けないと本物の過去ログ API を訊き、`recordingJikkyo` が落ちる)。

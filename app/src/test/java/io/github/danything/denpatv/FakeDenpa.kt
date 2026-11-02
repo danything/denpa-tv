@@ -12,7 +12,7 @@ import java.util.concurrent.LinkedBlockingQueue
 const val HEALTH_OK = """{"ok":true,"version":"v1.59.0"}"""
 
 class FakeDenpa : AutoCloseable {
-    data class Request(val method: String, val target: String, val body: String, val authorization: String?, val contentType: String? = null)
+    data class Request(val method: String, val target: String, val body: String, val authorization: String?, val contentType: String? = null, val referer: String? = null)
 
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val responses = LinkedBlockingQueue<Pair<Int, String>>()
@@ -27,6 +27,7 @@ class FakeDenpa : AutoCloseable {
                 body,
                 exchange.requestHeaders.getFirst("Authorization"),
                 exchange.requestHeaders.getFirst("Content-Type"),
+                exchange.requestHeaders.getFirst("Referer"),
             )
             val (code, text) = responses.poll() ?: (404 to "")
             val bytes = text.toByteArray()

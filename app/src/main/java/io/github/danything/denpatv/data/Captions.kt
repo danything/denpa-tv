@@ -10,7 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 
 /**
- * **元の TS (MPEG-2) の字幕の1枚。** 放送の字幕は Media3 ではデコードしないので、denpa がデコードした**文字の配置** (0x22。`CaptionPage`) を
+ * **字幕の1枚。** 放送の字幕は Media3 ではデコードしないので、denpa がデコードした**文字の配置** (0x22。`CaptionPage`) を
  * `GET api/services/<id>/captions` (ライブ) / `GET api/recordings/<id>/captions?from=<秒>` (追っかけ・録画) で受け取る
  * (denpa の docs/api.md「元のTSの字幕」)。
  *
@@ -28,6 +28,9 @@ sealed interface CaptionFrame {
 
     /** 選べる字幕の通知。字幕を持たない放送では来ない */
     class Tracks(val count: Int) : CaptionFrame
+
+    /** 時計 (`clock` の通知)。実況の放送時刻に使う (`AirTime.live`) */
+    class Clock(val notice: ClockNotice) : CaptionFrame
 
     /** ほかの通知 (20 秒おきの ping など)。読み捨てる */
     data object Other : CaptionFrame
@@ -77,8 +80,22 @@ object CaptionFeed {
     private fun notice(payload: ByteArray): CaptionFrame {
         val obj = runCatching { lenientJson.parseToJsonElement(payload.toString(Charsets.UTF_8)) as? JsonObject }.getOrNull()
             ?: return CaptionFrame.Other
-        if ((obj["type"] as? JsonPrimitive)?.content != "captions") return CaptionFrame.Other
+        when ((obj["type"] as? JsonPrimitive)?.content) {
+            "captions" -> Unit
+            "clock" -> return clock(obj)
+            else -> return CaptionFrame.Other
+        }
         return CaptionFrame.Tracks((obj["tracks"] as? JsonArray)?.size ?: 0)
+    }
+
+    /**
+     * 時計の通知 (`{"type":"clock","at":<秒>,"unixMs":…}`)。読めなければ読み捨てる (実況が流れないだけ)
+     */
+    private fun clock(obj: JsonObject): CaptionFrame {
+        val at = (obj["at"] as? JsonPrimitive)?.content?.toDoubleOrNull()
+        val unixMs = (obj["unixMs"] as? JsonPrimitive)?.content?.toDoubleOrNull()
+        if (at == null || unixMs == null || !at.isFinite() || !unixMs.isFinite()) return CaptionFrame.Other
+        return CaptionFrame.Clock(ClockNotice(at, unixMs.toLong()))
     }
 
     /** 断られた。404 はライブなら「まだ流していない」(映像を開いた直後)、録画なら「元のTSが無い」 */

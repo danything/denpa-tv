@@ -14,7 +14,7 @@
 | Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンだけの列) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューの3つのアイコンは Material Symbols、再生の操作ボタンのアイコンは Material Icons (どちらも Apache License 2.0) を vector drawable として置いた (アイコンのライブラリは入れない) |
 | `androidx.tv:tv-foundation` | **使わない** | TV 用の Lazy レイアウトは alpha11 で非推奨、alpha12 で削除済み。普通の Compose の `LazyRow` / `LazyColumn` で足りる (同ノート) |
 | Navigation 3 (`androidx.navigation3`) | 1.2.0 | 戻る履歴をただのリストとして持つ Compose 向けの新しい Navigation。行き先は `@Serializable` のクラス。**minSdk 24 を求める** ので、アプリの minSdk もこれに合わせた |
-| DataStore Preferences | 1.2.1 | 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・アップデートを確かめた時刻を覚える。SharedPreferences の後継 |
+| DataStore Preferences | 1.2.1 | 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・実況を流すか・音声 (名前とデュアルモノの側)・アップデートを確かめた時刻を覚える。SharedPreferences の後継 |
 | Media3 (ExoPlayer) | 1.11.1 | 2026-09-10 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/media3))。minSdk 23。入れるのは `media3-exoplayer` と、映像の面 (`PlayerSurface`) の `media3-ui-compose` だけ (View の `media3-ui` は入れない。字幕は自分で描く) |
 
 ### minSdk 24 (Android 7.0)
@@ -84,6 +84,12 @@ Media3 の [ネットワーク スタックのページ](https://developer.andro
 読みの時間切れ (`readTimeout`) で足りる。繋ぐのはアプリが前に出ている間だけで、Compose の `LifecycleStartEffect`
 (`androidx.lifecycle:lifecycle-runtime-compose`。Compose UI が既に引いているので依存は増えない) で Activity に沿わせる
 (`ProcessLifecycleOwner` の `lifecycle-process` は使わない)。
+
+→ **実況のコメント (NX-Jikkyo の WebSocket) は自前の WebSocket** (`data/WebSocket.kt`、2026-11-02 に決めた)。HttpURLConnection は WebSocket を話さず、
+OkHttp を戻すほどのことではない。使うのは RFC 6455 のうち、ハンドシェイク・文字のフレーム (断片はつなぐ)・ping / pong・close と、
+送るものにマスクを掛けることだけ (拡張・副プロトコルは使わない)。`wss:` は OS の `SSLSocketFactory` に載せ、繋いだあとホスト名を OS の
+`HostnameVerifier` で確かめる。黙ったまま 30 秒経てば ping を送り、さらに 30 秒黙っていれば切れたとみなす。過去ログ API は HttpURLConnection (`data/Kakolog.kt`。
+denpa のアクセストークンも Referer も付けない)。単体テストは ServerSocket の偽のサーバで見る (`WebSocketTest`)
 
 OkHttp (と Retrofit / Ktor) を採らない理由:
 
