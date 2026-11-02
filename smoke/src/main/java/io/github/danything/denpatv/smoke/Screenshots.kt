@@ -408,7 +408,10 @@ class Screenshots {
             out += node
             for (i in 0 until node.childCount) node.getChild(i)?.let(::walk)
         }
-        automation().rootInActiveWindow?.takeIf { it.packageName?.toString() == APP }?.let(::walk)
+        val automation = automation()
+        automation.rootInActiveWindow?.takeIf { it.packageName?.toString() == APP }?.let(::walk)
+        // 最後まで観た画面から戻って録画を開き直したあとなど、いちばん前の窓のツリーが空で返ることがある。そのときはアプリの窓を全部見る
+        if (out.size <= 1) automation.windows.mapNotNull { it.root }.filter { it.packageName?.toString() == APP }.forEach(::walk)
         return out
     }
 
