@@ -634,7 +634,7 @@ private fun RecordingPlayback(
                             toggleCm()
                         },
                     ),
-                    "" to tracks.controls(jikkyo.control()) + bakedAudio.controls(),
+                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + bakedAudio.controls(),
                     "" to listOf(deleteControl),
                 ),
                 header = { actions ->

@@ -10,6 +10,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -266,7 +271,7 @@ fun PlayerFrame(
             }
             .focusable(),
     ) {
-        PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
+        // 字幕より下に置く (上に重ねた View の下にある字幕は、読み上げのツリーから外れる)
         AndroidView(
             factory = ::View,
             /*
@@ -281,9 +286,22 @@ fun PlayerFrame(
             onReset = { view -> view.keepScreenOn = false },
             onRelease = { view -> view.keepScreenOn = false },
         )
-        // 重ねる順は 映像 < 実況のコメント < 字幕 < 操作バー (コメントは操作バーの影の下を通り、字幕のように持ち上げない)
-        jikkyo?.let { JikkyoLayer(it) }
-        CaptionLayer(captions, inset)
+        /*
+         * 実況のコメントの一覧を出している間は、映像を左に寄せて 16:9 のまま縮め、右に一覧の列を置く (コメントと字幕は縮めた映像の中)。
+         * 木の形は出していないときも同じにしておく (映像の面を作り直さない)
+         */
+        val listed = jikkyo?.listShown == true
+        Row(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                Box(if (listed) Modifier.fillMaxWidth().aspectRatio(16f / 9f) else Modifier.fillMaxSize()) {
+                    PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
+                    // 重ねる順は 映像 < 実況のコメント < 字幕 < 操作バー (コメントは操作バーの影の下を通り、字幕のように持ち上げない)
+                    jikkyo?.let { JikkyoLayer(it) }
+                    CaptionLayer(captions, inset)
+                }
+            }
+            if (listed && jikkyo != null) JikkyoListColumn(jikkyo, Modifier.width(JIKKYO_LIST_WIDTH))
+        }
         if (error == null) LoadingVeil(loading, busyLabel, recovery)
         val notice = error ?: overlay
         CompositionLocalProvider(LocalOverlayInsets provides insets, LocalBarNotice provides notice.takeIf { covered }) {
@@ -305,6 +323,9 @@ private fun BoxScope.Notice(text: CharSequence?, progress: Pair<Long, Long>?) {
 
 /** 操作バー (`ControlBar`) のタイトルの2行目に添える通知。`PlayerFrame` が操作バーを出している間 (`covered`) だけ渡す */
 val LocalBarNotice = compositionLocalOf<CharSequence?> { null }
+
+/** 実況のコメントの一覧の列の幅 */
+private val JIKKYO_LIST_WIDTH = 280.dp
 
 /** 映像にフォーカスがあるか見張る間 (ミリ秒) */
 private const val FOCUS_WATCH_MS = 250L

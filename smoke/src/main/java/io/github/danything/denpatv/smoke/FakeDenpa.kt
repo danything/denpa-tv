@@ -189,6 +189,9 @@ class FakeDenpa(
             path == "/api/services" -> json(out, Showcase.services())
             path == "/api/recordings" -> json(out, Showcase.recordings())
             program != null -> Showcase.program(program)?.let { json(out, it) } ?: respond(out, 404, "text/plain", "not found".toByteArray())
+            // 録画の状態。実況のチャンネルと元の TS の頭の放送時刻 (コメントは作り物の過去ログ。`FakeJikkyo`)
+            path.matches(Regex("/api/recordings/\\d+")) ->
+                json(out, """{"id":${path.substringAfterLast('/')},"encoded":true,"state":"available","durationMs":30000,"jikkyo":{"channel":"jk5","head":$JIKKYO_HEAD,"end":${JIKKYO_HEAD + 30_000}}}""")
             serviceId != null -> when (servicePart) {
                 "live" -> {
                     try {
@@ -208,7 +211,7 @@ class FakeDenpa(
                 "file" -> media(out, "showcase.mkv", "video/x-matroska", range)
                 "chase" -> paced(out, Showcase.liveAsset(recordingId))
                 // どの録画も、エンコード済みのファイル (H.264。showcase.mkv) をそのまま開く
-                "playback" -> json(out, """{"duration":30,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"}]}""")
+                "playback" -> json(out, """{"duration":30,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"}],"ruler":{"kept":null,"skip":0}}""")
                 else -> json(out, FakeCaptions.showcase)
             }
         }

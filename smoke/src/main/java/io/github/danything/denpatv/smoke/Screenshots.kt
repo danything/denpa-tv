@@ -37,6 +37,7 @@ class Screenshots {
     @Test
     fun shoot() {
         assumeTrue("撮るときだけ (-e shots 1)", InstrumentationRegistry.getArguments().getString("shots") != null)
+        val jikkyo = FakeJikkyo(showcase = true)
         FakeDenpa(instrumentation.context.assets, showcase = true).use { denpa ->
             shell("pm clear $APP")
             shell("rm -rf $DIR")
@@ -57,6 +58,8 @@ class Screenshots {
             settings()
             recording()
             chase()
+            // 実況はオンにしたまま終える (ほかの画像に出さないよう、いちばん後に撮る)
+            jikkyo()
 
             // 軽さ: 一覧で上下に送るあいだのフレームを数える (読むのは scripts/shots-run.sh の dumpsys gfxinfo)
             await("録画の一覧に戻りません") { texts().any { "名城" in it } }
@@ -72,6 +75,32 @@ class Screenshots {
             }
             SystemClock.sleep(SETTLE_MS)
         }
+        jikkyo.close()
+    }
+
+    /**
+     * 実況のコメントと、右の列のコメントの一覧 (作り物の過去ログ。`FakeJikkyo`)。操作の列で「実況」と「コメントの一覧」をオンにして撮り、
+     * いちばん後に撮る (オンのまま終える。ほかの画像に出さない)。終わったら録画の一覧へ戻る (続く軽さの測り方は一覧で送る)
+     */
+    private fun jikkyo() {
+        // エミュレータはアニメーションを切ってあり、そのままでは流れずに上の行に置かれる。撮る間だけ戻す (開く前に。流し方は開いたときに決まる)
+        val scale = shell("settings get global animator_duration_scale").trim()
+        shell("settings put global animator_duration_scale 1")
+        open("denpa://recording/${Showcase.CAPTION_ID}")
+        await("字幕が出ません") { nodes().any { it.contentDescription?.contains("字幕を文字で描く") == true } }
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        await("下で操作の列が開きません") { barOpen() }
+        click("実況 オフ")
+        await("実況がオンになりません") { "実況 オン" in texts() }
+        click("コメントの一覧")
+        await("コメントの一覧が出ません") { texts().any { it.startsWith("勢い") } }
+        press(KeyEvent.KEYCODE_BACK)
+        await("戻るで操作の列が閉じません") { !barOpen() }
+        SystemClock.sleep(JIKKYO_SETTLE_MS)
+        shot("jikkyo")
+        if (scale == "null" || scale.isEmpty()) shell("settings delete global animator_duration_scale") else shell("settings put global animator_duration_scale $scale")
+        // 録画の一覧へはリンクで戻る (戻るキーは、閉じかけの操作の列に取られることがある)
+        open("denpa://recordings")
     }
 
     /** 録画の一覧 (下の端・頭・長いタイトル)・録画の詳細。終わりは長いタイトル (行の左の端) にフォーカスしておく (続けて左でメニューを開く) */
@@ -377,7 +406,10 @@ class Screenshots {
             out += node
             for (i in 0 until node.childCount) node.getChild(i)?.let(::walk)
         }
-        automation().rootInActiveWindow?.takeIf { it.packageName?.toString() == APP }?.let(::walk)
+        val automation = automation()
+        automation.rootInActiveWindow?.takeIf { it.packageName?.toString() == APP }?.let(::walk)
+        // いちばん前の窓のツリーが中身の無いまま返ることがある (最後まで観た画面から戻って録画を開き直したあとなど)。そのときはアプリの窓を全部見る
+        if (out.none { it.text != null || it.contentDescription != null }) automation.windows.mapNotNull { it.root }.filter { it.packageName?.toString() == APP }.forEach(::walk)
         return out
     }
 
@@ -410,6 +442,8 @@ class Screenshots {
 
         /** フォーカスしてから撮るまで (上の段の画像を替える・ポスターを読む・膨らむのを待つ) */
         const val SETTLE_MS = 3_000L
+        /** 実況をオンにしてから撮るまで (コメントが画面に行き渡るまで。右の端から左の端まで 4 秒) */
+        const val JIKKYO_SETTLE_MS = 4_000L
         /** キーでフォーカスを移してから撮るまで */
         const val FOCUS_MS = 1_000L
         /** 選局の間を撮るときの偽の denpa の選局の長さと、ふだんの長さ */

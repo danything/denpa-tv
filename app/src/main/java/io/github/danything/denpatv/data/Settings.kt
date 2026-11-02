@@ -17,7 +17,7 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 data class Connection(val server: String, val token: String?)
 
 /**
- * 覚えておくもの: 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・実況を流すか・音声 (名前とデュアルモノの側)・
+ * 覚えておくもの: 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・実況 (流すか・一覧を出すか)・音声 (名前とデュアルモノの側)・
  * アップデートを確かめた時刻と、押して許可の画面へ送った版。
  *
  * **アクセストークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
@@ -34,6 +34,7 @@ class Settings(private val context: Context) {
     private val speedKey = floatPreferencesKey("playback_speed")
     private val subtitlesKey = booleanPreferencesKey("subtitles")
     private val jikkyoKey = booleanPreferencesKey("jikkyo")
+    private val jikkyoListKey = booleanPreferencesKey("jikkyo_list")
     private val audioKey = stringPreferencesKey("audio_label")
     private val dualMonoKey = stringPreferencesKey("dual_mono_side")
     private val updateCheckedKey = longPreferencesKey("update_checked_at")
@@ -107,6 +108,13 @@ class Settings(private val context: Context) {
 
     suspend fun setJikkyo(on: Boolean) {
         context.dataStore.edit { it[jikkyoKey] = on }
+    }
+
+    /** 実況のコメントの一覧を右に出すか。既定は出さない。端末ごと */
+    val jikkyoList: Flow<Boolean> = context.dataStore.data.map { it[jikkyoListKey] ?: false }
+
+    suspend fun setJikkyoList(on: Boolean) {
+        context.dataStore.edit { it[jikkyoListKey] = on }
     }
 
     /** 最後に選んだ音声の名前 (「解説ステレオ」など)。同じ名前の音声があればそれで始める */

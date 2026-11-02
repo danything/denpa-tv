@@ -484,7 +484,7 @@ fun ChasePlayerScreen(
                             codec.choose(choice)
                         }
                     },
-                    "" to tracks.controls(jikkyo.control()) + baked.controls(),
+                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + baked.controls(),
                 ),
                 header = { actions ->
                     // シークバーが操作バーのいちばん上の列。そこで上キーを押すと閉じて映像に戻る (録画と同じ)

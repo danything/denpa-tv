@@ -393,6 +393,17 @@ class SmokeTest {
         )
         assertTrue("過去ログ API を訊いていません: ${jikkyo.requests.toList()}", jikkyo.requests.any { it.startsWith("GET /api/kakolog/jk1") })
         assertTrue("過去ログ API にアクセストークンか Referer を付けました: ${jikkyo.requests.toList()}", jikkyo.requests.none { " [" in it })
+
+        // 操作の列の「コメントの一覧」で、右の列にいままでのコメントと勢いが並ぶ
+        // (偽の録画は 10 秒で終わるので、開き直して少し流してから開く)
+        reopenRecording()
+        SystemClock.sleep(LIST_PLAY_MS)
+        openBarInWindows()
+        clickInWindows("コメントの一覧")
+        assertTrue(
+            "コメントの一覧が出ません: ${windowTexts()}",
+            poll(TEXT_TIMEOUT_MS) { windowTexts().let { shown -> shown.any { it.startsWith("勢い ") } && FakeJikkyo.TEXT in shown } },
+        )
     }
 
     /**
@@ -864,6 +875,8 @@ class SmokeTest {
         private const val TEXT_TIMEOUT_MS = 30_000L
         /** 開き直した録画 (10 秒) が流れている間にコメントが出るまで */
         private const val COMMENT_TIMEOUT_MS = 9_000L
+        /** コメントの一覧を開く前に流しておく長さ (いままでのコメントが並ぶように) */
+        private const val LIST_PLAY_MS = 3_000L
         /** 混んでいて断られたとき、リクエストしてよい数 (1回目とリクエストし直しの `Reconnect.FEW` 回。開いてすぐリクエストし直すことがあるので、その倍まで) と、諦めたあとリクエストしないのを見る長さ (リクエストし直しの待ちの上限 10 秒より長く) */
         private const val BUSY_MOST_REQUESTS = 8
         private const val BUSY_QUIET_MS = 12_000L
