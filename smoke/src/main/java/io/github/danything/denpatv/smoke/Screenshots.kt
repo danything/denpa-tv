@@ -80,7 +80,7 @@ class Screenshots {
 
     /**
      * 実況のコメントと、右の列のコメントの一覧 (作り物の過去ログ。`FakeJikkyo`)。操作の列で「実況」と「コメントの一覧」をオンにして撮り、
-     * いちばん後に撮る (オンのまま終える。ほかの画像に出さない)。終わったら録画の一覧へ戻る
+     * いちばん後に撮る (オンのまま終える。ほかの画像に出さない)。終わったら録画の一覧へ戻る (続く軽さの測り方は一覧で送る)
      */
     private fun jikkyo() {
         // エミュレータはアニメーションを切ってあり、そのままでは流れずに上の行に置かれる。撮る間だけ戻す (開く前に。流し方は開いたときに決まる)
@@ -99,7 +99,8 @@ class Screenshots {
         SystemClock.sleep(JIKKYO_SETTLE_MS)
         shot("jikkyo")
         if (scale == "null" || scale.isEmpty()) shell("settings delete global animator_duration_scale") else shell("settings put global animator_duration_scale $scale")
-        press(KeyEvent.KEYCODE_BACK)
+        // 録画の一覧へはリンクで戻る (戻るキーは、閉じかけの操作の列に取られることがある)
+        open("denpa://recordings")
     }
 
     /** 録画の一覧 (下の端・頭・長いタイトル)・録画の詳細。終わりは長いタイトル (行の左の端) にフォーカスしておく (続けて左でメニューを開く) */
