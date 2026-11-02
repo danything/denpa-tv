@@ -384,10 +384,8 @@ class SmokeTest {
         clickInWindows("実況 オフ")
         assertTrue("押しても「実況 オン」になりません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "実況 オン" in windowTexts() })
 
-        // 頭から開き直す (偽の録画は 10 秒しかない)。止まっていたら動かす (止めたままでは放送時刻が進まず、流れない)
-        open("denpa://recording/${FakeDenpa.RECORDING_ID}")
-        awaitVideo(RECORDING_COLOR)
-        if (windowTexts().any { it.startsWith("一時停止") }) press(KeyEvent.KEYCODE_DPAD_CENTER)
+        // 頭から開き直す (偽の録画は 10 秒しかない)
+        reopenRecording()
         var dots = 0
         assertTrue(
             "実況のコメントが流れません (緑の点 $dots)。過去ログ API への要求: ${jikkyo.requests.toList()}",
@@ -395,6 +393,18 @@ class SmokeTest {
         )
         assertTrue("過去ログ API を訊いていません: ${jikkyo.requests.toList()}", jikkyo.requests.any { it.startsWith("GET /api/kakolog/jk1") })
         assertTrue("過去ログ API にアクセストークンか Referer を付けました: ${jikkyo.requests.toList()}", jikkyo.requests.none { " [" in it })
+    }
+
+    /**
+     * 録画を頭から開き直す。同じ録画のリンクを続けて開くと、アプリは観ている画面をそのまま続ける (同じ行き先なので作り直さない) ので、
+     * いったん録画の一覧へ戻ってから開く。止まっていたら動かす (止めたままでは放送時刻が進まず、コメントが流れない)
+     */
+    private fun reopenRecording() {
+        open("denpa://recordings")
+        assertTrue("録画の一覧に戻りません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().any { FakeDenpa.RECORDING_TITLE in it } })
+        open("denpa://recording/${FakeDenpa.RECORDING_ID}")
+        awaitVideo(RECORDING_COLOR)
+        if (windowTexts().any { it.startsWith("一時停止") }) press(KeyEvent.KEYCODE_DPAD_CENTER)
     }
 
     /** 下でシークバーと操作の列を開く (止めない。届かなかったときだけ押し直す)。開いたかはアプリの窓を全部見る */
