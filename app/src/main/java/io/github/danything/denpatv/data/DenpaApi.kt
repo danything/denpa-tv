@@ -139,9 +139,11 @@ class DenpaApi(
     /**
      * 観るときの決まり (`GET api/playback/options`。denpa v2.27.0 から)。家の中か (「自動」の順 `AutoOrder`) と、画質のメニューから外すもの。
      * **無い (404。古い denpa) ときだけ `PlaybackOptions.FALLBACK`。** 届かない・5xx・形式が違う (`warn` に書く) ときは null (呼ぶ側は控えずに後で聞き直す)
+     * **ライブと追っかけはこの返事を待ってから流しはじめるので、`OPTIONS_TIMEOUT_MS` で打ち切る** (届かないまま HTTP のいつもの時間切れまで
+     * 待たせない)。打ち切ったら届かないのと同じ null で、呼ぶ側は `FALLBACK` (家の中) で流しはじめる
      */
     suspend fun playbackOptions(base: URI): PlaybackOptions? = withContext(Dispatchers.IO) {
-        val res = call(base, "api/playback/options") ?: return@withContext null
+        val res = call(base, "api/playback/options", timeoutMs = OPTIONS_TIMEOUT_MS) ?: return@withContext null
         if (res.code == 404) return@withContext PlaybackOptions.FALLBACK
         if (!res.ok) return@withContext null
         parsePlaybackOptions(res.text())
@@ -155,10 +157,10 @@ class DenpaApi(
     }
 
     /** アクセストークンを付けてリクエストする。URL を組めない・届かなければ null。401 は `Unauthorized` */
-    private fun call(base: URI, path: String, method: String = "GET"): Http.Response? {
+    private fun call(base: URI, path: String, method: String = "GET", timeoutMs: Int? = null): Http.Response? {
         val url = BaseUrl.resolve(base, path) ?: return null
         val res = try {
-            Http.request(url, method, token = token())
+            Http.request(url, method, token = token(), timeoutMs = timeoutMs)
         } catch (_: IOException) {
             return null
         }
@@ -221,6 +223,9 @@ class DenpaApi(
 }
 
 private const val TAG = "DenpaApi"
+
+/** 観るときの決まり (`playbackOptions`) を待つ長さ (ミリ秒)。LAN の denpa なら数十ミリ秒で返る。届かないときに流しはじめるのを長く待たせない */
+private const val OPTIONS_TIMEOUT_MS = 2_500
 
 @Serializable
 private data class DeviceCodeRequest(val name: String)

@@ -61,7 +61,7 @@ data class Decoders(
  *
  * - 家の中は開くまでの速さを採る (MPEG-2 はエンコードせずに済む。次は立ち上がりの速い H.264)。外は回線を採り、同じ画質で小さい順
  * - **画面ごとの例外は作らない。** その画面で出せない形式は、呼ぶ側が並びから外すだけ (テレビは H.265 を流さないので、いつも外れる)
- * - 家の中かは denpa が開いたホスト名で決める (`GET api/playback/options` の `indoor`。`Repository.indoor`)
+ * - 家の中かは denpa が開いたホスト名で決める (`GET api/playback/options` の `indoor`。`Repository.playbackOptions()` の `PlaybackOptions.indoor`)
  */
 object AutoOrder {
     /** その場でエンコードするもの (ライブ・追っかけ・エンコード済みのファイルが無い録画)。`raw` は MPEG-2 (放送のまま) */

@@ -24,6 +24,7 @@ object Http {
     /**
      * `token` があれば `Authorization: Bearer` を付ける (家の外の denpa に登録したとき。docs/pairing.md)。
      * `headers` はほかに付けるもの (GitHub のリリースを引くときの Accept など)
+     * `timeoutMs` は繋ぐのと読むのの時間切れ (ミリ秒)。省けばいつもの長さ (`CONNECT_TIMEOUT_MS`・`READ_TIMEOUT_MS`)
      */
     fun request(
         url: URI,
@@ -31,8 +32,9 @@ object Http {
         json: String? = null,
         token: String? = null,
         headers: Map<String, String> = emptyMap(),
+        timeoutMs: Int? = null,
     ): Response {
-        val connection = connection(url, token, headers)
+        val connection = connection(url, token, headers, timeoutMs ?: READ_TIMEOUT_MS, timeoutMs ?: CONNECT_TIMEOUT_MS)
         try {
             connection.requestMethod = method
             connection.instanceFollowRedirects = true
@@ -67,8 +69,9 @@ object Http {
         token: String? = null,
         headers: Map<String, String> = emptyMap(),
         readTimeoutMs: Int = READ_TIMEOUT_MS,
+        connectTimeoutMs: Int = CONNECT_TIMEOUT_MS,
     ): HttpURLConnection = (url.toURL().openConnection() as HttpURLConnection).apply {
-        connectTimeout = CONNECT_TIMEOUT_MS
+        connectTimeout = connectTimeoutMs
         readTimeout = readTimeoutMs
         bearer(token)?.let { setRequestProperty("Authorization", it) }
         headers.forEach { (name, value) -> setRequestProperty(name, value) }
