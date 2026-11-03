@@ -20,10 +20,16 @@
 Play ストアにはまだ無いので、パソコンから adb で入れます。テレビの開発者向けオプションでデバッグを有効にしてから:
 
 ```sh
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/danything/denpa-tv/main/scripts/install.sh | bash -s -- <テレビの IP>
 ```
 
-Windows・テレビ側の準備・ワイヤレス デバッグのペア設定は [docs/install.md](docs/install.md)。
+```powershell
+# Windows (PowerShell)
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/danything/denpa-tv/main/scripts/install.ps1))) <テレビの IP>
+```
+
+テレビ側の準備・ワイヤレス デバッグのペア設定は [docs/install.md](docs/install.md)。
 2回目からはアプリの中で上げられます ([docs/updates.md](docs/updates.md))。
 
 ## denpa に繋ぐ
