@@ -19,15 +19,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -44,6 +45,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
@@ -51,6 +53,7 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import io.github.danything.denpatv.data.JikkyoRanking
 import io.github.danything.denpatv.data.SERVICE_TYPES
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.airing
@@ -62,9 +65,15 @@ import kotlinx.coroutines.launch
  * 番号・ロゴ・局名・いま放送中の番組を出し、いま映している局に印を付ける。** ブラウザのタブにあたるものを、
  * 十字キーで辿れるよう縦に積んだ列にした (地上波の列 → BS の列 → CS の列)。左右で局を選び、決定で替える。
  *
- * 開いたときは、いま映している局の列がいちばん上に見えていて、下の列の名前とカードの頭が覗く (操作バーの高さを取りすぎない)。
+ * **実況のコメントを流せる** (`ranking` がある: 世帯の設定と端末の設定の両方がオンで、denpa が新しい) **なら、最後に「実況」の列** (ブラウザの「実況」タブ)。
+ * 実況のある局を勢いの順に並べ (`data/JikkyoRanking.kt`)、番組名の頭に「勢い 412」を添える。ほかの列には添えない。
+ * 開いたときはこの列が上に来て、いま映している局のカード (無ければ列の頭) にフォーカスする (ブラウザも「実況」タブで開く)。
+ * 並べ直しは、この列にフォーカスがある間は待ち、離れて 1 秒たってから (押そうとしたカードが動いて別の局を選ばないように)。
+ * 勢いを読めないときは番号順で、列の名前の横に「いまは勢いを読めません」
+ *
+ * 開いたときは、いま映している局の列 (実況の列があればそれ) がいちばん上に見えていて、下の列の名前とカードの頭が覗く (操作バーの高さを取りすぎない)。
  * 覗いたカードは下の端で溶かす (録画の一覧の格子の下の端と同じ)。カードの縁だけが細く残ると、テレビの縁で切れたように見える
- * 操作の列から下キーで、いま映している局にフォーカスが移る (`current`)。列から列へは、真上・真下のカードへ (横の送り具合は列ごとに覚える)。
+ * 操作の列から下キーで、その列のいま映している局 (`currentCard`) にフォーカスが移る。列から列へは、真上・真下のカードへ (横の送り具合は列ごとに覚える)。
  *
  * ブラウザのライブと同じく、**放送している局だけ並べる** (本放送と同じものを流しているサブチャンネルは出さない。
  * 別の番組を流せば名前が付くので出てくる)。いま映している局は放送していなくても残す
@@ -75,16 +84,22 @@ fun ChannelRows(
     repo: Repository,
     services: List<Service>,
     current: Service,
-    /** いま映している局のカード。操作の列の下キーの行き先 */
+    /** 開いたときにフォーカスする列のカード (いま映している局、実況の列で無ければ頭)。操作の列の下キーの行き先 */
     currentCard: FocusRequester,
+    /** 局の勢い。実況のコメントを流せないなら null (実況の列を出さない) */
+    ranking: JikkyoRankingState? = null,
     onSelect: (Service) -> Unit,
 ) {
     val onAir = airing(services).map { it.id }.toSet()
     val listed = services.filter { it.id in onAir || it.id == current.id }
-    val rows = SERVICE_TYPES.mapNotNull { (type, label) ->
-        listed.filter { it.type == type }.takeIf { it.isNotEmpty() }?.let { Triple(type, label, it) }
+    val typeRows = SERVICE_TYPES.mapNotNull { (type, label) ->
+        listed.filter { it.type == type }.takeIf { it.isNotEmpty() }?.let { ChannelRow(type, label, it) }
     }
-    val start = rows.indexOfFirst { it.first == current.type }.coerceAtLeast(0)
+    val rankingRow = ranking?.let { state ->
+        JikkyoRanking.candidates(listed).takeIf { it.isNotEmpty() }?.let { ChannelRow(RANKING_KEY, JikkyoRanking.LABEL, ranked(it, state.order), state) }
+    }
+    val rows = typeRows + listOfNotNull(rankingRow)
+    val start = if (rankingRow != null) rows.lastIndex else rows.indexOfFirst { it.key == current.type }.coerceAtLeast(0)
     val column = rememberLazyListState(initialFirstVisibleItemIndex = start)
     /*
      * **高さは種別の名前の行の高さから組み立てる** (だいたいの数にしない)。テレビの文字の拡大で名前の行が高くなっても、
@@ -99,6 +114,20 @@ fun ChannelRows(
      */
     var focusedRow by remember { mutableIntStateOf(start) }
     LaunchedEffect(focusedRow) { column.animateScrollToItem(focusedRow) }
+    /** 実況の列にフォーカスがあるか (並べ直したあと、フォーカスの無いときだけ送り直す) */
+    var rankingFocused by remember { mutableStateOf(false) }
+    /*
+     * メニューを閉じた・実況の列が消えた (実況をオフにした・並べる局が無くなった) ら、待っていた並びを入れ、フォーカスの印も消す
+     * (フォーカスのあるまま列ごと消えると、離れた合図が来ないので並べ直しを待ち続ける)。次に開いたときは新しい並び
+     */
+    DisposableEffect(ranking, rankingRow != null) {
+        onDispose {
+            rankingFocused = false
+            ranking?.release()
+        }
+    }
+    /** 実況の列の、前に見た並び。並びが変わったときだけ送り直す (縦の枠から外れて合成し直しただけでは、横の送り具合を巻き戻さない) */
+    val shownRanking = remember { mutableStateOf<List<Long>?>(null) }
     /*
      * **列ごとの横の送り具合は、列の外で覚える。** 列の中で覚えると、縦に送って枠の外に出た列 (CS に下りたときの地上波) は
      * 捨てられ、戻ると送り具合も最後にフォーカスしたカードも初めからになる
@@ -114,15 +143,15 @@ fun ChannelRows(
         LazyColumn(
             state = column,
             /*
-             * 局の列から操作の列へ上がったら、いま映している局の列に戻しておく (下キーで戻る先と揃える)。その列を横に送って
-             * いま映している局のカードが枠の外に出ていたら、カードが見えるところまで戻す — カードが無いと、操作の列で下を押しても下りられない
+             * 局の列から操作の列へ上がったら、開いたときの列に戻しておく (下キーで戻る先と揃える)。その列を横に送って
+             * 行き先のカードが枠の外に出ていたら、カードが見えるところまで戻す — カードが無いと、操作の列で下を押しても下りられない
              */
             modifier = Modifier.fillMaxWidth().height(rowsHeight).fadeBottom(focusedRow < rows.lastIndex).onFocusChanged {
                 if (it.hasFocus) return@onFocusChanged
                 focusedRow = start
-                val tunedRow = rows.getOrNull(start) ?: return@onFocusChanged
-                val at = tunedRow.third.indexOfFirst { service -> service.id == current.id }
-                val state = states[tunedRow.first]
+                val startRow = rows.getOrNull(start) ?: return@onFocusChanged
+                val at = startRow.focusIndex(current.id)
+                val state = states[startRow.key]
                 if (at >= 0 && state != null && state.layoutInfo.visibleItemsInfo.none { item -> item.index == at }) {
                     scope.launch { state.scrollToItem((at - 1).coerceAtLeast(0)) }
                 }
@@ -131,12 +160,38 @@ fun ChannelRows(
             contentPadding = PaddingValues(bottom = rowsHeight - rowHeight),
             verticalArrangement = Arrangement.spacedBy(ROW_GAP),
         ) {
-            itemsIndexed(rows, key = { _, it -> it.first }) { index, (type, label, row) ->
-                val at = row.indexOfFirst { it.id == current.id }
-                // 見えていないカードにはフォーカスできないので、いま映している局が見えるところから並べる
-                val state = states.getOrPut(type) { LazyListState(firstVisibleItemIndex = (at - 1).coerceAtLeast(0)) }
-                Column(Modifier.onFocusChanged { if (it.hasFocus) focusedRow = index }, verticalArrangement = Arrangement.spacedBy(LABEL_GAP)) {
-                    Text(label, style = MaterialTheme.typography.labelMedium, color = Palette.OnScrimMuted)
+            itemsIndexed(rows, key = { _, it -> it.key }) { index, row ->
+                val at = row.focusIndex(current.id)
+                // 見えていないカードにはフォーカスできないので、行き先のカードが見えるところから並べる
+                val state = states.getOrPut(row.key) { LazyListState(firstVisibleItemIndex = (at - 1).coerceAtLeast(0)) }
+                if (row.ranking != null) {
+                    /*
+                     * 並べ直したら、フォーカスが無ければ行き先のカードが見えるところまで送り直す。送り具合は前に頭にあったカードに付いて行くので、
+                     * そのままだと行き先のカードが枠の外に出て、操作の列から下りられなくなる
+                     */
+                    val ids = row.services.map { it.id }
+                    LaunchedEffect(ids) {
+                        val before = shownRanking.value
+                        shownRanking.value = ids
+                        if (before != null && before != ids && !rankingFocused && at >= 0) state.scrollToItem((at - 1).coerceAtLeast(0))
+                    }
+                }
+                Column(
+                    Modifier.onFocusChanged {
+                        if (it.hasFocus) focusedRow = index
+                        if (row.ranking != null && rankingFocused != it.hasFocus) {
+                            rankingFocused = it.hasFocus
+                            row.ranking.hold(it.hasFocus)
+                        }
+                    },
+                    verticalArrangement = Arrangement.spacedBy(LABEL_GAP),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(row.label, style = MaterialTheme.typography.labelMedium, color = Palette.OnScrimMuted)
+                        if (row.ranking?.failed == true) {
+                            Text(JikkyoRanking.FAILED, style = MaterialTheme.typography.labelMedium, color = Palette.OnScrimMuted)
+                        }
+                    }
                     /*
                      * **横は、フォーカスしたカードの左の端をいつも同じ所 (`KEYLINE`。左に1枚ぶん) に置く。** 送るたびにカードが同じ所に来るので、
                      * どの列でも目の置き場が変わらない。端のカードで送れないときは、送れるところまで
@@ -155,9 +210,12 @@ fun ChannelRows(
                             contentPadding = PaddingValues(vertical = ROW_PADDING, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
                         ) {
-                            items(row, key = { it.id }) { service ->
+                            itemsIndexed(row.services, key = { _, it -> it.id }) { position, service ->
                                 val tuned = service.id == current.id
-                                ChannelCard(repo, service, tuned, if (tuned) Modifier.focusRequester(currentCard) else Modifier) { onSelect(service) }
+                                // 行き先のカード (開いたときの列の、いま映している局か頭) だけに付ける。同じ局が実況の列にもあるので、1枚に絞る
+                                val target = index == start && position == at
+                                val force = row.ranking?.forces?.get(service.id)
+                                ChannelCard(repo, service, tuned, force, if (target) Modifier.focusRequester(currentCard) else Modifier) { onSelect(service) }
                             }
                         }
                     }
@@ -165,6 +223,23 @@ fun ChannelRows(
             }
         }
     }
+}
+
+/** 局の列1本。`ranking` は実況の列 (勢いを添えて、フォーカスの間は並べ直しを待つ) だけ */
+private class ChannelRow(val key: String, val label: String, val services: List<Service>, val ranking: JikkyoRankingState? = null) {
+    /** 開いたときのフォーカスの行き先: いま映している局のカード。実況の列でその局が無ければ頭。無ければ -1 */
+    fun focusIndex(currentId: Long): Int =
+        services.indexOfFirst { it.id == currentId }.takeIf { it >= 0 } ?: if (ranking != null && services.isNotEmpty()) 0 else -1
+}
+
+/** 実況の列の key (種別の列の key と重ならない) */
+private const val RANKING_KEY = "jikkyo"
+
+/** 勢いの並び (`order`) に並べ替える。並びに無い局 (取ったあとに増えた局) は末尾に番号順で。並びがまだ無ければ番号順のまま */
+private fun ranked(services: List<Service>, order: List<Long>?): List<Service> {
+    if (order == null) return services
+    val at = order.withIndex().associate { (index, id) -> id to index }
+    return services.sortedBy { at[it.id] ?: Int.MAX_VALUE }
 }
 
 /** 縦の列の枠は、カードにフォーカスしても送らない (送るのは `focusedRow` だけ) */
@@ -186,9 +261,10 @@ private val Keyline = object : BringIntoViewSpec {
  * 局のカード1枚。番号・ロゴ・局名、いま放送中の番組、印 (視聴中・録画中・予約済み)。
  * ロゴはブラウザの denpa と同じく番号の右に (ロゴがまだ無い局は、そこに種別のラベル)。
  * いま映している局は azure の縁と淡い azure の地 (ブラウザの視聴中の行と同じ)。フォーカスすると膨らみ、明るい azure の縁と光 (`Focus`)
+ * 実況の列のカードは、番組名の頭に勢い (`force`。1 分あたりのコメント数) を「勢い 412・番組名」と添える (ブラウザの「実況」タブの行と同じ)
  */
 @Composable
-private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, force: Int?, modifier: Modifier, onClick: () -> Unit) {
     val shape = CardShape
     Surface(
         onClick = onClick,
@@ -228,8 +304,14 @@ private fun ChannelCard(repo: Repository, service: Service, tuned: Boolean, modi
                 }
             }
             Text(service.name, style = MaterialTheme.typography.titleSmall.broadcast(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            service.now?.title?.takeIf { it.isNotBlank() }?.let { title ->
-                Text(title, style = MaterialTheme.typography.bodySmall.broadcast(), color = Palette.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val title = service.now?.title?.takeIf { it.isNotBlank() }
+            if (title != null || force != null) {
+                val line = buildAnnotatedString {
+                    if (force != null) append("勢い $force")
+                    if (force != null && title != null) append("・")
+                    title?.let { appendBroadcast(it) }
+                }.withBroadcastFont()
+                Text(line, style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

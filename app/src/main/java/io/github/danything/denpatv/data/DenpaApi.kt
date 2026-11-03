@@ -137,6 +137,16 @@ class DenpaApi(
     }
 
     /**
+     * 局の勢い (`GET api/jikkyo/ranking`。denpa v2.18.0 から)。局の ID → 1 分あたりのコメント数。放送中のスレッドがある局だけ。
+     * 読めない (`503`・世帯の設定がオフの `403`・届かない) は null。形式が違えば `warn` に書いて null (版のずれ)
+     */
+    suspend fun jikkyoRanking(base: URI): Map<Long, Int>? = withContext(Dispatchers.IO) {
+        val res = call(base, "api/jikkyo/ranking")?.takeIf { it.ok } ?: return@withContext null
+        val text = res.text()
+        JikkyoRanking.parse(text) ?: null.also { warn("局の勢いの形式が違います (denpa の版のずれ?): ${text.take(200)}") }
+    }
+
+    /**
      * 観るときの決まり (`GET api/playback/options`。denpa v2.27.0 から)。家の中か (「自動」の順 `AutoOrder`) と、画質のメニューから外すもの。
      * **無い (404。古い denpa) ときだけ `PlaybackOptions.FALLBACK`。** 届かない・5xx・形式が違う (`warn` に書く) ときは null (呼ぶ側は控えずに後で聞き直す)
      * **ライブと追っかけはこの返事を待ってから流しはじめるので、`OPTIONS_TIMEOUT_MS` で打ち切る** (届かないまま HTTP のいつもの時間切れまで

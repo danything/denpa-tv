@@ -165,6 +165,16 @@ internal object Showcase {
 
     fun hasService(id: Long) = stations.any { it.id == id }
 
+    /**
+     * 局の勢い (`api/jikkyo/ranking`)。作り物の数。番号順とは違う並びになるように (野球中継・ドラマ・アニメが上)。
+     * 載せない局 (放送中のスレッドが無い) も残し、末尾に番号順で並ぶのを見せる
+     */
+    fun ranking(): String {
+        val forces = mapOf(257 to 1840, 1064 to 920, 333 to 512, 1040 to 236, 101 to 188, 1024 to 95, 211 to 64, 23608 to 41)
+        val channels = stations.mapNotNull { s -> forces[s.sid]?.let { """{"serviceId":${s.id},"force":$it}""" } }
+        return """{"at":${System.currentTimeMillis()},"channels":${channels.joinToString(",", "[", "]")}}"""
+    }
+
     /** ライブの映像。局ごとに色の違う3本を回す (`scripts/smoke-media.sh`) */
     fun liveAsset(id: Long): String = "showcase-live-${stations.indexOfFirst { it.id == id }.coerceAtLeast(0) % 3 + 1}.mp4"
 

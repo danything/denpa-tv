@@ -112,6 +112,8 @@ class FakeDenpa(
         when {
             path == "/api/health" -> json(out, """{"ok":true,"version":"v2.26.0"}""")
             path == "/api/services" -> json(out, services())
+            // 局の勢い。いま映している局 (勢いの小さい [SERVICE_ID]) より隣の局が上
+            path == "/api/jikkyo/ranking" -> json(out, if (showcase) Showcase.ranking() else """{"at":${System.currentTimeMillis()},"channels":[{"serviceId":$SERVICE_ID,"force":3},{"serviceId":$NEXT_SERVICE_ID,"force":36}]}""")
             // 局の切り替えの行き先も同じ映像を流す
             live == SERVICE_ID || live == NEXT_SERVICE_ID ->
                 // 黙るのが先 (黙らせてから 503 を返し続ける並びを作れるように)

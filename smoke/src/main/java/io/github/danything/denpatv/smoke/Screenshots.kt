@@ -99,9 +99,30 @@ class Screenshots {
         SystemClock.sleep(JIKKYO_SETTLE_MS)
         shot("jikkyo")
         if (scale == "null" || scale.isEmpty()) shell("settings delete global animator_duration_scale") else shell("settings put global animator_duration_scale $scale")
+        ranking()
         // 録画の一覧へはリンクで戻る (戻るキーは、閉じかけの操作の列に取られることがある)
         open("denpa://recordings")
     }
+
+    /**
+     * 実況をオンにしたライブのメニュー。局の列の最後に「実況」の列 (勢いの順。偽の denpa の `Showcase.ranking`) が出て、開くとそこが上に来る。
+     * コメントの一覧はしまってから (映像が左に寄らない、ふだんの幅で撮る)、下でいま映している局のカードへ
+     */
+    private fun ranking() {
+        open("denpa://live")
+        SystemClock.sleep(SETTLE_MS)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        await("実況の列が出ません") { rankingShown() }
+        if ("コメントの一覧" in texts()) click("コメントの一覧")
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        SystemClock.sleep(SETTLE_MS)
+        shot("live-ranking")
+        press(KeyEvent.KEYCODE_BACK)
+        await("戻るでメニューが閉じません") { !rankingShown() }
+    }
+
+    /** 実況の列のカード (番組名の頭に「勢い 1840・」) が出ているか。コメントの一覧の見出しの「勢い 12」とは「・」で分ける */
+    private fun rankingShown() = texts().any { it.startsWith("勢い ") && "・" in it }
 
     /** 録画の一覧 (下の端・頭・長いタイトル)・録画の詳細。終わりは長いタイトル (行の左の端) にフォーカスしておく (続けて左でメニューを開く) */
     private fun recordings() {
