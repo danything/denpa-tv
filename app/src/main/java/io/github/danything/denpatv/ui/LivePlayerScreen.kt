@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -714,12 +715,18 @@ private const val CARD_FOCUS_TRIES = 10
 /** メニューを閉じるまで (ミリ秒)。局の列で番組名を読むので、録画の操作バー (5 秒) より長く */
 private const val MENU_IDLE_MS = 8_000L
 
-/** 覚えているライブの画質 (追っかけも同じものを使う)。この端末で選べなければ選び直す。読み終えるまでは null */
+/**
+ * 覚えているライブの画質 (追っかけも同じものを使う)。この端末で選べなければ・選んでいなければ「自動」の順 (`AutoOrder`。家の中か `Repository.indoor`)。
+ * 読み終えるまでは null。家の中かは開いたときに1度だけ見る (開いている間に変わっても、映しているものを替えない)
+ */
 @Composable
 fun rememberLiveQuality(repo: Repository): LiveQuality? {
     val saved by repo.app.settings.liveQuality.collectAsState(initial = LOADING_QUALITY)
+    // アクセストークンが取り消されていたら家の中とみなす (ストリームのリクエストが 401 で気付く)
+    val indoor by produceState<Boolean?>(null) { value = runCatching { repo.indoor() }.getOrDefault(true) }
+    val place = indoor ?: return null
     if (saved == LOADING_QUALITY) return null
-    return remember(saved) { LiveQuality.choose(saved, repo.app.decoders) }
+    return remember(saved) { LiveQuality.choose(saved, repo.app.decoders, place) }
 }
 
 private const val LOADING_QUALITY = "\u0000loading"

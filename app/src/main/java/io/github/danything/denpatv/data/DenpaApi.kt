@@ -135,6 +135,16 @@ class DenpaApi(
         JikkyoNg.parse(res.text()) ?: emptyList<String>().also { warn("実況の NG ワードの形式が違います (denpa の版のずれ?): ${res.text().take(200)}") }
     }
 
+    /**
+     * 開いたホスト名が家の中か (`GET api/playback/options` の `indoor`。denpa v2.27.0 から)。「自動」の順 (`AutoOrder`) を決めるのに使う。
+     * 届かなければ null (呼ぶ側が後で聞き直す)。無い (古い denpa)・形式が違う (`warn` に書く) ときは家の中とみなす (前からの既定: MPEG-2 から)
+     */
+    suspend fun indoor(base: URI): Boolean? = withContext(Dispatchers.IO) {
+        val res = call(base, "api/playback/options") ?: return@withContext null
+        if (!res.ok) return@withContext true
+        parseIndoor(res.text()) ?: true.also { warn("観るときの決まりの形式が違います (denpa の版のずれ?): ${res.text().take(200)}") }
+    }
+
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。もう無い (404) のも消せたとみなして true。録画中 (409) などは false */
     suspend fun deleteRecording(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
         val res = call(base, "api/recordings/$id", "DELETE") ?: return@withContext false
@@ -275,4 +285,10 @@ fun parseDenpaHealth(body: String): DenpaHealth? {
     val json = runCatching { lenientJson.parseToJsonElement(body.removePrefix("\uFEFF")).jsonObject }.getOrNull() ?: return null
     if (runCatching { json["ok"]?.jsonPrimitive?.booleanOrNull }.getOrNull() != true) return null
     return DenpaHealth(runCatching { json["version"]?.jsonPrimitive?.contentOrNull }.getOrNull())
+}
+
+/** `api/playback/options` の返事 (`{"indoor":true,…}`) の `indoor` を読む。読めなければ null */
+fun parseIndoor(body: String): Boolean? {
+    val json = runCatching { lenientJson.parseToJsonElement(body).jsonObject }.getOrNull() ?: return null
+    return runCatching { json["indoor"]?.jsonPrimitive?.booleanOrNull }.getOrNull()
 }

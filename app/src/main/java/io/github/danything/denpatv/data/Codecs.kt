@@ -51,13 +51,37 @@ data class Decoders(
 }
 
 /**
+ * **「自動」の順** (どの形式で観るか)。ライブ・追っかけ・録画で、この1か所から出す。決まりは denpa と同じ
+ * (denpa の `live-choice.ts` の `autoOrder`、docs/stream.md の「どの形式で流すか」):
+ *
+ * | 場面                                                  | 家の中                       | 外                  |
+ * | ----------------------------------------------------- | ---------------------------- | ------------------- |
+ * | その場でエンコード (ライブ・追っかけ・録画しか無い録画) | MPEG-2 → H.264 → AV1 → H.265 | AV1 → H.265 → H.264 |
+ * | エンコード済み (録画のファイル)                        | AV1 → H.265 → H.264          | AV1 → H.265 → H.264 |
+ *
+ * - 家の中は開くまでの速さを採る (MPEG-2 はエンコードせずに済む。次は立ち上がりの速い H.264)。外は回線を採り、同じ画質で小さい順
+ * - **画面ごとの例外は作らない。** その画面で出せない形式は、呼ぶ側が並びから外すだけ (テレビは H.265 を流さないので、いつも外れる)
+ * - 家の中かは denpa が開いたホスト名で決める (`GET api/playback/options` の `indoor`。`Repository.indoor`)
+ */
+object AutoOrder {
+    /** その場でエンコードするもの (ライブ・追っかけ・エンコード済みのファイルが無い録画)。`raw` は MPEG-2 (放送のまま) */
+    fun onTheFly(indoor: Boolean): List<String> =
+        if (indoor) listOf("raw", "h264", "av1", "hevc") else listOf("av1", "hevc", "h264")
+
+    /** エンコード済みのファイル。家の中でも外でも同じ */
+    val encoded: List<String> = listOf("av1", "hevc", "h264")
+}
+
+/**
  * ライブの画質 (コーデック)。`codec` は denpa の `?codec=` にそのまま渡す値。名前と並びはブラウザの denpa の
  * 画質のメニューと同じ (H.264 / AV1 / MPEG-2)
  *
  * - **H.264** — どの端末でもデコードできる
  * - **AV1** — 同じ画質で軽い。ハードでデコードできる端末だけ
  * - **MPEG-2** (`raw`) — エンコードせずに1局に絞っただけの TS。denpa がエンコードを待たないぶんいちばん遅れが少なく、
- *   denpa の CPU も使わない。字幕は denpa がデコードした文字の配置を描いて重ねる (`ui/RawCaptions.kt`)。ハードでデコードできる端末だけ (既定はこれ)
+ *   denpa の CPU も使わない。字幕は denpa がデコードした文字の配置を描いて重ねる (`ui/RawCaptions.kt`)。ハードでデコードできる端末だけ
+ *
+ * 選んでいなければ「自動」の順 (`AutoOrder.onTheFly`) で、この端末で選べるものの先頭 (家の中なら MPEG-2、外なら AV1)
  */
 enum class LiveQuality(val codec: String, val label: String, val mime: String) {
     H264("h264", "H.264", "video/mp4"),
@@ -72,10 +96,14 @@ enum class LiveQuality(val codec: String, val label: String, val mime: String) {
             if (decoders.mpeg2Hardware) add(Raw)
         }
 
-        /** 覚えている画質が、この端末で選べればそれ。無ければ MPEG-2 (ハードでデコードできれば)、だめなら H.264 */
-        fun choose(saved: String?, decoders: Decoders): LiveQuality {
+        /**
+         * 覚えている画質が、この端末で選べればそれ (家の中でも外でもそのまま)。無ければ「自動」の順 (`AutoOrder.onTheFly`) で
+         * この端末で選べるものの先頭。どれも無ければ H.264 (どの端末でも選べる)
+         */
+        fun choose(saved: String?, decoders: Decoders, indoor: Boolean): LiveQuality {
             val choices = available(decoders)
-            return choices.firstOrNull { it.name == saved } ?: if (Raw in choices) Raw else H264
+            choices.firstOrNull { it.name == saved }?.let { return it }
+            return AutoOrder.onTheFly(indoor).firstNotNullOfOrNull { codec -> choices.firstOrNull { it.codec == codec } } ?: H264
         }
     }
 }

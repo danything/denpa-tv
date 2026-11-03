@@ -1,31 +1,54 @@
 package io.github.danything.denpatv
 
+import io.github.danything.denpatv.data.AutoOrder
 import io.github.danything.denpatv.data.Decoders
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.number
+import io.github.danything.denpatv.data.parseIndoor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CodecsTest {
+    private val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
+    private val stick = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = false, mpeg2Hardware = false)
+
+    /** denpa の `autoOrder` と同じ並び (docs/stream.md の「どの形式で流すか」) */
     @Test
-    fun ライブの既定は_MPEG2_をハードでデコードできれば低遅延_そうでなければ_H264() {
-        val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
-        assertEquals(LiveQuality.Raw, LiveQuality.choose(null, tv))
-        val stick = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = false, mpeg2Hardware = false)
-        assertEquals(LiveQuality.H264, LiveQuality.choose(null, stick))
+    fun 自動の順は_denpa_と同じ() {
+        assertEquals(listOf("raw", "h264", "av1", "hevc"), AutoOrder.onTheFly(indoor = true))
+        assertEquals(listOf("av1", "hevc", "h264"), AutoOrder.onTheFly(indoor = false))
+        assertEquals(listOf("av1", "hevc", "h264"), AutoOrder.encoded)
+        // 家の中かは denpa の `api/playback/options` の `indoor`。読めなければ null (家の中とみなすのは呼ぶ側)
+        assertEquals(false, parseIndoor("""{"indoor":false,"hidden":[],"hevc":true}"""))
+        assertEquals(true, parseIndoor("""{"indoor":true}"""))
+        assertNull(parseIndoor("{}"))
+        assertNull(parseIndoor("<html>"))
+    }
+
+    @Test
+    fun 選んでいなければ家の中は_MPEG2_から_外は_AV1_から_この端末で選べるもの() {
+        assertEquals(LiveQuality.Raw, LiveQuality.choose(null, tv, indoor = true))
+        assertEquals(LiveQuality.Av1, LiveQuality.choose(null, tv, indoor = false))
+        // MPEG-2 も AV1 もハードで無ければ、家の中でも外でも H.264
+        assertEquals(LiveQuality.H264, LiveQuality.choose(null, stick, indoor = true))
+        assertEquals(LiveQuality.H264, LiveQuality.choose(null, stick, indoor = false))
+        // 外では MPEG-2 を選ばない (AV1 が無ければ H.264)
+        assertEquals(LiveQuality.H264, LiveQuality.choose(null, tv.copy(av1Hardware = false), indoor = false))
+        // 家の中で MPEG-2 が無ければ H.264 (AV1 より先)
+        assertEquals(LiveQuality.H264, LiveQuality.choose(null, tv.copy(mpeg2Hardware = false), indoor = true))
         assertEquals(listOf(LiveQuality.H264), LiveQuality.available(stick))
         // 並びと名前はブラウザの画質のメニューと同じ
         assertEquals(listOf("H.264", "AV1", "MPEG-2"), LiveQuality.available(tv).map { it.label })
     }
 
     @Test
-    fun 覚えた画質が選べなくなっていたら既定に戻す() {
-        val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
-        assertEquals(LiveQuality.Av1, LiveQuality.choose("Av1", tv))
+    fun 選んだ画質は家の中でも外でもそのまま_選べなくなっていたら自動に戻す() {
+        assertEquals(LiveQuality.Av1, LiveQuality.choose("Av1", tv, indoor = true))
+        assertEquals(LiveQuality.Raw, LiveQuality.choose("Raw", tv, indoor = false))
         val noAv1 = tv.copy(av1Hardware = false)
-        assertEquals(LiveQuality.Raw, LiveQuality.choose("Av1", noAv1))
-        assertEquals(LiveQuality.Raw, LiveQuality.choose("壊れた値", tv))
+        assertEquals(LiveQuality.Raw, LiveQuality.choose("Av1", noAv1, indoor = true))
+        assertEquals(LiveQuality.Raw, LiveQuality.choose("壊れた値", tv, indoor = true))
     }
 }
 

@@ -106,7 +106,19 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
         val health = api.health(base) ?: return
         denpaVersion = health.version
         denpaWarning = denpaTooOld(health.version)?.also { Log.w(TAG, it) }
+        // 家の中かも聞き直す (世帯の設定の「家の中の名前」を変えたかもしれない)。届かなければ前のまま
+        runCatching { api.indoor(base) }.getOrNull()?.let { indoorKnown = it }
     }
+
+    /** 開いたホスト名が家の中か (`DenpaApi.indoor`)。聞けたものを控える */
+    @Volatile
+    private var indoorKnown: Boolean? = null
+
+    /**
+     * **開いたホスト名が家の中か** (「自動」の順 `AutoOrder` を決める)。控えが無ければ聞く。届かなければ家の中とみなす
+     * (控えないので、次に聞き直す)。アクセストークンが取り消されていれば `Unauthorized`
+     */
+    suspend fun indoor(): Boolean = indoorKnown ?: (api.indoor(base)?.also { indoorKnown = it } ?: true)
 
     /** 局だけ取り直す (いま放送中の番組が変わるので) */
     suspend fun refreshServices() {
