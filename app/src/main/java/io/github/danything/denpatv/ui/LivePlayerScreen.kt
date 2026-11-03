@@ -32,6 +32,8 @@ import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
 import io.github.danything.denpatv.data.LiveQuality
+import io.github.danything.denpatv.data.LiveSelection
+import io.github.danything.denpatv.data.PlaybackOptions
 import io.github.danything.denpatv.data.NowProgram
 import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.RecordResult
@@ -86,7 +88,8 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
-    val quality = rememberLiveQuality(repo) ?: return
+    val selection = rememberLiveSelection(repo) ?: return
+    val quality = selection.format
     val buffering = quality.buffering
 
     var services by remember { mutableStateOf(repo.services) }
@@ -235,7 +238,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         onUnauthorized = onUnauthorized,
     )
     CatchUp(player, buffering)
-    val codec = rememberCodecSwitching(repo, player, quality, error, flash)
+    val codec = rememberCodecSwitching(player, selection, error, flash, store = { repo.app.settings.setLiveQuality(it) })
 
     LaunchedEffect(Unit) {
         if (services.isEmpty() || repo.servicesStale) {
@@ -589,11 +592,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 }
             }
             // 画質の列 (どちらのメニューにも出す)。選んだらすぐ入れる (映るまではタイトルが「… に切り替え中」)
-            val qualities = "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
-                Control(choice.label, on = choice == codec.chosen, icon = if (choice == codec.chosen) R.drawable.ic_quality else null) {
-                    codec.choose(choice)
-                }
-            }
+            val qualities = "画質" to codec.controls(selection)
             /*
              * 録画に譲っている間のメニューは「ライブに戻る」(開いたらそこにフォーカス) と画質だけ。画質は、追っかけが変換の枠が埋まって
              * 断られたときに MPEG-2 へ替えるため。下の局の列から別の局も選べる。
@@ -716,18 +715,43 @@ private const val CARD_FOCUS_TRIES = 10
 private const val MENU_IDLE_MS = 8_000L
 
 /**
- * 覚えているライブの画質 (追っかけも同じものを使う)。この端末で選べなければ・選んでいなければ「自動」の順 (`AutoOrder`。家の中か `Repository.indoor`)。
- * 読み終えるまでは null。家の中かは開いたときに1度だけ見る (開いている間に変わっても、映しているものを替えない)
+ * **ライブの画質の選択** (画質のメニュー)。選んだものは端末に覚え (`Settings.liveQuality`)、家の中でも外でもそのまま。
+ * 選んでいない・この端末で選べない・メニューから外した H.264 なら「自動」(`LiveQuality.read`)。自動で決まった画質は覚えない (ブラウザと同じ)。
+ * 読み終えるまでは null。観るときの決まり (家の中か・外すもの) は開いたときに1度だけ見る (開いている間に変わっても、映しているものを替えない)
  */
 @Composable
-fun rememberLiveQuality(repo: Repository): LiveQuality? {
+fun rememberLiveSelection(repo: Repository): LiveSelection? {
     val saved by repo.app.settings.liveQuality.collectAsState(initial = LOADING_QUALITY)
-    // アクセストークンが取り消されていたら家の中とみなす (ストリームのリクエストが 401 で気付く)
-    val indoor by produceState<Boolean?>(null) { value = runCatching { repo.indoor() }.getOrDefault(true) }
-    val place = indoor ?: return null
+    val options = rememberPlaybackOptions(repo) ?: return null
     if (saved == LOADING_QUALITY) return null
-    return remember(saved) { LiveQuality.choose(saved, repo.app.decoders, place) }
+    return remember(saved, options) { selectionOf(LiveQuality.read(saved, repo.app.decoders, options.hideH264), repo, options) }
 }
+
+/**
+ * **追っかけの画質の選択。** 開くたびに「自動」から。選んだものは開いている間だけ (覚えない。ブラウザの追っかけと同じ)
+ */
+@Composable
+fun rememberChaseSelection(repo: Repository): Pair<LiveSelection, (LiveQuality?) -> Unit>? {
+    var choice by remember { mutableStateOf<LiveQuality?>(null) }
+    val options = rememberPlaybackOptions(repo) ?: return null
+    return remember(choice, options) { selectionOf(choice, repo, options) } to { next: LiveQuality? -> choice = next }
+}
+
+/** 観るときの決まり。読み終えるまでは null。アクセストークンが取り消されていたら決まりの無いときと同じ (ストリームのリクエストが 401 で気付く) */
+@Composable
+private fun rememberPlaybackOptions(repo: Repository): PlaybackOptions? {
+    val options by produceState<PlaybackOptions?>(null) {
+        value = try {
+            repo.playbackOptions()
+        } catch (_: Unauthorized) {
+            PlaybackOptions.FALLBACK
+        }
+    }
+    return options
+}
+
+private fun selectionOf(choice: LiveQuality?, repo: Repository, options: PlaybackOptions) =
+    LiveSelection.of(choice, repo.app.decoders, options.indoor, options.hideH264)
 
 private const val LOADING_QUALITY = "\u0000loading"
 

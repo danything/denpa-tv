@@ -73,37 +73,75 @@ object AutoOrder {
 }
 
 /**
- * ライブの画質 (コーデック)。`codec` は denpa の `?codec=` にそのまま渡す値。名前と並びはブラウザの denpa の
- * 画質のメニューと同じ (H.264 / AV1 / MPEG-2)
+ * ライブ・追っかけの画質 (コーデック)。`codec` は denpa の `?codec=` にそのまま渡す値
  *
- * - **H.264** — どの端末でもデコードできる
  * - **AV1** — 同じ画質で軽い。ハードでデコードできる端末だけ
+ * - **H.264** — どの端末でもデコードできる
  * - **MPEG-2** (`raw`) — エンコードせずに1局に絞っただけの TS。denpa がエンコードを待たないぶんいちばん遅れが少なく、
  *   denpa の CPU も使わない。字幕は denpa がデコードした文字の配置を描いて重ねる (`ui/RawCaptions.kt`)。ハードでデコードできる端末だけ
  *
- * 選んでいなければ「自動」の順 (`AutoOrder.onTheFly`) で、この端末で選べるものの先頭 (家の中なら MPEG-2、外なら AV1)
+ * メニューには「自動」も並ぶ (`LiveSelection`)。H.265 はテレビでは流さない
  */
 enum class LiveQuality(val codec: String, val label: String, val mime: String) {
-    H264("h264", "H.264", "video/mp4"),
     Av1("av1", "AV1", "video/mp4"),
+    H264("h264", "H.264", "video/mp4"),
     Raw("raw", "MPEG-2", "video/mp2t"),
     ;
 
     companion object {
+        /** この端末で流せるもの */
         fun available(decoders: Decoders): List<LiveQuality> = buildList {
-            add(H264)
             if (decoders.av1Hardware) add(Av1)
+            add(H264)
             if (decoders.mpeg2Hardware) add(Raw)
         }
 
         /**
-         * 覚えている画質が、この端末で選べればそれ (家の中でも外でもそのまま)。無ければ「自動」の順 (`AutoOrder.onTheFly`) で
-         * この端末で選べるものの先頭。どれも無ければ H.264 (どの端末でも選べる)
+         * 画質のメニューに並べるもの (「自動」の後ろ)。並びはブラウザの denpa のコーデックのメニュー (自動 → AV1 → H.265 → H.264 → MPEG-2) から、
+         * この端末で流せないもの (H.265 はいつも) を外したもの。`hidden` (世帯の設定の「コーデックの選択肢に H.264 と H.265 を出さない」) なら H.264 も外す
          */
-        fun choose(saved: String?, decoders: Decoders, indoor: Boolean): LiveQuality {
+        fun menu(decoders: Decoders, hidden: Boolean): List<LiveQuality> =
+            available(decoders).filterNot { hidden && it == H264 }
+
+        /**
+         * **「自動」で決まる画質。** 自動の順 (`AutoOrder.onTheFly`) で、この端末で流せるものの先頭。どれも無ければ H.264 (どの端末でも流せる)。
+         * メニューから外したもの (`hidden`) も使う (AV1 を流せない端末には H.264 を流す)
+         */
+        fun auto(decoders: Decoders, indoor: Boolean): LiveQuality {
             val choices = available(decoders)
-            choices.firstOrNull { it.name == saved }?.let { return it }
             return AutoOrder.onTheFly(indoor).firstNotNullOfOrNull { codec -> choices.firstOrNull { it.codec == codec } } ?: H264
         }
+
+        /**
+         * 覚えている選択 (`Settings.liveQuality`。`name`) を読む。**この端末で選べない・知らない値・メニューから外した H.264 は自動 (null)**
+         * (ブラウザの `readChoice` と同じ)
+         */
+        fun read(saved: String?, decoders: Decoders, hidden: Boolean): LiveQuality? =
+            menu(decoders, hidden).firstOrNull { it.name == saved }
+    }
+}
+
+/**
+ * メニューで選んでいるもの (`choice`。null は「自動」) と、それで決まる画質 (`format`)。**選んだものは家の中でも外でもそのまま**、
+ * 自動なら開いた場所 (家の中か) と端末で決める (`LiveQuality.auto`)
+ */
+data class LiveSelection(
+    val choice: LiveQuality?,
+    /** 自動で決まる画質 */
+    val auto: LiveQuality,
+    /** メニューの「自動」の後ろに並べるもの (`LiveQuality.menu`) */
+    val menu: List<LiveQuality> = emptyList(),
+) {
+    /** 流す画質 */
+    val format: LiveQuality get() = choice ?: auto
+
+    /** メニューの「自動」の名前。自動のときは、いま決まっている画質を添える (ブラウザの「自動 (MPEG-2)」と同じ) */
+    val autoLabel: String get() = if (choice == null) "$AUTO (${auto.label})" else AUTO
+
+    companion object {
+        const val AUTO = "自動"
+
+        fun of(choice: LiveQuality?, decoders: Decoders, indoor: Boolean, hideH264: Boolean) =
+            LiveSelection(choice, LiveQuality.auto(decoders, indoor), LiveQuality.menu(decoders, hideH264))
     }
 }

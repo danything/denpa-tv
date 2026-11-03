@@ -92,7 +92,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     var indoor by remember { mutableStateOf(true) }
     LaunchedEffect(recording.id) {
         lookup = try {
-            indoor = repo.indoor()
+            indoor = repo.playbackOptions().indoor
             repo.api.playback(repo.base, recording.id)
         } catch (_: Unauthorized) {
             return@LaunchedEffect onUnauthorized()
