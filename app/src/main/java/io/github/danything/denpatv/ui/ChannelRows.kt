@@ -99,8 +99,6 @@ fun ChannelRows(
         JikkyoRanking.candidates(listed).takeIf { it.isNotEmpty() }?.let { ChannelRow(RANKING_KEY, JikkyoRanking.LABEL, ranked(it, state.order), state) }
     }
     val rows = typeRows + listOfNotNull(rankingRow)
-    // メニューを閉じたら、待っていた並びを入れる (次に開いたときは新しい並び)
-    DisposableEffect(ranking) { onDispose { ranking?.release() } }
     val start = if (rankingRow != null) rows.lastIndex else rows.indexOfFirst { it.key == current.type }.coerceAtLeast(0)
     val column = rememberLazyListState(initialFirstVisibleItemIndex = start)
     /*
@@ -118,6 +116,18 @@ fun ChannelRows(
     LaunchedEffect(focusedRow) { column.animateScrollToItem(focusedRow) }
     /** 実況の列にフォーカスがあるか (並べ直したあと、フォーカスの無いときだけ送り直す) */
     var rankingFocused by remember { mutableStateOf(false) }
+    /*
+     * メニューを閉じた・実況の列が消えた (実況をオフにした・並べる局が無くなった) ら、待っていた並びを入れ、フォーカスの印も消す
+     * (フォーカスのあるまま列ごと消えると、離れた合図が来ないので並べ直しを待ち続ける)。次に開いたときは新しい並び
+     */
+    DisposableEffect(ranking, rankingRow != null) {
+        onDispose {
+            rankingFocused = false
+            ranking?.release()
+        }
+    }
+    /** 実況の列の、前に見た並び。並びが変わったときだけ送り直す (縦の枠から外れて合成し直しただけでは、横の送り具合を巻き戻さない) */
+    val shownRanking = remember { mutableStateOf<List<Long>?>(null) }
     /*
      * **列ごとの横の送り具合は、列の外で覚える。** 列の中で覚えると、縦に送って枠の外に出た列 (CS に下りたときの地上波) は
      * 捨てられ、戻ると送り具合も最後にフォーカスしたカードも初めからになる
@@ -160,7 +170,11 @@ fun ChannelRows(
                      * そのままだと行き先のカードが枠の外に出て、操作の列から下りられなくなる
                      */
                     val ids = row.services.map { it.id }
-                    LaunchedEffect(ids) { if (!rankingFocused && at >= 0) state.scrollToItem((at - 1).coerceAtLeast(0)) }
+                    LaunchedEffect(ids) {
+                        val before = shownRanking.value
+                        shownRanking.value = ids
+                        if (before != null && before != ids && !rankingFocused && at >= 0) state.scrollToItem((at - 1).coerceAtLeast(0))
+                    }
                 }
                 Column(
                     Modifier.onFocusChanged {

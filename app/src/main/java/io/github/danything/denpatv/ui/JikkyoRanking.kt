@@ -45,6 +45,15 @@ class JikkyoRankingState internal constructor(scope: CoroutineScope) {
         apply()
     }
 
+    /** 実況をオフにした。勢いも並びも空に戻す (オンに戻したときに前の数字・並びを出さない。最初の返事までは番号順) */
+    fun reset() {
+        holder.clear()
+        next = null
+        forces = null
+        failed = false
+        order = null
+    }
+
     /** 返事が届いた (`forces` が null なら読めなかった)。`ids` は実況のある局を番号順に */
     internal fun received(ids: List<Long>, forces: Map<Long, Int>?) {
         this.forces = forces
@@ -82,7 +91,8 @@ fun rememberJikkyoRanking(repo: Repository, enabled: Boolean, ids: List<Long>, o
     var foreground by remember { mutableStateOf(true) }
     OnBackground(onStop = { foreground = false }, onStart = { foreground = true })
     LaunchedEffect(enabled, foreground) {
-        if (!enabled || !foreground) return@LaunchedEffect
+        if (!enabled) return@LaunchedEffect state.reset()
+        if (!foreground) return@LaunchedEffect
         while (true) {
             val forces = try {
                 repo.api.jikkyoRanking(repo.base)

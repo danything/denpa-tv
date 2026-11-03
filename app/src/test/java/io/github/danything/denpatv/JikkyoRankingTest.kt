@@ -3,6 +3,7 @@ package io.github.danything.denpatv
 import io.github.danything.denpatv.data.JikkyoRanking
 import io.github.danything.denpatv.data.ListHold
 import io.github.danything.denpatv.data.Service
+import io.github.danything.denpatv.ui.JikkyoRankingState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -117,5 +118,66 @@ class ListHoldTest {
         hold.set(true)
         hold.clear()
         assertFalse(hold.held)
+    }
+}
+
+/** 「実況」の列の勢いと並び (`JikkyoRankingState`)。フォーカスのある間は数字だけ替え、離れて 1 秒たってから並べ直す */
+@OptIn(ExperimentalCoroutinesApi::class)
+class JikkyoRankingStateTest {
+    private val ids = listOf(1L, 2L, 3L)
+
+    @Test
+    fun フォーカスが無ければすぐ並べ直し_ある間は数字だけ替えて離れて1秒後に並べ直す() = runTest {
+        val state = JikkyoRankingState(backgroundScope)
+        assertNull(state.order)
+        state.received(ids, mapOf(3L to 10))
+        assertEquals(listOf(3L, 1L, 2L), state.order)
+
+        state.hold(true)
+        state.received(ids, mapOf(2L to 50))
+        // 数字はすぐ、並びはまだ
+        assertEquals(mapOf(2L to 50), state.forces)
+        assertEquals(listOf(3L, 1L, 2L), state.order)
+        advanceTimeBy(JikkyoRanking.SETTLE_MS * 5)
+        assertEquals(listOf(3L, 1L, 2L), state.order)
+
+        state.hold(false)
+        advanceTimeBy(JikkyoRanking.SETTLE_MS - 1)
+        runCurrent()
+        assertEquals(listOf(3L, 1L, 2L), state.order)
+        advanceTimeBy(2)
+        runCurrent()
+        assertEquals(listOf(2L, 1L, 3L), state.order)
+    }
+
+    @Test
+    fun 読めなければ番号順に戻して印を立てる_閉じたら待っていた並びをすぐ入れる() = runTest {
+        val state = JikkyoRankingState(backgroundScope)
+        state.received(ids, mapOf(3L to 10))
+        state.hold(true)
+        state.received(ids, null)
+        assertTrue(state.failed)
+        assertNull(state.forces)
+        assertEquals(listOf(3L, 1L, 2L), state.order)
+        // メニューを閉じた (フォーカスのあるまま列が消えた)
+        state.release()
+        assertEquals(ids, state.order)
+        // もう待っていない: 次の返事はすぐ並べ直す
+        state.received(ids, mapOf(2L to 1))
+        assertEquals(listOf(2L, 1L, 3L), state.order)
+    }
+
+    @Test
+    fun 実況をオフにしたら空に戻す() = runTest {
+        val state = JikkyoRankingState(backgroundScope)
+        state.received(ids, null)
+        state.hold(true)
+        state.reset()
+        assertNull(state.order)
+        assertNull(state.forces)
+        assertFalse(state.failed)
+        // 待つ印も消えている: オンに戻した最初の返事はすぐ並べ直す
+        state.received(ids, mapOf(3L to 1))
+        assertEquals(listOf(3L, 1L, 2L), state.order)
     }
 }
