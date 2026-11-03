@@ -35,7 +35,8 @@ object Chase {
      */
     fun handOff(fresh: Recording?, playback: PlaybackInfo?, decoders: Decoders): Boolean {
         if (fresh == null || fresh.chasing || playback == null) return false
-        return pickPlayback(playback, decoders) is PlayChoice.File
+        // ファイルを選ぶか (エンコード済みの順) は、家の中かに依らない
+        return pickPlayback(playback, decoders, indoor = true) is PlayChoice.File
     }
 
     /** `audio` はエンコードするときにリクエストする音声 (`bakedAudio`)。元の TS では渡さない */

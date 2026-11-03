@@ -89,8 +89,9 @@ class Settings(private val context: Context) {
         context.dataStore.edit { it[lastServiceKey] = id }
     }
 
-    suspend fun setLiveQuality(quality: LiveQuality) {
-        context.dataStore.edit { it[liveQualityKey] = quality.name }
+    /** ライブの画質のメニューで選んだもの。null (「自動」) なら消す (自動で決まった画質は覚えない。開いた場所で変わる) */
+    suspend fun setLiveQuality(quality: LiveQuality?) {
+        context.dataStore.edit { if (quality == null) it.remove(liveQualityKey) else it[liveQualityKey] = quality.name }
     }
 
     /** 字幕を出すか。既定は出す。端末ごと (ブラウザの再生と同じく観ながら変える) */

@@ -13,8 +13,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.CodecSwitch
 import io.github.danything.denpatv.data.LiveQuality
+import io.github.danything.denpatv.data.LiveSelection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -27,7 +29,8 @@ import kotlinx.coroutines.launch
 class CodecSwitching internal constructor(
     private val state: MutableState<CodecSwitch>,
     private val scope: CoroutineScope,
-    private val repo: Repository,
+    private val selection: () -> LiveSelection,
+    private val store: () -> suspend (LiveQuality?) -> Unit,
     private val say: () -> (String) -> Unit,
     private val switching: () -> (LiveQuality) -> Unit,
 ) {
@@ -37,11 +40,23 @@ class CodecSwitching internal constructor(
      */
     val label: String get() = state.value.label
 
-    /** ボタンで選んでいるもの。選んだものをすぐ反映する */
+    /** 流そうとしている画質。選んだものをすぐ反映する */
     val chosen: LiveQuality get() = state.value.pending ?: state.value.shown
 
-    /** ボタンで選んだ。同じものなら何もしない */
-    fun choose(next: LiveQuality) {
+    /** 選び直す前の選択 (切り替えを諦めたら、これに戻す) */
+    internal var before: LiveQuality? = null
+        private set
+
+    /**
+     * メニューで選んだ (`choice`。null は「自動」)。選択はすぐ覚え直す (`store`)。流す画質が変わらなければ切り替えない
+     * (自動で決まっていたのと同じ画質を選んだ・自動に戻した、など)
+     */
+    fun choose(choice: LiveQuality?) {
+        val now = selection()
+        if (choice == now.choice) return
+        before = now.choice
+        val next = choice ?: now.auto
+        scope.launch { store()(choice) }
         val switched = state.value.choose(next) ?: return
         state.value = switched
         switching()(next)
@@ -51,7 +66,6 @@ class CodecSwitching internal constructor(
             // 切り替え中に映っている画質を選び直した: 切り替えをやめる (「… に切り替え中」の1行を残さない)
             say()("${next.label} のまま")
         }
-        scope.launch { repo.app.settings.setLiveQuality(next) }
     }
 
     /** ストリームをリクエストした (`load` のたびに) */
@@ -67,20 +81,28 @@ class CodecSwitching internal constructor(
  */
 @Composable
 fun rememberCodecSwitching(
-    repo: Repository,
     player: ExoPlayer,
-    quality: LiveQuality,
+    /** メニューで選んでいるものと、流す画質 */
+    selection: LiveSelection,
     failure: String?,
     flash: (String) -> Unit,
     /**
-     * 覚えている画質を替える直前 (選んだ・切り替えをやめた・諦めて戻す)。引数は替える先。
+     * 選択を覚える (null は「自動」)。ライブは端末に覚え (`Settings.liveQuality`)、追っかけは覚えない (開いている間だけ。ブラウザと同じ)
+     */
+    store: suspend (LiveQuality?) -> Unit,
+    /**
+     * 流す画質を替える直前 (選んだ・切り替えをやめた・諦めて戻す)。引数は替える先。
      * 追っかけはここでいた位置を覚え、画質が替わってからそこからリクエストし直す
      */
     onSwitching: (LiveQuality) -> Unit = {},
 ): CodecSwitching {
     val switching by rememberUpdatedState(onSwitching)
-    val state = remember { mutableStateOf(CodecSwitch(quality)) }
+    val current by rememberUpdatedState(selection)
+    val storing by rememberUpdatedState(store)
+    val state = remember { mutableStateOf(CodecSwitch(selection.format)) }
     val flashing by rememberUpdatedState(flash)
+    val scope = rememberCoroutineScope()
+    val switcher = remember { CodecSwitching(state, scope, { current }, { storing }, { flashing }, { switching }) }
     /** 済んだ・切り替えられなかった */
     val tell = { text: String -> flashing(text) }
     // MPEG-2 との行き来ではプレーヤーごと作り直すので、プレーヤーごとに見る
@@ -106,8 +128,8 @@ fun rememberCodecSwitching(
         state.value = next
         tell("${failed.label} に切り替えられません: $reason")
         switching(next.shown)
-        // 元の画質でリクエストし直す (覚えている画質も戻す)
-        repo.app.settings.setLiveQuality(next.shown)
+        // 元の画質でリクエストし直す (選択も選び直す前に戻す)
+        storing(switcher.before)
     }
     LaunchedEffect(failure) {
         val reason = failure ?: return@LaunchedEffect
@@ -119,9 +141,22 @@ fun rememberCodecSwitching(
         delay(SWITCH_GIVE_UP_MS)
         giveUp("映像が届きません")
     }
-    val scope = rememberCoroutineScope()
-    return remember(repo) { CodecSwitching(state, scope, repo, { flashing }, { switching }) }
+    return switcher
 }
 
 /** 切り替えを諦めるまで (ミリ秒)。denpa がエンコードを始めるのを待つ分 (ふつうは数秒) より十分に長く */
 private const val SWITCH_GIVE_UP_MS = 15_000L
+
+/**
+ * 操作の列の「画質」のボタン。**ブラウザのコーデックのメニューと同じ並び** (自動 → AV1 → H.264 → MPEG-2。テレビで流せないものとメニューから外したものは無い)。
+ * 自動のボタンには、いま決まっている画質を添える (「自動 (MPEG-2)」)。選んでいるものを塗る。押したらすぐ入れる (映るまではタイトルが「… に切り替え中」)
+ */
+fun CodecSwitching.controls(selection: LiveSelection): List<Control> {
+    fun icon(on: Boolean) = if (on) R.drawable.ic_quality else null
+    val auto = selection.choice == null
+    return listOf(Control(selection.autoLabel, on = auto, icon = icon(auto)) { choose(null) }) +
+        selection.menu.map { quality ->
+            val on = selection.choice == quality
+            Control(quality.label, on = on, icon = icon(on)) { choose(quality) }
+        }
+}

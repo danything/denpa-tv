@@ -58,20 +58,20 @@ fun PlayChoice.resumeSource(info: PlaybackInfo): String = when (this) {
 }
 
 /**
- * **どれで観るか。** 端末がデコードできる中から:
+ * **どれで観るか。** 「自動」の順 (`AutoOrder`) で、端末が流しっぱなしで回せる中から:
  *
- * 1. エンコード済みのファイルそのまま (AV1 → H.264。軽いほうから)。denpa は読んで渡すだけ。
- *    **AV1 はハードでデコードできる端末だけ** — Android 10 からはどの端末にもソフトの AV1 デコーダがあり、
+ * 1. エンコード済みのファイルそのまま (`AutoOrder.encoded`: AV1 → H.265 → H.264。H.265 はテレビでは流さないので外れる)。
+ *    denpa は読んで渡すだけ。**AV1 はハードでデコードできる端末だけ** — Android 10 からはどの端末にもソフトの AV1 デコーダがあり、
  *    「デコードできる」だけで選ぶと、ハードの無い端末 (Chromecast with Google TV など) で 1080 の AV1 をソフトで回してカクカクする
- * 2. 元の TS をそのまま (MPEG-2 を**ハードで**デコードできる端末)。denpa はエンコードしないので、変換の枠を使わない (混んでいても断られない)
- * 3. denpa が変換して流す fMP4 (H.264 → AV1。AV1 はハードでデコードできる端末だけ)。変換の枠を使う
- * 4. 最後の手: エンコード済みの AV1 のファイルをソフトで、だめなら元の TS をソフトのデコーダで
+ * 2. その場で変換するもの (`AutoOrder.onTheFly`。ライブと同じ行): 家の中は 元の TS をそのまま (MPEG-2 を**ハードで**デコードできる端末) →
+ *    H.264 → AV1、外は AV1 → H.264。元の TS は denpa がエンコードしないので、変換の枠を使わない (混んでいても断られない)。
+ *    変換 (fMP4) は枠を使う。AV1 はハードでデコードできる端末だけ
+ * 3. 最後の手: エンコード済みの AV1 のファイルをソフトで、だめなら元の TS をソフトのデコーダで
  *
- * ブラウザの「自動」は MPEG-2 を最後にする (ブラウザは canvas に自分で描くので重い)。テレビはハードで MPEG-2 をデコードできることが多い
- * (ライブの既定もそれ) ので、変換より先にする。詰め替え (エンコード済みと同じコーデックの `stream`) は選ばない — Media3 は
- * Matroska をそのまま読めるので、ファイルで観られなければ詰め替えても同じコーデックで観られない。何も無ければ null
+ * 詰め替え (エンコード済みと同じコーデックの `stream`) は選ばない — Media3 は Matroska をそのまま読めるので、
+ * ファイルで観られなければ詰め替えても同じコーデックで観られない。何も無ければ null
  */
-fun pickPlayback(info: PlaybackInfo, decoders: Decoders): PlayChoice? {
+fun pickPlayback(info: PlaybackInfo, decoders: Decoders, indoor: Boolean): PlayChoice? {
     /** 流しっぱなしで回せるか。AV1 と MPEG-2 はハードのデコーダがあるときだけ (H.264 はどの端末もハード) */
     fun smooth(codec: String) = when (codec) {
         "av1" -> decoders.av1Hardware
@@ -81,11 +81,14 @@ fun pickPlayback(info: PlaybackInfo, decoders: Decoders): PlayChoice? {
     }
     fun file(codec: String) =
         info.offers.firstOrNull { it.way == "file" && it.codec == codec && it.source != null }?.let { PlayChoice.File(codec, it.source!!) }
-    listOf("av1", "h264").firstNotNullOfOrNull { codec -> if (smooth(codec)) file(codec) else null }?.let { return it }
+    AutoOrder.encoded.firstNotNullOfOrNull { codec -> if (smooth(codec)) file(codec) else null }?.let { return it }
     val raw = info.offers.any { it.way == "raw" && it.codec == "mpeg2" }
-    if (raw && smooth("mpeg2")) return PlayChoice.Stream("mpeg2")
-    listOf("h264", "av1").firstOrNull { codec -> smooth(codec) && info.offers.any { it.way == "stream" && it.codec == codec } }
-        ?.let { return PlayChoice.Stream(it) }
+    AutoOrder.onTheFly(indoor).firstNotNullOfOrNull { codec ->
+        when (codec) {
+            "raw" -> PlayChoice.Stream("mpeg2").takeIf { raw && smooth("mpeg2") }
+            else -> PlayChoice.Stream(codec).takeIf { smooth(codec) && info.offers.any { it.way == "stream" && it.codec == codec } }
+        }
+    }?.let { return it }
     if (decoders.av1) file("av1")?.let { return it }
     if (raw && decoders.mpeg2) return PlayChoice.Stream("mpeg2")
     return null

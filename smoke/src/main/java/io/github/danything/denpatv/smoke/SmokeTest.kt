@@ -409,10 +409,14 @@ class SmokeTest {
     /**
      * 録画を頭から開き直す。同じ録画のリンクを続けて開くと、アプリは観ている画面をそのまま続ける (同じ行き先なので作り直さない) ので、
      * いったん録画の一覧へ戻ってから開く。止まっていたら動かす (止めたままでは放送時刻が進まず、コメントが流れない)
+     *
+     * **一覧に戻ったかは、一覧にしか無いもの (エンコード前の録画の名前) で見る。** この録画の名前は観ている画面のタイトルにも出ているので、
+     * それで待つと一覧へのリンクがまだ効いていないうちに通ってしまい、続けて開いた同じ録画のリンクで、観ている画面がそのまま続く
+     * (頭から開き直さず、過去ログも訊き直さない。終わりかけの位置のままコメントが流れずに落ちていた)
      */
     private fun reopenRecording() {
         open("denpa://recordings")
-        assertTrue("録画の一覧に戻りません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().any { FakeDenpa.RECORDING_TITLE in it } })
+        assertTrue("録画の一覧に戻りません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { windowTexts().any { FakeDenpa.RAW_TITLE in it } })
         open("denpa://recording/${FakeDenpa.RECORDING_ID}")
         awaitVideo(RECORDING_COLOR)
         if (windowTexts().any { it.startsWith("一時停止") }) press(KeyEvent.KEYCODE_DPAD_CENTER)

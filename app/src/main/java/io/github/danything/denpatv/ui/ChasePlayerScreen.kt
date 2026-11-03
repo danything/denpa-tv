@@ -79,7 +79,9 @@ fun ChasePlayerScreen(
     onEncoded: (Recording) -> Unit,
 ) {
     val chase = recording.chase ?: return Centered("追っかけ再生できません")
-    val quality = rememberLiveQuality(repo) ?: return
+    // 追っかけの画質は開くたびに「自動」から。選んだものは開いている間だけ (ブラウザの追っかけと同じ)
+    val (selection, pick) = rememberChaseSelection(repo) ?: return
+    val quality = selection.format
     val buffering = quality.buffering
     val clock = remember { TsClock() }
     fun recorded() = Chase.recordedMs(recording.startAt, System.currentTimeMillis())
@@ -120,7 +122,7 @@ fun ChasePlayerScreen(
      * 古い画質で一度リクエストし直してしまう (denpa に再エンコードを2回させる)。MPEG-2 との行き来ではプレーヤーごと作り直すので、替える前に覚えておく
      */
     val switchedAt = remember { mutableStateOf<Pair<Long, LiveQuality>?>(null) }
-    val codec = rememberCodecSwitching(repo, player, quality, if (refused) "denpa で変換できませんでした" else error, flash) { target ->
+    val codec = rememberCodecSwitching(player, selection, if (refused) "denpa で変換できませんでした" else error, flash, store = { pick(it) }) { target ->
         switchedAt.value = position() to target
     }
     /** 裏に回ったときの位置 (`OnBackground`)。戻ったらここからリクエストし直す。裏に回っていなければ null */
@@ -478,12 +480,8 @@ fun ChasePlayerScreen(
                         if (Chase.atEdge(at, length)) null else Control("最新", icon = R.drawable.ic_edge) { toEdge() },
                         speedControl(speed) { scope.stepSpeed(repo, speed) },
                     ),
-                    "画質" to LiveQuality.available(repo.app.decoders).map { choice ->
-                        // 選んだらすぐ入れて、いた位置からリクエストし直す (映るまでは前の映像のまま「… に切り替え中」)
-                        Control(choice.label, on = choice == codec.chosen) {
-                            codec.choose(choice)
-                        }
-                    },
+                    // 選んだらすぐ入れて、いた位置からリクエストし直す (映るまでは前の映像のまま「… に切り替え中」)
+                    "画質" to codec.controls(selection),
                     "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + baked.controls(),
                 ),
                 header = { actions ->

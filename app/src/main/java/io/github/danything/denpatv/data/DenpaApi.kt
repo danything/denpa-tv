@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -135,6 +136,20 @@ class DenpaApi(
         JikkyoNg.parse(res.text()) ?: emptyList<String>().also { warn("実況の NG ワードの形式が違います (denpa の版のずれ?): ${res.text().take(200)}") }
     }
 
+    /**
+     * 観るときの決まり (`GET api/playback/options`。denpa v2.27.0 から)。家の中か (「自動」の順 `AutoOrder`) と、画質のメニューから外すもの。
+     * **無い (404。古い denpa) ときだけ `PlaybackOptions.FALLBACK`。** 届かない・5xx・形式が違う (`warn` に書く) ときは null (呼ぶ側は控えずに後で聞き直す)
+     * **ライブと追っかけはこの返事を待ってから流しはじめるので、`OPTIONS_TIMEOUT_MS` で打ち切る** (届かないまま HTTP のいつもの時間切れまで
+     * 待たせない)。打ち切ったら届かないのと同じ null で、呼ぶ側は `FALLBACK` (家の中) で流しはじめる
+     */
+    suspend fun playbackOptions(base: URI): PlaybackOptions? = withContext(Dispatchers.IO) {
+        val res = call(base, "api/playback/options", timeoutMs = OPTIONS_TIMEOUT_MS) ?: return@withContext null
+        if (res.code == 404) return@withContext PlaybackOptions.FALLBACK
+        if (!res.ok) return@withContext null
+        parsePlaybackOptions(res.text())
+            ?: null.also { warn("観るときの決まりの形式が違います (denpa の版のずれ?): ${res.text().take(200)}") }
+    }
+
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。もう無い (404) のも消せたとみなして true。録画中 (409) などは false */
     suspend fun deleteRecording(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
         val res = call(base, "api/recordings/$id", "DELETE") ?: return@withContext false
@@ -142,10 +157,10 @@ class DenpaApi(
     }
 
     /** アクセストークンを付けてリクエストする。URL を組めない・届かなければ null。401 は `Unauthorized` */
-    private fun call(base: URI, path: String, method: String = "GET"): Http.Response? {
+    private fun call(base: URI, path: String, method: String = "GET", timeoutMs: Int? = null): Http.Response? {
         val url = BaseUrl.resolve(base, path) ?: return null
         val res = try {
-            Http.request(url, method, token = token())
+            Http.request(url, method, token = token(), timeoutMs = timeoutMs)
         } catch (_: IOException) {
             return null
         }
@@ -208,6 +223,9 @@ class DenpaApi(
 }
 
 private const val TAG = "DenpaApi"
+
+/** 観るときの決まり (`playbackOptions`) を待つ長さ (ミリ秒)。LAN の denpa なら数十ミリ秒で返る。届かないときに流しはじめるのを長く待たせない */
+private const val OPTIONS_TIMEOUT_MS = 2_500
 
 @Serializable
 private data class DeviceCodeRequest(val name: String)
@@ -275,4 +293,23 @@ fun parseDenpaHealth(body: String): DenpaHealth? {
     val json = runCatching { lenientJson.parseToJsonElement(body.removePrefix("\uFEFF")).jsonObject }.getOrNull() ?: return null
     if (runCatching { json["ok"]?.jsonPrimitive?.booleanOrNull }.getOrNull() != true) return null
     return DenpaHealth(runCatching { json["version"]?.jsonPrimitive?.contentOrNull }.getOrNull())
+}
+
+/**
+ * 観るときの決まり (`api/playback/options`)。`indoor` は開いたホスト名が家の中か、`hideH264` は世帯の設定の
+ * 「コーデックの選択肢に H.264 と H.265 を出さない」(`hidden` に `h264` がある。外すのはメニューだけ)
+ */
+data class PlaybackOptions(val indoor: Boolean, val hideH264: Boolean) {
+    companion object {
+        /** 聞けない古い denpa: 家の中 (前からの既定: MPEG-2 から)、メニューから何も外さない */
+        val FALLBACK = PlaybackOptions(indoor = true, hideH264 = false)
+    }
+}
+
+/** `api/playback/options` の返事 (`{"indoor":true,"hidden":["h264","hevc"],…}`) を読む。`indoor` が読めなければ null。`hidden` が無ければ外さない */
+fun parsePlaybackOptions(body: String): PlaybackOptions? {
+    val json = runCatching { lenientJson.parseToJsonElement(body).jsonObject }.getOrNull() ?: return null
+    val indoor = runCatching { json["indoor"]?.jsonPrimitive?.booleanOrNull }.getOrNull() ?: return null
+    val hidden = runCatching { json["hidden"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } }.getOrNull().orEmpty()
+    return PlaybackOptions(indoor, hideH264 = "h264" in hidden)
 }
