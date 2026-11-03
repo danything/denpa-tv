@@ -18,6 +18,7 @@ import io.github.danything.denpatv.data.denpaTooOld
 import io.github.danything.denpatv.data.followEvents
 import io.github.danything.denpatv.data.staleServices
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
@@ -150,8 +151,10 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     suspend fun listen(onUnauthorized: () -> Unit) {
         val url = BaseUrl.resolve(base, "api/events") ?: return
         coroutineScope {
-            // 受けた通知はここ (呼ぶ側のスレッド = メイン) で仕分ける
-            val sorter = launch { incoming.collect { sort(it) } }
+            // 受けた通知はここ (呼ぶ側のスレッド = メイン) で仕分ける。繋ぐより先に受け始める (UNDISPATCHED)。
+            // 後から受け始めると、すぐ繋がったときの `Opened` を `incoming` が受け手の無いまま捨て、denpa のバージョンを確かめないままになる
+            // (バージョンが分からないと「実況」のボタンを出さない)
+            val sorter = launch(start = CoroutineStart.UNDISPATCHED) { incoming.collect { sort(it) } }
             try {
                 followEvents(url, token, onEvent = { incoming.tryEmit(it) }, warn = { Log.w(TAG, it) })
             } catch (_: Unauthorized) {
