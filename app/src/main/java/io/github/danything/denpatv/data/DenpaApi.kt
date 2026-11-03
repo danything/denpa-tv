@@ -135,6 +135,16 @@ class DenpaApi(
         JikkyoNg.parse(res.text()) ?: emptyList<String>().also { warn("実況の NG ワードの形式が違います (denpa の版のずれ?): ${res.text().take(200)}") }
     }
 
+    /**
+     * 局の勢い (`GET api/jikkyo/ranking`。denpa v2.18.0 から)。局の ID → 1 分あたりのコメント数。放送中のスレッドがある局だけ。
+     * 読めない (`503`・世帯の設定がオフの `403`・届かない) は null。形式が違えば `warn` に書いて null (版のずれ)
+     */
+    suspend fun jikkyoRanking(base: URI): Map<Long, Int>? = withContext(Dispatchers.IO) {
+        val res = call(base, "api/jikkyo/ranking")?.takeIf { it.ok } ?: return@withContext null
+        val text = res.text()
+        JikkyoRanking.parse(text) ?: null.also { warn("局の勢いの形式が違います (denpa の版のずれ?): ${text.take(200)}") }
+    }
+
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。もう無い (404) のも消せたとみなして true。録画中 (409) などは false */
     suspend fun deleteRecording(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
         val res = call(base, "api/recordings/$id", "DELETE") ?: return@withContext false

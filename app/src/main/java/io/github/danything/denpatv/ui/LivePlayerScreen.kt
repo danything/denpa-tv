@@ -40,6 +40,7 @@ import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.YieldPlan
 import io.github.danything.denpatv.data.YieldedRecording
 import io.github.danything.denpatv.data.audioQuery
+import io.github.danything.denpatv.data.JikkyoRanking
 import io.github.danything.denpatv.data.jikkyoSupported
 import io.github.danything.denpatv.data.chaseEnd
 import io.github.danything.denpatv.data.liveCenter
@@ -233,6 +234,12 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         onChange = flash,
         onUnauthorized = onUnauthorized,
     )
+    /*
+     * 局の勢い (メニューの局の列の最後の「実況」の列)。実況のコメントを流せる (世帯の設定と端末の設定の両方がオンで、denpa が新しい) 間だけ取る。
+     * 録画に譲って追っかけを観ている間も、局の列は出すので取る
+     */
+    val rankingOn = household && jikkyo.on && jikkyoSupported(repo.denpaVersion)
+    val ranking = rememberJikkyoRanking(repo, rankingOn, JikkyoRanking.candidates(services).map { it.id }, onUnauthorized)
     CatchUp(player, buffering)
     val codec = rememberCodecSwitching(repo, player, quality, error, flash)
 
@@ -582,7 +589,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             val now = current.now
             // 下の局の列 (どちらのメニューにも出す)。選んだらその局に替えて閉じる
             val channels: @Composable ColumnScope.() -> Unit = {
-                ChannelRows(repo, services, current, currentCard) { picked ->
+                ChannelRows(repo, services, current, currentCard, ranking.takeIf { rankingOn }) { picked ->
                     playing = picked
                     menu = null
                 }
