@@ -88,8 +88,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
     var lookup by remember { mutableStateOf<PlaybackLookup?>(null) }
+    /** 開いたホスト名が家の中か (「自動」の順 `AutoOrder`)。観方と一緒に読む */
+    var indoor by remember { mutableStateOf(true) }
     LaunchedEffect(recording.id) {
         lookup = try {
+            indoor = repo.playbackOptions().indoor
             repo.api.playback(repo.base, recording.id)
         } catch (_: Unauthorized) {
             return@LaunchedEffect onUnauthorized()
@@ -100,7 +103,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         PlaybackLookup.Missing -> Centered("この録画を開けません (ファイルが無いか、denpa が古いため)")
         is PlaybackLookup.Failed -> Centered("再生できません: ${found.message}")
         is PlaybackLookup.Found -> {
-            val choice = remember(found.info) { pickPlayback(found.info, repo.app.decoders) }
+            val choice = remember(found.info) { pickPlayback(found.info, repo.app.decoders, indoor) }
             if (choice == null) Centered("この端末で再生できる形式がありません")
             else RecordingPlayback(repo, recording, found.info, choice, onLeave, onUnauthorized)
         }

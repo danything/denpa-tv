@@ -51,45 +51,58 @@ class PlaybackTest {
 
     @Test
     fun エンコード済みのファイルをデコードできればそのまま開く() {
-        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(encoded, tv))
+        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(encoded, tv, indoor = true))
         // AV1 と H.264 の2本あれば、軽い AV1 から
         val both = encoded.copy(offers = listOf(PlayOffer("h264", "file", "alt")) + encoded.offers)
-        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(both, tv))
-        assertEquals(PlayChoice.File("h264", "alt"), pickPlayback(both, stick))
+        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(both, tv, indoor = true))
+        assertEquals(PlayChoice.File("h264", "alt"), pickPlayback(both, stick, indoor = true))
     }
 
     @Test
     fun AV1_をソフトでしかデコードできない端末はファイルより元の_TS_か変換を先にする() {
         // Chromecast with Google TV など: ソフトの AV1 はあるがハードは無い。MPEG-2 はハード
         val chromecast = tv.copy(av1Hardware = false)
-        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(encoded, chromecast))
+        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(encoded, chromecast, indoor = true))
         // MPEG-2 もハードで無ければ H.264 に変換してもらう (AV1 の変換も選ばない)
         val softOnly = chromecast.copy(mpeg2Hardware = false)
-        assertEquals(PlayChoice.Stream("h264"), pickPlayback(encoded, softOnly))
+        assertEquals(PlayChoice.Stream("h264"), pickPlayback(encoded, softOnly, indoor = true))
         // 変換も元の TS も無ければ、最後の手として AV1 のファイルをソフトで
         val fileOnly = encoded.copy(offers = encoded.offers.filter { it.way == "file" })
-        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(fileOnly, softOnly))
+        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(fileOnly, softOnly, indoor = true))
     }
 
     @Test
     fun ファイルをデコードできなければ_MPEG2_をハードでデコードできる端末は元の_TS_をそのまま() {
         val noAv1 = tv.copy(av1 = false, av1Hardware = false)
-        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(encoded, noAv1))
-        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(tsOnly, tv))
+        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(encoded, noAv1, indoor = true))
+        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(tsOnly, tv, indoor = true))
     }
 
     @Test
     fun それ以外は変換を_H264_から_元の_TS_はソフトのデコーダで最後に() {
-        assertEquals(PlayChoice.Stream("h264"), pickPlayback(encoded, stick))
-        assertEquals(PlayChoice.Stream("h264"), pickPlayback(tsOnly, stick))
+        assertEquals(PlayChoice.Stream("h264"), pickPlayback(encoded, stick, indoor = true))
+        assertEquals(PlayChoice.Stream("h264"), pickPlayback(tsOnly, stick, indoor = true))
         // H.264 の変換が無く (版のずれ)、AV1 もデコードできなければ元の TS を
         val rawOnly = tsOnly.copy(offers = listOf(PlayOffer("av1", "stream"), PlayOffer("mpeg2", "raw")))
-        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(rawOnly, stick))
-        assertNull(pickPlayback(rawOnly, bare))
-        assertNull(pickPlayback(PlaybackInfo(), tv))
+        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(rawOnly, stick, indoor = true))
+        assertNull(pickPlayback(rawOnly, bare, indoor = true))
+        assertNull(pickPlayback(PlaybackInfo(), tv, indoor = true))
         // 中身の形式は流し方で決まる
         assertEquals("video/mp2t", PlayChoice.Stream("mpeg2").mime)
         assertEquals("video/mp4", PlayChoice.Stream("h264").mime)
+    }
+
+    /** 自動の順 (`AutoOrder`): ファイルは家の中でも外でも同じ、その場の変換は外なら AV1 → H.264 (元の TS は選ばない) */
+    @Test
+    fun 外ではファイルは同じ_その場の変換は_AV1_から() {
+        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(encoded, tv, indoor = false))
+        assertEquals(PlayChoice.Stream("av1"), pickPlayback(tsOnly, tv, indoor = false))
+        // AV1 がハードで無ければ H.264。MPEG-2 がハードでも、外では変換を先にする
+        assertEquals(PlayChoice.Stream("h264"), pickPlayback(tsOnly, tv.copy(av1Hardware = false), indoor = false))
+        assertEquals(PlayChoice.Stream("h264"), pickPlayback(tsOnly, stick, indoor = false))
+        // 変換が無ければ、最後の手として元の TS を
+        val rawOnly = tsOnly.copy(offers = listOf(PlayOffer("mpeg2", "raw")))
+        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(rawOnly, tv, indoor = false))
     }
 
     @Test

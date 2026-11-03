@@ -9,6 +9,7 @@ import io.github.danything.denpatv.DenpaApp
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.DenpaEvent
+import io.github.danything.denpatv.data.PlaybackOptions
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingList
 import io.github.danything.denpatv.data.Service
@@ -106,7 +107,24 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
         val health = api.health(base) ?: return
         denpaVersion = health.version
         denpaWarning = denpaTooOld(health.version)?.also { Log.w(TAG, it) }
+        // 観るときの決まりも聞き直す (世帯の設定の「家の中の名前」・メニューから外すものを変えたかもしれない)。届かなければ前のまま
+        try {
+            api.playbackOptions(base)?.let { optionsKnown = it }
+        } catch (_: Unauthorized) {
+            // 取り消されていれば、ほかの API が 401 で気付く
+        }
     }
+
+    /** 観るときの決まり (`DenpaApi.playbackOptions`)。聞けたものを控える */
+    @Volatile
+    private var optionsKnown: PlaybackOptions? = null
+
+    /**
+     * **観るときの決まり** (家の中か: 「自動」の順 `AutoOrder`、画質のメニューから外すもの)。控えが無ければ聞く。届かない・打ち切った (`DenpaApi.playbackOptions` は 2.5 秒で打ち切る) ときは
+     * `PlaybackOptions.FALLBACK` (控えないので、次に聞き直す)。アクセストークンが取り消されていれば `Unauthorized`
+     */
+    suspend fun playbackOptions(): PlaybackOptions =
+        optionsKnown ?: (api.playbackOptions(base)?.also { optionsKnown = it } ?: PlaybackOptions.FALLBACK)
 
     /** 局だけ取り直す (いま放送中の番組が変わるので) */
     suspend fun refreshServices() {
