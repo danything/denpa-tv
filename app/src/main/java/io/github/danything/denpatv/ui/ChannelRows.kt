@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
@@ -61,7 +62,8 @@ import kotlinx.coroutines.launch
  * 番号・ロゴ・局名・いま放送中の番組を出し、いま映している局に印を付ける。** ブラウザのタブにあたるものを、
  * 十字キーで辿れるよう縦に積んだ列にした (地上波の列 → BS の列 → CS の列)。左右で局を選び、決定で替える。
  *
- * 開いたときは、いま映している局の列がいちばん上に見えていて、下の列の名前が覗く (操作バーの高さを取りすぎない)。
+ * 開いたときは、いま映している局の列がいちばん上に見えていて、下の列の名前とカードの頭が覗く (操作バーの高さを取りすぎない)。
+ * 覗いたカードは下の端で溶かす (録画の一覧の格子の下の端と同じ)。カードの縁だけが細く残ると、テレビの縁で切れたように見える
  * 操作の列から下キーで、いま映している局にフォーカスが移る (`current`)。列から列へは、真上・真下のカードへ (横の送り具合は列ごとに覚える)。
  *
  * ブラウザのライブと同じく、**放送している局だけ並べる** (本放送と同じものを流しているサブチャンネルは出さない。
@@ -84,6 +86,13 @@ fun ChannelRows(
     }
     val start = rows.indexOfFirst { it.first == current.type }.coerceAtLeast(0)
     val column = rememberLazyListState(initialFirstVisibleItemIndex = start)
+    /*
+     * **高さは種別の名前の行の高さから組み立てる** (だいたいの数にしない)。テレビの文字の拡大で名前の行が高くなっても、
+     * 1列がまるごと入り、次の列の名前とカードの頭が同じだけ覗く
+     */
+    val labelLine = with(LocalDensity.current) { MaterialTheme.typography.labelMedium.lineHeight.toDp() }
+    val rowHeight = labelLine + LABEL_GAP + ROW_PADDING * 2 + CARD_HEIGHT
+    val rowsHeight = rowHeight + ROW_GAP + labelLine + LABEL_GAP + ROW_PADDING + CARD_PEEK
     /*
      * **フォーカスした列を、いつも枠のいちばん上に揃える。** フォーカスしたカードを見せるだけの送り方だと、上の列のカードの裾が
      * 中途半端に覗いて読みにくい
@@ -108,7 +117,7 @@ fun ChannelRows(
              * 局の列から操作の列へ上がったら、いま映している局の列に戻しておく (下キーで戻る先と揃える)。その列を横に送って
              * いま映している局のカードが枠の外に出ていたら、カードが見えるところまで戻す — カードが無いと、操作の列で下を押しても下りられない
              */
-            modifier = Modifier.fillMaxWidth().height(ROWS_HEIGHT).onFocusChanged {
+            modifier = Modifier.fillMaxWidth().height(rowsHeight).fadeBottom(focusedRow < rows.lastIndex).onFocusChanged {
                 if (it.hasFocus) return@onFocusChanged
                 focusedRow = start
                 val tunedRow = rows.getOrNull(start) ?: return@onFocusChanged
@@ -119,14 +128,14 @@ fun ChannelRows(
                 }
             },
             // 最後の列も上に揃えられるよう、下に1列ぶんに足りない分の余白
-            contentPadding = PaddingValues(bottom = ROWS_HEIGHT - ROW_HEIGHT),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            contentPadding = PaddingValues(bottom = rowsHeight - rowHeight),
+            verticalArrangement = Arrangement.spacedBy(ROW_GAP),
         ) {
             itemsIndexed(rows, key = { _, it -> it.first }) { index, (type, label, row) ->
                 val at = row.indexOfFirst { it.id == current.id }
                 // 見えていないカードにはフォーカスできないので、いま映している局が見えるところから並べる
                 val state = states.getOrPut(type) { LazyListState(firstVisibleItemIndex = (at - 1).coerceAtLeast(0)) }
-                Column(Modifier.onFocusChanged { if (it.hasFocus) focusedRow = index }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(Modifier.onFocusChanged { if (it.hasFocus) focusedRow = index }, verticalArrangement = Arrangement.spacedBy(LABEL_GAP)) {
                     Text(label, style = MaterialTheme.typography.labelMedium, color = Palette.OnScrimMuted)
                     /*
                      * **横は、フォーカスしたカードの左の端をいつも同じ所 (`KEYLINE`。左に1枚ぶん) に置く。** 送るたびにカードが同じ所に来るので、
@@ -143,7 +152,7 @@ fun ChannelRows(
                              * 見えていないカードへ飛んだり、離れたカードにフォーカスが移ったりした
                              */
                             // 上下は、フォーカスしたカードの膨らみと光が端を溶かす層 (`fadeEdges`) で切れないだけ空ける
-                            contentPadding = PaddingValues(vertical = 12.dp, horizontal = 4.dp),
+                            contentPadding = PaddingValues(vertical = ROW_PADDING, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
                         ) {
                             items(row, key = { it.id }) { service ->
@@ -262,11 +271,34 @@ private val CARD_GAP = 12.dp
 /** フォーカスしたカードの左の端を置く所 (横の枠の幅に対する割合)。左に1枚ぶんのカードが見える */
 private const val KEYLINE_FRACTION = 0.25f
 
-/** 局の列を出す高さ。1列がまるごと見えて、次の列の名前が覗く (下に続きがあると分かる) */
-private val ROWS_HEIGHT = 172.dp
+/** 列の間と、種別の名前とカードの列の間 */
+private val ROW_GAP = 4.dp
+private val LABEL_GAP = 2.dp
 
-/** 1列の高さ (種別の名前とカード。カードの上下の余白も)。だいたいでよい */
-private val ROW_HEIGHT = 134.dp
+/** カードの列の上下の余白 (フォーカスしたカードの膨らみと光が、端を溶かす層で切れないだけ) */
+private val ROW_PADDING = 12.dp
+
+/**
+ * 次の列のカードを覗かせる高さ。番号とロゴの行が半分ほど見えて、カードの列だと分かるだけ (下に続きがあると分かる)。
+ * 下の端の溶かし (`BOTTOM_FADE`) より短くし、溶かしが次の列の名前に掛からないようにする
+ */
+private val CARD_PEEK = 28.dp
+
+/** 下の端を溶かす高さ (録画の一覧の格子の下の端と同じ) */
+private val BOTTOM_FADE = 40.dp
+
+/**
+ * **下に続きの列があるとき、下の端を透かして消す** (覗いた次の列のカードが、テレビの縁で切れたように見えないように)。
+ * 最後の列では溶かさない。透かし方は横の `fadeEdges` と同じ (別の層に描いてから端だけ抜く)
+ */
+private fun Modifier.fadeBottom(enabled: Boolean): Modifier =
+    if (!enabled) this
+    else graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            val fade = (BOTTOM_FADE.toPx() / size.height).coerceAtMost(1f)
+            drawRect(Brush.verticalGradient(0f to Color.Black, 1f - fade to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
+        }
 
 /**
  * **横に送れる側の端を透かして消す** (端のカードが字の途中でぶつりと切れて見えないように。続きがあるのも分かる)。
