@@ -111,7 +111,7 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     }
     when (val found = lookup) {
         null -> Centered("読み込んでいます")
-        PlaybackLookup.Missing -> Centered("この録画を開けません (ファイルが無いか、denpa が古いため)")
+        PlaybackLookup.Missing -> Centered("この録画を開けません (ファイルがありません)")
         is PlaybackLookup.Failed -> Centered("再生できません: ${found.message}")
         is PlaybackLookup.Found -> {
             val choice = remember(found.info) { found.info.auto?.choice() }
