@@ -74,7 +74,7 @@ class JikkyoRankingState internal constructor(scope: CoroutineScope) {
 /**
  * **局の勢いを取る** (ブラウザの denpa のライブの「実況」タブと同じ決まり)。
  *
- * - `enabled` (実況のコメントを流せる: 世帯の設定と端末の設定の両方がオンで、denpa が新しい) の間だけ、`JikkyoRanking.EVERY_MS` ごとに
+ * - `enabled` (実況のコメントを流せる: 世帯の設定と端末の設定の両方がオン) の間だけ、`JikkyoRanking.EVERY_MS` ごとに
  *   `GET api/jikkyo/ranking`。アプリが裏に回ったら止め、戻ったらすぐ1回取る (`OnBackground`)
  * - ブラウザはタブを開いている間だけ取るが、テレビはライブの画面にいる間ずっと取る。メニューを開いた瞬間に並び替えて、
  *   フォーカスしたカードが動かないように (denpa は 30 秒持つので、NX-Jikkyo を読むのは 30 秒に1回より増えない)

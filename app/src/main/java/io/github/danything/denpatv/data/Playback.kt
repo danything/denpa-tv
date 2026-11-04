@@ -140,7 +140,7 @@ object StreamClock {
 sealed interface PlaybackLookup {
     data class Found(val info: PlaybackInfo) : PlaybackLookup
 
-    /** 観られない (404)。録っている最中・ファイルが無い録画、`playback` のエンドポイントの無い古い denpa */
+    /** 観られない (404)。録っている最中・ファイルが無い録画 */
     data object Missing : PlaybackLookup
 
     /** 届かない・読めない。`message` は画面に出す */
@@ -156,7 +156,7 @@ data class RecordingState(
     val state: String,
     /** 録れた長さ (ミリ秒。一覧の `durationMs` と同じ)。録画中は null */
     val durationMs: Long? = null,
-    /** 実況 (チャンネルと元の TS の頭の放送時刻)。実況の無い局・世帯の設定がオフ・古い denpa は null */
+    /** 実況 (チャンネルと元の TS の頭の放送時刻)。実況の無い局・世帯の設定がオフなら null */
     val jikkyo: RecordingJikkyo? = null,
 ) {
     val recording: Boolean get() = state == "recording"

@@ -45,7 +45,6 @@ import io.github.danything.denpatv.data.JikkyoLanes
 import io.github.danything.denpatv.data.RecordingJikkyo
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
-import io.github.danything.denpatv.data.jikkyoSupported
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,7 +65,7 @@ class JikkyoPast(val from: Long, val to: () -> Long, val every: Long? = null)
 @Stable
 class JikkyoState internal constructor(
     val feed: JikkyoFeed,
-    /** ボタンを出すか (世帯の設定がオンで、denpa が新しい) */
+    /** ボタンを出すか (世帯の設定がオン) */
     val supported: Boolean,
     /** この局 (録画) の実況のチャンネル。無ければ null */
     val channel: String?,
@@ -132,7 +131,7 @@ fun rememberJikkyo(
 ): JikkyoState {
     val on by repo.app.settings.jikkyo.collectAsState(initial = false)
     val listOn by repo.app.settings.jikkyoList.collectAsState(initial = false)
-    val supported = household && jikkyoSupported(repo.denpaVersion)
+    val supported = household
     val scope = rememberCoroutineScope()
     // 繋ぐ出来事と取り足しは1本のスレッドで回す (NxJikkyo)。画面を離れたら閉じてから止める
     val feed = remember {

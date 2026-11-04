@@ -128,7 +128,7 @@ class DenpaApi(
     }
 
     /**
-     * 実況の NG ワード (`GET api/jikkyo/ng`。世帯で1つの一覧)。無い (古い denpa・世帯の設定がオフ)・届かないは空 (NG ワード無しで流す)。
+     * 実況の NG ワード (`GET api/jikkyo/ng`。世帯で1つの一覧)。世帯の設定がオフ・届かないは空 (NG ワード無しで流す)。
      * 形式が違えば `warn` に書いて空
      */
     suspend fun jikkyoNg(base: URI): List<String> = withContext(Dispatchers.IO) {
@@ -137,7 +137,7 @@ class DenpaApi(
     }
 
     /**
-     * 局の勢い (`GET api/jikkyo/ranking`。denpa v2.18.0 から)。局の ID → 1 分あたりのコメント数。放送中のスレッドがある局だけ。
+     * 局の勢い (`GET api/jikkyo/ranking`)。局の ID → 1 分あたりのコメント数。放送中のスレッドがある局だけ。
      * 読めない (`503`・世帯の設定がオフの `403`・届かない) は null。形式が違えば `warn` に書いて null (版のずれ)
      */
     suspend fun jikkyoRanking(base: URI): Map<Long, Int>? = withContext(Dispatchers.IO) {

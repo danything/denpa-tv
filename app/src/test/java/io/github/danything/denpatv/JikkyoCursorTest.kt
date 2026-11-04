@@ -5,7 +5,6 @@ import io.github.danything.denpatv.data.JikkyoCursor
 import io.github.danything.denpatv.data.JikkyoLanes
 import io.github.danything.denpatv.data.JikkyoNg
 import io.github.danything.denpatv.data.jumped
-import io.github.danything.denpatv.data.jikkyoSupported
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -168,13 +167,5 @@ class JikkyoCursorTest {
         // 長すぎる語は捨てる。絵文字も1文字と数える
         assertEquals(emptyList<String>(), JikkyoNg.parse("""{"words":["${"あ".repeat(JikkyoNg.NG_LENGTH + 1)}"]}"""))
         assertEquals(1, JikkyoNg.parse("""{"words":["${"😀".repeat(JikkyoNg.NG_LENGTH)}"]}""")?.size)
-    }
-
-    @Test
-    fun 古い_denpa_では実況を出さない_版の分からない_denpa_では出す() {
-        assertFalse(jikkyoSupported("v2.25.0"))
-        assertTrue(jikkyoSupported("v2.26.0"))
-        assertTrue(jikkyoSupported("dev"))
-        assertFalse(jikkyoSupported(null))
     }
 }

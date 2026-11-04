@@ -47,7 +47,6 @@ import io.github.danything.denpatv.data.YieldPlan
 import io.github.danything.denpatv.data.YieldedRecording
 import io.github.danything.denpatv.data.audioQuery
 import io.github.danything.denpatv.data.JikkyoRanking
-import io.github.danything.denpatv.data.jikkyoSupported
 import io.github.danything.denpatv.data.chaseEnd
 import io.github.danything.denpatv.data.liveCenter
 import io.github.danything.denpatv.data.liveChannelKey
@@ -219,7 +218,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             streamed == LiveQuality.Raw -> playing?.let { CaptionPaths.live(it.live) }
             // 変換したライブの字幕と時計は、映像と同じ形式 (denpa が選んだもの)・音声を渡すと同じストリームのものが fMP4 の時刻で来る。
             // denpa の字幕のエンドポイントは H.265 を受けない (`codec` は raw・h264・av1。ほかは 400) ので、H.265 では字幕と時計を取らない
-            streamed != null && streamed != LiveQuality.Hevc && jikkyoSupported(repo.denpaVersion) -> playing?.let { CaptionPaths.live(it.live) }?.let { "$it?codec=${streamed.codec}${audioQuery(baked.audio)}" }
+            streamed != null && streamed != LiveQuality.Hevc -> playing?.let { CaptionPaths.live(it.live) }?.let { "$it?codec=${streamed.codec}${audioQuery(baked.audio)}" }
             else -> null
         },
         generation = chasing?.let { "chase ${it.recording.id} $chaseLoads" } ?: playing?.id,
@@ -255,10 +254,10 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         onUnauthorized = onUnauthorized,
     )
     /*
-     * 局の勢い (メニューの局の列の最後の「実況」の列)。実況のコメントを流せる (世帯の設定と端末の設定の両方がオンで、denpa が新しい) 間だけ取る。
+     * 局の勢い (メニューの局の列の最後の「実況」の列)。実況のコメントを流せる (世帯の設定と端末の設定の両方がオン) 間だけ取る。
      * 録画に譲って追っかけを観ている間も、局の列は出すので取る
      */
-    val rankingOn = household && jikkyo.on && jikkyoSupported(repo.denpaVersion)
+    val rankingOn = household && jikkyo.on
     val ranking = rememberJikkyoRanking(repo, rankingOn, JikkyoRanking.candidates(services).map { it.id }, onUnauthorized)
     CatchUp(player, streamed.buffering)
     val codec = rememberCodecSwitching(player, selection, streamed, error, flash, store = { repo.app.settings.setLiveQuality(it) })
