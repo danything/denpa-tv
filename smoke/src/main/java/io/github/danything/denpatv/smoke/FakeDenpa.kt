@@ -23,7 +23,9 @@ import kotlin.concurrent.thread
  *
  * 答えるのは denpa の docs/api.md のうちアプリが呼ぶエンドポイントだけ。映像はテストの APK の assets (`scripts/smoke-media.sh` で作る)。
  * 1つの要求ごとに繋ぎを閉じる (`Connection: close`)。映像は Range に答える。`api/events` (SSE) は閉じるまで開けておく。
- * 届いた要求は `requests` に `GET /api/…` の形式で溜める
+ * 届いた要求は `requests` に `GET /api/…` の形式で、クエリも付けたものを `targets` に溜める。
+ * ライブ・追っかけ・録画を流すときは、denpa と同じく選んだ形式を応答ヘッダ `X-Denpa-Codec` で返す (映像はどれも H.264)。
+ * 録画の観方は `playable` に `h264` があれば、選んだ観方 (`auto`) を付ける
  */
 class FakeDenpa(
     private val assets: AssetManager,
@@ -33,6 +35,9 @@ class FakeDenpa(
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
     private val pool = Executors.newCachedThreadPool()
     val requests = ConcurrentLinkedQueue<String>()
+
+    /** 届いた要求のパスとクエリ (`/api/services/1/live?codec=auto&playable=h264`) */
+    val targets = ConcurrentLinkedQueue<String>()
 
     /**
      * この数だけ、次のライブの要求に 503 を返す (denpa が入れ替わっている最中のつもり。アプリが待ってリクエストし直すかを見る)。
@@ -99,18 +104,19 @@ class FakeDenpa(
             repeat(headers["content-length"]?.toIntOrNull() ?: 0) { if (input.read() < 0) return }
             val path = target.substringBefore('?')
             requests += "$method $path"
-            route(method, path, headers["range"], out)
+            targets += target
+            route(method, path, target.substringAfter('?', ""), headers["range"], out)
         } catch (_: SocketException) {
             // アプリが先に閉じた (局を替えた・画面を離れた)
         }
     }
 
-    private fun route(method: String, path: String, range: String?, out: OutputStream) {
-        if (showcase && showcaseRoute(method, path, range, out)) return
+    private fun route(method: String, path: String, query: String, range: String?, out: OutputStream) {
+        if (showcase && showcaseRoute(method, path, query, range, out)) return
         val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file|poster)").matchEntire(path)
         val live = Regex("/api/services/(\\d+)/live").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
-            path == "/api/health" -> json(out, """{"ok":true,"version":"v2.26.0"}""")
+            path == "/api/health" -> json(out, """{"ok":true,"version":"v2.29.0"}""")
             path == "/api/services" -> json(out, services())
             // 局の勢い。いま映している局 (勢いの小さい [SERVICE_ID]) より隣の局が上
             path == "/api/jikkyo/ranking" -> json(out, if (showcase) Showcase.ranking() else """{"at":${System.currentTimeMillis()},"channels":[{"serviceId":$SERVICE_ID,"force":3},{"serviceId":$NEXT_SERVICE_ID,"force":36}]}""")
@@ -124,7 +130,7 @@ class FakeDenpa(
                 } else if (failLive.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) {
                     respond(out, 503, "text/plain", "restarting".toByteArray())
                 } else {
-                    media(out, "live.mp4", "video/mp4", range)
+                    media(out, "live.mp4", "video/mp4", range, H264)
                 }
             path == "/api/services/$SERVICE_ID/record" && method == "POST" ->
                 json(out, """{"recorded":"$PROGRAM_TITLE","programId":1,"reserved":true}""")
@@ -136,7 +142,7 @@ class FakeDenpa(
             recording?.groupValues?.get(2) == "detail" -> json(out, """{"description":"$RECORDING_DESCRIPTION","extended":{}}""")
             // 録画の観方。エンコード済みのファイル (H.264) をそのまま開く
             path == "/api/recordings/$RECORDING_ID/playback" ->
-                json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"}],"ruler":{"kept":null,"skip":0}}""")
+                json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"}],"ruler":{"kept":null,"skip":0},"auto":${auto(query, FILE_H264)}}""")
             // 録画の状態。実況のチャンネルと元の TS の頭の放送時刻 (コメントは偽の過去ログ API `FakeJikkyo` から)
             path == "/api/recordings/$RECORDING_ID" ->
                 json(out, """{"id":$RECORDING_ID,"encoded":true,"state":"available","durationMs":10000,"jikkyo":{"channel":"jk1","head":$JIKKYO_HEAD,"end":${JIKKYO_HEAD + 10_000}}}""")
@@ -144,10 +150,10 @@ class FakeDenpa(
             // エンコード前の録画: ファイルは元の TS だけなので、変換して流してもらう (エミュレータは MPEG-2 をデコードできない)。
             // ストリームはライブと同じ fMP4 (塊の時刻は 0 から)。CM は 4〜6 秒 (CM 飛ばしでリクエストし直す)
             path == "/api/recordings/$RAW_ID/playback" ->
-                json(out, """{"duration":10,"axis":"ts","audios":[],"offers":[{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"av1","way":"stream"},{"codec":"mpeg2","way":"raw"}]}""")
+                json(out, """{"duration":10,"axis":"ts","audios":[],"offers":[{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"av1","way":"stream"},{"codec":"mpeg2","way":"raw"}],"auto":${auto(query, STREAM_H264)}}""")
             path == "/api/recordings/$RAW_ID/chapters" ->
                 json(out, """{"chapters":[{"start":0,"end":4,"title":"本編"},{"start":4,"end":6,"title":"CM"},{"start":6,"end":10,"title":"本編"}]}""")
-            path == "/api/recordings/$RAW_ID/stream" -> media(out, "live.mp4", "video/mp4", range)
+            path == "/api/recordings/$RAW_ID/stream" -> media(out, "live.mp4", "video/mp4", range, H264)
             // エンコード済みの録画の字幕 (文字の配置)
             path == "/api/recordings/$RECORDING_ID/captions.json" -> json(out, FakeCaptions.smoke)
             // 追っかけはライブと同じエンコード方式の fMP4 (10 秒で閉じる。録り終える前に閉じたので、アプリはいた位置からリクエストし直す)
@@ -155,7 +161,7 @@ class FakeDenpa(
                 if (busyChase.get()) {
                     respond(out, 503, "application/json", """{"message":"サーバが混んでいます"}""".toByteArray())
                 } else {
-                    media(out, "live.mp4", "video/mp4", range)
+                    media(out, "live.mp4", "video/mp4", range, H264)
                 }
             // 録画の状態 (追っかけの画面がエンコードが終わったかを聞く)
             path == "/api/recordings/$CHASE_ID" ->
@@ -167,7 +173,7 @@ class FakeDenpa(
             // 録画の観方。エンコードが終わっていればファイル (H.264) をそのまま開ける。録画中は 404 (denpa と同じ)
             path == "/api/recordings/$CHASE_ID/playback" ->
                 if (chaseEncoded.get()) {
-                    json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"}]}""")
+                    json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"}],"auto":${auto(query, FILE_H264)}}""")
                 } else {
                     respond(out, 404, "text/plain", "not found".toByteArray())
                 }
@@ -181,7 +187,7 @@ class FakeDenpa(
      * スクリーンショットを撮るときのエンドポイント (`Showcase`)。答えたら true (ほかは smoke と同じエンドポイントへ)。
      * ライブは**選局に [tuneMs] かかったつもりで待ってから、放送と同じ速さで**流す (`paced`)。作り物の録画は、どれも同じ映像と字幕
      */
-    private fun showcaseRoute(method: String, path: String, range: String?, out: OutputStream): Boolean {
+    private fun showcaseRoute(method: String, path: String, query: String, range: String?, out: OutputStream): Boolean {
         val (serviceId, servicePart) = Regex("/api/services/(\\d+)/(live|logo|record)").matchEntire(path)?.destructured
             ?.takeIf { (id, _) -> Showcase.hasService(id.toLong()) }?.let { (id, part) -> id.toLong() to part } ?: (null to null)
         val (recordingId, recordingPart) = Regex("/api/recordings/(\\d+)/(detail|file|poster|chase|playback|captions\\.json)").matchEntire(path)?.destructured
@@ -213,7 +219,7 @@ class FakeDenpa(
                 "file" -> media(out, "showcase.mkv", "video/x-matroska", range)
                 "chase" -> paced(out, Showcase.liveAsset(recordingId))
                 // どの録画も、エンコード済みのファイル (H.264。showcase.mkv) をそのまま開く
-                "playback" -> json(out, """{"duration":30,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"}],"ruler":{"kept":null,"skip":0}}""")
+                "playback" -> json(out, """{"duration":30,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"}],"ruler":{"kept":null,"skip":0},"auto":${auto(query, FILE_H264)}}""")
                 else -> json(out, FakeCaptions.showcase)
             }
         }
@@ -295,14 +301,14 @@ class FakeDenpa(
 
     /** 長さを言わずに (denpa のライブと同じ) 200 を返し、何も送らずに閉じる */
     private fun empty(out: OutputStream, type: String) {
-        out.write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\nConnection: close\r\n\r\n".toByteArray())
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\n$CODEC_HEADER: $H264\r\nConnection: close\r\n\r\n".toByteArray())
         out.flush()
     }
 
     /** 長さを言わずに (denpa のライブと同じ) 半分だけ送り、閉じずに黙る */
     private fun stall(out: OutputStream, asset: String, type: String) {
         val bytes = assets.open(asset).use(InputStream::readBytes)
-        out.write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\nConnection: close\r\n\r\n".toByteArray())
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\n$CODEC_HEADER: $H264\r\nConnection: close\r\n\r\n".toByteArray())
         out.write(bytes, 0, bytes.size / 2)
         out.flush()
         try {
@@ -317,7 +323,7 @@ class FakeDenpa(
      */
     private fun paced(out: OutputStream, asset: String) {
         val bytes = assets.open(asset).use(InputStream::readBytes)
-        out.write("HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nConnection: close\r\n\r\n".toByteArray())
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n$CODEC_HEADER: $H264\r\nConnection: close\r\n\r\n".toByteArray())
         val start = System.nanoTime()
         var sent = 0
         try {
@@ -335,15 +341,26 @@ class FakeDenpa(
         }
     }
 
-    private fun media(out: OutputStream, asset: String, type: String, range: String?) {
+    /** `codec` は応答ヘッダ `X-Denpa-Codec` に入れる形式 (ライブ・追っかけ・録画のストリーム。ファイルは付けない) */
+    private fun media(out: OutputStream, asset: String, type: String, range: String?, codec: String? = null) {
         val bytes = assets.open(asset).use(InputStream::readBytes)
+        val named = codec?.let { arrayOf("$CODEC_HEADER: $it") } ?: emptyArray()
         val match = range?.let { Regex("bytes=(\\d*)-(\\d*)").matchEntire(it.trim()) }
-        val (first, last) = match?.destructured ?: return respond(out, 200, type, bytes, "Accept-Ranges: bytes")
+        val (first, last) = match?.destructured ?: return respond(out, 200, type, bytes, "Accept-Ranges: bytes", *named)
         // bytes=N- / bytes=N-M / bytes=-N (後ろから N バイト)
         val from = if (first.isEmpty()) (bytes.size - (last.toIntOrNull() ?: 0)).coerceAtLeast(0) else first.toInt()
         val to = if (first.isEmpty()) bytes.size - 1 else last.toIntOrNull()?.coerceAtMost(bytes.size - 1) ?: (bytes.size - 1)
         if (from >= bytes.size || from > to) return respond(out, 416, type, ByteArray(0), "Content-Range: bytes */${bytes.size}")
-        respond(out, 206, type, bytes.copyOfRange(from, to + 1), "Content-Range: bytes $from-$to/${bytes.size}")
+        respond(out, 206, type, bytes.copyOfRange(from, to + 1), "Content-Range: bytes $from-$to/${bytes.size}", *named)
+    }
+
+    /**
+     * 録画の観方の `auto`。`playable` (`,` 区切り) に `h264` があれば `chosen` (映像はどれも H.264)、無ければ選べない (`null`)。
+     * `playable` を付けずに聞かれたら `null` (アプリはいつも付けて聞く)
+     */
+    private fun auto(query: String, chosen: String): String {
+        val playable = query.split('&').firstOrNull { it.startsWith("playable=") }?.substringAfter('=') ?: return "null"
+        return if ("h264" in playable.split(',')) chosen else "null"
     }
 
     private fun json(out: OutputStream, body: String) = respond(out, 200, "application/json", body.toByteArray())
@@ -377,6 +394,12 @@ class FakeDenpa(
     }
 
     companion object {
+        /** 応答ヘッダの名前と、偽の映像の形式 (どれも H.264) */
+        private const val CODEC_HEADER = "X-Denpa-Codec"
+        private const val H264 = "h264"
+        /** 録画の観方の `auto`: エンコード済みのファイル (H.264) をそのまま、変換して流す H.264 */
+        private const val FILE_H264 = """{"way":"file","codec":"h264","source":"encoded"}"""
+        private const val STREAM_H264 = """{"way":"stream","codec":"h264"}"""
         const val SERVICE_ID = 3273601024L
         const val SERVICE_NAME = "偽の総合"
         const val PROGRAM_TITLE = "偽の番組"

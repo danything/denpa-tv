@@ -75,8 +75,13 @@ class Recovery(private val player: ExoPlayer, private val scope: CoroutineScope,
     private var restartedAt: Long? = null
     private var restarts = 0
 
+    /** 最後にリクエストし直したとき (uptime ミリ秒)。最初のフレームが来ないのを数える (`rememberPlayer` の `unplayable`) */
+    var requestedAt = SystemClock.uptimeMillis()
+        private set
+
     /** 画面がリクエストし直した (局を替えた・位置を変えた・裏から戻った・タイマーでリクエストし直した) */
     fun requested() {
+        requestedAt = SystemClock.uptimeMillis()
         if (firing) {
             firing = false
         } else {

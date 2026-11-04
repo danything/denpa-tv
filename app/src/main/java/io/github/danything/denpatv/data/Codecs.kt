@@ -8,8 +8,8 @@ import android.os.Build
 /**
  * この端末がデコードできる映像の形式。`*Hardware` はハードウェアのデコーダがあるか。
  *
- * **ライブはハードでデコードできるものから選ぶ。** ソフトの AV1 / MPEG-2 デコーダを持つ端末もあるが、
- * 1080i を流しっぱなしでデコードするには非力なことが多い。録画はデコードできさえすれば開く (`pickPlayback`)
+ * **denpa にはハードでデコードできるものを伝えて選ばせる** (`Playable`)。ソフトの AV1 / MPEG-2 デコーダを持つ端末もあるが、
+ * 1080i を流しっぱなしでデコードするには非力なことが多い。録画で denpa が選べなかったときだけ、ソフトのものも足して聞き直す (`Playable.withSoftware`)
  */
 data class Decoders(
     val av1: Boolean,
@@ -17,6 +17,7 @@ data class Decoders(
     val mpeg2: Boolean,
     val av1Hardware: Boolean = av1,
     val mpeg2Hardware: Boolean = mpeg2,
+    val hevcHardware: Boolean = false,
 ) {
     companion object {
         fun detect(): Decoders {
@@ -33,6 +34,7 @@ data class Decoders(
                 mpeg2 = any(MediaFormat.MIMETYPE_VIDEO_MPEG2),
                 av1Hardware = hardware(av1),
                 mpeg2Hardware = hardware(MediaFormat.MIMETYPE_VIDEO_MPEG2),
+                hevcHardware = hardware(MediaFormat.MIMETYPE_VIDEO_HEVC),
             )
         }
 
@@ -51,45 +53,25 @@ data class Decoders(
 }
 
 /**
- * **「自動」の順** (どの形式で観るか)。ライブ・追っかけ・録画で、この1か所から出す。決まりは denpa と同じ
- * (denpa の `live-choice.ts` の `autoOrder`、docs/stream.md の「どの形式で流すか」):
+ * ライブ・追っかけの画質 (コーデック)。`codec` は denpa の `?codec=`・`playable=` と応答ヘッダ `X-Denpa-Codec` の値
  *
- * | 場面                                                  | 家の中                       | 外                  |
- * | ----------------------------------------------------- | ---------------------------- | ------------------- |
- * | その場でエンコード (ライブ・追っかけ・録画しか無い録画) | MPEG-2 → H.264 → AV1 → H.265 | AV1 → H.265 → H.264 |
- * | エンコード済み (録画のファイル)                        | AV1 → H.265 → H.264          | AV1 → H.265 → H.264 |
- *
- * - 家の中は開くまでの速さを採る (MPEG-2 はエンコードせずに済む。次は立ち上がりの速い H.264)。外は回線を採り、同じ画質で小さい順
- * - **画面ごとの例外は作らない。** その画面で出せない形式は、呼ぶ側が並びから外すだけ (テレビは H.265 を流さないので、いつも外れる)
- * - 家の中かは denpa が開いたホスト名で決める (`GET api/playback/options` の `indoor`。`Repository.playbackOptions()` の `PlaybackOptions.indoor`)
- */
-object AutoOrder {
-    /** その場でエンコードするもの (ライブ・追っかけ・エンコード済みのファイルが無い録画)。`raw` は MPEG-2 (放送のまま) */
-    fun onTheFly(indoor: Boolean): List<String> =
-        if (indoor) listOf("raw", "h264", "av1", "hevc") else listOf("av1", "hevc", "h264")
-
-    /** エンコード済みのファイル。家の中でも外でも同じ */
-    val encoded: List<String> = listOf("av1", "hevc", "h264")
-}
-
-/**
- * ライブ・追っかけの画質 (コーデック)。`codec` は denpa の `?codec=` にそのまま渡す値
- *
- * - **AV1** — 同じ画質で軽い。ハードでデコードできる端末だけ
- * - **H.264** — どの端末でもデコードできる
- * - **MPEG-2** (`raw`) — エンコードせずに1局に絞っただけの TS。denpa がエンコードを待たないぶんいちばん遅れが少なく、
+ * - **AV1**: 同じ画質で軽い。ハードでデコードできる端末だけ
+ * - **H.265**: denpa が GPU でエンコードできるときだけ、denpa が「自動」で選ぶ。ハードでデコードできる端末だけ。メニューには並べない
+ * - **H.264**: どの端末でもデコードできる
+ * - **MPEG-2** (`raw`): エンコードせずに1局に絞っただけの TS。denpa がエンコードを待たないぶんいちばん遅れが少なく、
  *   denpa の CPU も使わない。字幕は denpa がデコードした文字の配置を描いて重ねる (`ui/RawCaptions.kt`)。ハードでデコードできる端末だけ
  *
- * メニューには「自動」も並ぶ (`LiveSelection`)。H.265 はテレビでは流さない
+ * メニューには「自動」も並ぶ (`LiveSelection`。選択が null)。自動は denpa に選ばせ (`codec=auto`)、選ばれたものを応答ヘッダで受け取る
  */
 enum class LiveQuality(val codec: String, val label: String, val mime: String) {
     Av1("av1", "AV1", "video/mp4"),
+    Hevc("hevc", "H.265", "video/mp4"),
     H264("h264", "H.264", "video/mp4"),
     Raw("raw", "MPEG-2", "video/mp2t"),
     ;
 
     companion object {
-        /** この端末で流せるもの */
+        /** メニューで選べるもの。H.265 は並べない (選ぶのは denpa の「自動」だけ) */
         fun available(decoders: Decoders): List<LiveQuality> = buildList {
             if (decoders.av1Hardware) add(Av1)
             add(H264)
@@ -98,19 +80,10 @@ enum class LiveQuality(val codec: String, val label: String, val mime: String) {
 
         /**
          * 画質のメニューに並べるもの (「自動」の後ろ)。並びはブラウザの denpa のコーデックのメニュー (自動 → AV1 → H.265 → H.264 → MPEG-2) から、
-         * この端末で流せないもの (H.265 はいつも) を外したもの。`hidden` (世帯の設定の「コーデックの選択肢に H.264 と H.265 を出さない」) なら H.264 も外す
+         * この端末で選べないもの (H.265 はいつも) を外したもの。`hidden` (世帯の設定の「コーデックの選択肢に H.264 と H.265 を出さない」) なら H.264 も外す
          */
         fun menu(decoders: Decoders, hidden: Boolean): List<LiveQuality> =
             available(decoders).filterNot { hidden && it == H264 }
-
-        /**
-         * **「自動」で決まる画質。** 自動の順 (`AutoOrder.onTheFly`) で、この端末で流せるものの先頭。どれも無ければ H.264 (どの端末でも流せる)。
-         * メニューから外したもの (`hidden`) も使う (AV1 を流せない端末には H.264 を流す)
-         */
-        fun auto(decoders: Decoders, indoor: Boolean): LiveQuality {
-            val choices = available(decoders)
-            return AutoOrder.onTheFly(indoor).firstNotNullOfOrNull { codec -> choices.firstOrNull { it.codec == codec } } ?: H264
-        }
 
         /**
          * 覚えている選択 (`Settings.liveQuality`。`name`) を読む。**この端末で選べない・知らない値・メニューから外した H.264 は自動 (null)**
@@ -118,30 +91,93 @@ enum class LiveQuality(val codec: String, val label: String, val mime: String) {
          */
         fun read(saved: String?, decoders: Decoders, hidden: Boolean): LiveQuality? =
             menu(decoders, hidden).firstOrNull { it.name == saved }
+
+        /** 応答ヘッダ `X-Denpa-Codec` の値 (`h264` / `hevc` / `av1` / `raw`)。音声だけ (`audio`)・知らない値・無いときは null */
+        fun ofHeader(value: String?): LiveQuality? {
+            val codec = value?.trim()?.lowercase() ?: return null
+            return entries.firstOrNull { it.codec == codec }
+        }
+
+        /** 録画の観方 (`playback` の `auto`・`offers`) の `codec`。元の TS は `mpeg2` と書く */
+        fun ofPlayback(codec: String): LiveQuality? = if (codec == "mpeg2") Raw else ofHeader(codec)
+    }
+}
+
+/** 選んだ形式を返す応答ヘッダ (denpa の docs/api.md「形式をサーバに選ばせる `codec=auto`」) */
+const val CODEC_HEADER = "X-Denpa-Codec"
+
+/**
+ * **denpa に伝える、この端末が再生できる形式** (`playable=`)。並べるのはハードでデコードできる AV1・H.265・MPEG-2 と、H.264。
+ * どれを流すかは denpa が「自動」の順で選ぶ (家の中か・GPU があるかも denpa が見る)。
+ *
+ * 端末の側で再生できなかったもの (デコーダを作れない・最初のフレームが来ない) は、その画面を開いている間だけ外す (`without`。覚えない)。
+ * 外したものは `dropped` に残し、ソフトのものを足すとき (`withSoftware`) も足し直さない
+ */
+data class Playable(val formats: List<LiveQuality>, val dropped: Set<LiveQuality> = emptySet()) {
+    /** 再生できるものが1つも無い (「再生できる形式がありません」) */
+    val empty: Boolean get() = formats.isEmpty()
+
+    /** `playable=` の値。並びは denpa が見ないので、ここで並べた順のまま */
+    val query: String get() = formats.joinToString(",") { it.codec }
+
+    /** 端末の側で再生できなかった形式を外す */
+    fun without(quality: LiveQuality): Playable = Playable(formats - quality, dropped + quality)
+
+    /**
+     * 録画で denpa が選べなかった (`auto` が null) ときに足す、ソフトでデコードできるもの (AV1・MPEG-2)。
+     * 流しっぱなしで回すには非力なことがあるが、観られないよりよい。外したものは足さない
+     */
+    fun withSoftware(decoders: Decoders): Playable {
+        val soft = buildList {
+            if (decoders.av1) add(LiveQuality.Av1)
+            if (decoders.mpeg2) add(LiveQuality.Raw)
+        }
+        return copy(formats = formats + soft.filter { it !in formats && it !in dropped })
+    }
+
+    companion object {
+        fun of(decoders: Decoders): Playable = Playable(
+            buildList {
+                if (decoders.mpeg2Hardware) add(LiveQuality.Raw)
+                if (decoders.av1Hardware) add(LiveQuality.Av1)
+                if (decoders.hevcHardware) add(LiveQuality.Hevc)
+                add(LiveQuality.H264)
+            },
+        )
     }
 }
 
 /**
- * メニューで選んでいるもの (`choice`。null は「自動」) と、それで決まる画質 (`format`)。**選んだものは家の中でも外でもそのまま**、
- * 自動なら開いた場所 (家の中か) と端末で決める (`LiveQuality.auto`)
+ * ライブ・追っかけのリクエストに足す形式 (`codec=`)。選んでいれば (`choice`) それ、自動 (null) なら `codec=auto&playable=…` で denpa に選ばせる
+ */
+fun codecQuery(choice: LiveQuality?, playable: Playable): String =
+    choice?.let { "codec=${it.codec}" } ?: "codec=auto&playable=${playable.query}"
+
+/**
+ * 選んでいるものの名前。自動 (`choice` が null) は、いま流れている形式 (`playing`。応答ヘッダで受け取ったもの) を添える
+ * (「自動 (MPEG-2)」。ブラウザと同じ)。まだ分からなければ「自動」だけ
+ */
+fun choiceLabel(choice: LiveQuality?, playing: LiveQuality?): String =
+    choice?.label ?: playing?.let { "${LiveSelection.AUTO} (${it.label})" } ?: LiveSelection.AUTO
+
+/** 名前に文を続ける。名前が半角で終わるときだけ空白を挟む (「AV1 にしました」「自動にしました」) */
+fun labelThen(label: String, rest: String): String = if (label.isNotEmpty() && label.last().code < 128) "$label $rest" else "$label$rest"
+
+/**
+ * メニューで選んでいるもの (`choice`。null は「自動」) と、メニューに並べるもの。**選んだものは家の中でも外でもそのまま**、
+ * 自動なら denpa が選ぶ (`codecQuery`)
  */
 data class LiveSelection(
     val choice: LiveQuality?,
-    /** 自動で決まる画質 */
-    val auto: LiveQuality,
     /** メニューの「自動」の後ろに並べるもの (`LiveQuality.menu`) */
     val menu: List<LiveQuality> = emptyList(),
 ) {
-    /** 流す画質 */
-    val format: LiveQuality get() = choice ?: auto
-
-    /** メニューの「自動」の名前。自動のときは、いま決まっている画質を添える (ブラウザの「自動 (MPEG-2)」と同じ) */
-    val autoLabel: String get() = if (choice == null) "$AUTO (${auto.label})" else AUTO
+    /** メニューの「自動」の名前。自動のときは、いま流れている形式を添える (ブラウザの「自動 (MPEG-2)」と同じ) */
+    fun autoLabel(playing: LiveQuality?): String = if (choice == null) choiceLabel(null, playing) else AUTO
 
     companion object {
         const val AUTO = "自動"
 
-        fun of(choice: LiveQuality?, decoders: Decoders, indoor: Boolean, hideH264: Boolean) =
-            LiveSelection(choice, LiveQuality.auto(decoders, indoor), LiveQuality.menu(decoders, hideH264))
+        fun of(choice: LiveQuality?, decoders: Decoders, hideH264: Boolean) = LiveSelection(choice, LiveQuality.menu(decoders, hideH264))
     }
 }

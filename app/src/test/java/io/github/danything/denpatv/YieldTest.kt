@@ -49,7 +49,7 @@ class YieldTest {
     @Test
     fun 追っかけは録れているところの少し手前から() {
         // denpa は録れている範囲に収める (いま書いているところの 5 秒手前まで)。秒でリクエストする
-        assertEquals("api/recordings/12/chase?codec=raw&from=604800", YieldPlan.chaseUrl(12, "raw"))
+        assertEquals("api/recordings/12/chase?codec=raw&from=604800", YieldPlan.chaseUrl(12, "codec=raw"))
     }
 
     @Test

@@ -59,6 +59,17 @@ class ReconnectTest {
         assertEquals(Verdict.GiveUp, Reconnect.verdict(PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED, null))
     }
 
+    /** 端末の側で再生できないもの (自動ならその形式を外してリクエストし直す)。デコードの途中の失敗と denpa の側の失敗は入れない */
+    @Test
+    fun 端末で再生できない形式の見分け() {
+        assertTrue(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED))
+        assertTrue(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED))
+        assertTrue(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES))
+        assertFalse(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_DECODING_FAILED))
+        assertFalse(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED))
+        assertFalse(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
+    }
+
     @Test
     fun ライブと追っかけは回線の失敗なら何度でも繋ぎ直す() {
         assertTrue(Reconnect.shouldRetry(Verdict.Retry, stream = true, attempts = 1_000, few = 0))

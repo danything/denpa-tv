@@ -39,6 +39,9 @@ import io.github.danything.denpatv.data.chaseEnd
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.resyncAfterSpeedChange
 import io.github.danything.denpatv.data.withBusyAdvice
+import io.github.danything.denpatv.data.NO_PLAYABLE_MESSAGE
+import io.github.danything.denpatv.data.Playable
+import io.github.danything.denpatv.data.codecQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -81,8 +84,10 @@ fun ChasePlayerScreen(
     val chase = recording.chase ?: return Centered("追っかけ再生できません")
     // 追っかけの画質は開くたびに「自動」から。選んだものは開いている間だけ (ブラウザの追っかけと同じ)
     val (selection, pick) = rememberChaseSelection(repo) ?: return
-    val quality = selection.format
-    val buffering = quality.buffering
+    /** 選んでいる画質。null は「自動」(denpa に選ばせる。`codecQuery`) */
+    val quality = selection.choice
+    /** denpa に伝える、再生できる形式。端末の側で再生できなかったものは、この画面を開いている間だけ外す */
+    var playable by remember { mutableStateOf(Playable.of(repo.app.decoders)) }
     val clock = remember { TsClock() }
     fun recorded() = Chase.recordedMs(recording.startAt, System.currentTimeMillis())
     /** リクエストした位置 (ミリ秒)。再生の位置はこれ + プレーヤーの位置 */
@@ -95,15 +100,27 @@ fun ChasePlayerScreen(
      * **切れた・止まったら、いた位置からリクエストし直す** (`Recovery`。ブラウザの追っかけと同じ)。ストリームが終わったときは、録り終えたのか
      * 切れたのかを denpa に聞いてから (下の `onPlaybackStateChanged`)
      */
-    val (player, error, dualMono, recovery) = rememberPlayer(
+    // `streamed` は流れている形式 (応答ヘッダ `X-Denpa-Codec`)。溜め方はプレーヤーがこれで替える
+    val (player, error, dualMono, recovery, streamed) = rememberPlayer(
         repo,
-        buffering,
+        Buffering.Live,
         onUnauthorized,
         clock,
         ReconnectPlan("chase 録画 ${recording.id}", stream = true) { p ->
             from = pending ?: (from + p.currentPosition)
             pending = null
             attempt++
+        },
+        // 自動で denpa が選んだものを端末で再生できなければ、外していまの位置からリクエストし直す
+        unplayable = { p, failed ->
+            if (quality != null) {
+                false
+            } else {
+                from = pending ?: (from + p.currentPosition)
+                pending = null
+                playable = playable.without(failed)
+                true
+            }
         },
     )
     val flasher = rememberFlash()
@@ -119,10 +136,10 @@ fun ChasePlayerScreen(
     fun position() = pending ?: (from + player.currentPosition)
     /**
      * 画質を替えるときの位置と行き先。**画質が替わってから**、ここからリクエストし直す — 押したときに `from` を替えると、新しい画質が届く前に
-     * 古い画質で一度リクエストし直してしまう (denpa に再エンコードを2回させる)。MPEG-2 との行き来ではプレーヤーごと作り直すので、替える前に覚えておく
+     * 古い画質で一度リクエストし直してしまう (denpa に再エンコードを2回させる)。替える前の位置を覚えておく
      */
-    val switchedAt = remember { mutableStateOf<Pair<Long, LiveQuality>?>(null) }
-    val codec = rememberCodecSwitching(player, selection, if (refused) "denpa で変換できませんでした" else error, flash, store = { pick(it) }) { target ->
+    val switchedAt = remember { mutableStateOf<Pair<Long, LiveQuality?>?>(null) }
+    val codec = rememberCodecSwitching(player, selection, streamed, if (refused) "denpa で変換できませんでした" else error, flash, store = { pick(it) }) { target ->
         switchedAt.value = position() to target
     }
     /** 裏に回ったときの位置 (`OnBackground`)。戻ったらここからリクエストし直す。裏に回っていなければ null */
@@ -133,7 +150,7 @@ fun ChasePlayerScreen(
         player,
         clock,
         // 裏に回っている間は字幕のストリームも閉じる
-        path = CaptionPaths.recording(recording.id).takeIf { quality == LiveQuality.Raw && stoppedAt == null },
+        path = CaptionPaths.recording(recording.id).takeIf { streamed == LiveQuality.Raw && stoppedAt == null },
         generation = from to attempt,
         fromMs = { from + player.currentPosition },
         onUnauthorized = onUnauthorized,
@@ -146,7 +163,7 @@ fun ChasePlayerScreen(
         )
     }
     // デュアルモノの主・副は、元の TS のときだけ配り直す (変換した追っかけは denpa が選んだ1つだけをエンコードする。下の `baked`)
-    val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { quality == LiveQuality.Raw }.orEmpty())
+    val tracks = rememberTracks(repo, player, flash, captions, dualMono, denpaAudios = recording.audios.takeIf { streamed == LiveQuality.Raw }.orEmpty())
     // 変換した追っかけの音声は denpa にリクエストして選ぶ (`?audio=<id>`)。替えたら、いまの位置からリクエストし直す
     val baked = rememberBakedAudio(repo, recording.audios.takeIf { quality != LiveQuality.Raw }.orEmpty(), key = recording.id) { label ->
         from = position()
@@ -183,10 +200,12 @@ fun ChasePlayerScreen(
         lastSpeed = speed
     }
 
-    LaunchedEffect(from, quality, attempt, baked.ready, baked.audio?.id, codec.chosen) {
+    LaunchedEffect(from, quality, playable, attempt, baked.ready, baked.audio?.id, codec.chosen) {
         if (!baked.ready) return@LaunchedEffect
         // 選んだ画質が覚えている画質に届くまではリクエストしない (ライブと同じ)
         if (codec.chosen != quality) return@LaunchedEffect
+        // 端末の側で再生できなかったものを外していって、再生できるものが無くなった (「再生できる形式がありません」を出す)
+        if (quality == null && playable.empty) return@LaunchedEffect player.stop()
         // 画質を替えたリクエストでだけ使う。替えるたびに覚え直し、使ったら消すので、あとの再リクエスト (左右・繋ぎ直し) の位置は巻き戻さない
         switchedAt.value?.takeIf { it.second == quality }?.let { (at, _) ->
             switchedAt.value = null
@@ -196,13 +215,13 @@ fun ChasePlayerScreen(
                 return@LaunchedEffect
             }
         }
-        val url = repo.url(Chase.url(chase, quality.codec, from, baked.audio)) ?: return@LaunchedEffect
+        val url = repo.url(Chase.url(chase, codecQuery(quality, playable), from, baked.audio)) ?: return@LaunchedEffect
         caughtUp = false
         started = false
         refused = false
         notFound = false
         recovery.requested()
-        player.load(url, quality.mime)
+        player.load(url, quality?.mime)
         codec.requested(quality)
     }
     LaunchedEffect(Unit) {
@@ -304,7 +323,7 @@ fun ChasePlayerScreen(
                  * 映る前に終わった: H.264 / AV1 のエンコードを断られた (空の 200) か、番組が替わって作り直したすぐあとにまた閉じた。録り終えたのではない。
                  * denpa の docs/api.md のとおりリクエストし直し、何度か (`Reconnect.FEW`) 続いたら諦めてそう出す
                  */
-                if (!started && quality != LiveQuality.Raw) {
+                if (!started && streamed != LiveQuality.Raw) {
                     if (!recovery.retry("ended 映る前に終わった (位置 ${position() / 1000} 秒)", Reconnect.Verdict.RetryFew)) refused = true
                     return
                 }
@@ -363,7 +382,7 @@ fun ChasePlayerScreen(
                 repo.refreshRecordings()
                 // 録画の再生と同じ選び方で、エンコード済みのファイルを開けるかを見る
                 repo.recordings.firstOrNull { it.id == recording.id } to
-                    (repo.api.playback(repo.base, recording.id) as? PlaybackLookup.Found)?.info
+                    (repo.api.playback(repo.base, recording.id, playable) as? PlaybackLookup.Found)?.info
             } catch (_: Unauthorized) {
                 return@collectLatest onUnauthorized()
             } catch (e: CancellationException) {
@@ -372,7 +391,7 @@ fun ChasePlayerScreen(
                 // 一覧が読めない (denpa の入れ替えの最中)。次の通知で聞き直す
                 return@collectLatest
             }
-            if (Chase.handOff(fresh, playback, repo.app.decoders)) encodedAs = fresh
+            if (Chase.handOff(fresh, playback)) encodedAs = fresh
         }
     }
     /*
@@ -451,6 +470,7 @@ fun ChasePlayerScreen(
     // 操作バー (終わり・止めている間・操作の列) を出している間は、通知を操作バーのタイトルに添える (録画の再生と同じ)
     val covered = ended || bar != null || !playing
     val shownError = when {
+        quality == null && playable.empty -> NO_PLAYABLE_MESSAGE
         // 映る前に終わる・空の返事が続いた。追っかけでは局の空きではなく変換のことなので、追っかけの言い方で
         refused || error == EMPTY_STREAM_MESSAGE -> REFUSED
         error == null -> null
@@ -482,7 +502,8 @@ fun ChasePlayerScreen(
                     ),
                     // 選んだらすぐ入れて、いた位置からリクエストし直す (映るまでは前の映像のまま「… に切り替え中」)
                     "画質" to codec.controls(selection),
-                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + baked.controls(),
+                    // 元の TS が流れているときは、音声は端末で選ぶ (`tracks`)。denpa にリクエストする音声のボタンは出さない
+                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + baked.controls().takeIf { streamed != LiveQuality.Raw }.orEmpty(),
                 ),
                 header = { actions ->
                     // シークバーが操作バーのいちばん上の列。そこで上キーを押すと閉じて映像に戻る (録画と同じ)

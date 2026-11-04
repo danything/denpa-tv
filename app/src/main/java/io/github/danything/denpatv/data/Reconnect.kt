@@ -97,6 +97,18 @@ object Reconnect {
         else -> Verdict.RetryFew
     }
 
+    /**
+     * **端末の側で再生できない形式か** (デコーダを作れない・端末の力を超える・形式に対応していない)。denpa の側の失敗 (空の 200・5xx) とは分けて、
+     * 自動ならその形式を外してリクエストし直す (`rememberPlayer` の `unplayable`)。デコードの途中の失敗 (`ERROR_CODE_DECODING_FAILED`) は中身が壊れたこともあるので入れない
+     */
+    fun deviceCannotPlay(errorCode: Int): Boolean = errorCode in DEVICE
+
+    private val DEVICE = setOf(
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+    )
+
     /** 待っても同じもの */
     private val HOPELESS = setOf(
         PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,

@@ -43,7 +43,9 @@ import io.github.danything.denpatv.data.Reconnect
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.StreamClock
 import io.github.danything.denpatv.data.Unauthorized
-import io.github.danything.denpatv.data.pickPlayback
+import io.github.danything.denpatv.data.LiveQuality
+import io.github.danything.denpatv.data.NO_PLAYABLE_MESSAGE
+import io.github.danything.denpatv.data.Playable
 import io.github.danything.denpatv.data.recordingCommand
 import io.github.danything.denpatv.data.SEEK_STEP_MS
 import io.github.danything.denpatv.data.skipCmAtStart
@@ -69,8 +71,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * 録画を観る。何で観るかは denpa に聞いて (`GET api/recordings/<id>/playback`)、端末がデコードできるものから選ぶ (`pickPlayback`):
- * エンコード済みのファイルがデコードできればそのまま開き、無ければ denpa に流してもらう (`stream`。元の TS をそのまま、または変換)。
+ * 録画を観る。何で観るかは denpa に選ばせる (`GET api/recordings/<id>/playback?playable=` の `auto`。端末が再生できる形式は `Playable`):
+ * エンコード済みのファイルをそのまま開くか、denpa に流してもらう (`stream`。元の TS をそのまま、または変換)。
+ * denpa が選べなければ、ソフトでデコードできるもの (AV1・MPEG-2) を足して聞き直す。端末の側で再生できなかった形式は、この画面を開いている間だけ外して聞き直す。
  * **続きの位置があればそこから** (denpa の `resumeMs`)。
  *
  * - 左右で 10 秒戻す・送る、決定で止める・動かす (キーの割り当ては data/Remote.kt と docs/controls.md)
@@ -88,12 +91,15 @@ import kotlinx.coroutines.launch
 @Composable
 fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
     var lookup by remember { mutableStateOf<PlaybackLookup?>(null) }
-    /** 開いたホスト名が家の中か (「自動」の順 `AutoOrder`)。観方と一緒に読む */
-    var indoor by remember { mutableStateOf(true) }
-    LaunchedEffect(recording.id) {
+    /** denpa に伝える、再生できる形式。端末の側で再生できなかったものは外す (この画面を開いている間だけ) */
+    var playable by remember { mutableStateOf(Playable.of(repo.app.decoders)) }
+    LaunchedEffect(recording.id, playable) {
+        lookup = null
         lookup = try {
-            indoor = repo.playbackOptions().indoor
-            repo.api.playback(repo.base, recording.id)
+            val found = repo.api.playback(repo.base, recording.id, playable)
+            val wider = playable.withSoftware(repo.app.decoders)
+            // 選べなかった: ソフトでデコードできるものも足して聞き直す
+            if (found is PlaybackLookup.Found && found.info.auto == null && wider != playable) repo.api.playback(repo.base, recording.id, wider) else found
         } catch (_: Unauthorized) {
             return@LaunchedEffect onUnauthorized()
         }
@@ -103,9 +109,12 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
         PlaybackLookup.Missing -> Centered("この録画を開けません (ファイルが無いか、denpa が古いため)")
         is PlaybackLookup.Failed -> Centered("再生できません: ${found.message}")
         is PlaybackLookup.Found -> {
-            val choice = remember(found.info) { pickPlayback(found.info, repo.app.decoders, indoor) }
-            if (choice == null) Centered("この端末で再生できる形式がありません")
-            else RecordingPlayback(repo, recording, found.info, choice, onLeave, onUnauthorized)
+            val choice = remember(found.info) { found.info.auto?.choice() }
+            if (choice == null) {
+                Centered(NO_PLAYABLE_MESSAGE)
+            } else {
+                RecordingPlayback(repo, recording, found.info, choice, onLeave, onUnauthorized) { failed -> playable = playable.without(failed) }
+            }
         }
     }
 }
@@ -196,6 +205,8 @@ private fun RecordingPlayback(
     choice: PlayChoice,
     onLeave: () -> Unit,
     onUnauthorized: () -> Unit,
+    /** 端末の側で再生できなかった (デコーダを作れない・最初のフレームが来ない)。その形式を外して聞き直す */
+    onUnplayable: (LiveQuality) -> Unit,
 ) {
     val stream = choice as? PlayChoice.Stream
     /** 元の TS を流してもらう (字幕は字幕のエンドポイントから、音声は全部入っているので端末で選ぶ) */
@@ -224,6 +235,11 @@ private fun RecordingPlayback(
                 timeline.request(timeline.position())
             }
         },
+        unplayable = { _, failed ->
+            onUnplayable(failed)
+            true
+        },
+        fixedCodec = choice.quality,
     )
     timeline.player = player
     val flasher = rememberFlash()

@@ -21,8 +21,10 @@ data class PlaybackInfo(
     /** `stream?audio=` に渡す音声 */
     val audios: List<PlayAudio> = emptyList(),
     val offers: List<PlayOffer> = emptyList(),
-    /** エンコードしたものの物差しを元の TS に直すもの (`axis` が `encoded` のときだけ。実況の放送時刻に使う)。古い denpa には無い */
+    /** エンコードしたものの物差しを元の TS に直すもの (`axis` が `encoded` のときだけ。実況の放送時刻に使う) */
     val ruler: Ruler? = null,
+    /** denpa が「自動」で選んだ観方 (`playable` を付けて聞いたときだけ)。選べなければ null */
+    val auto: PlayAuto? = null,
 )
 
 /** 出せるもの1つ。`way` は `file` (エンコード済みのファイルそのまま) / `stream` (fMP4 で流す) / `raw` (元の TS を流す)。使う鍵だけ (`codecs` は読まない。デコードできるかは端末のデコーダで見る) */
@@ -30,20 +32,42 @@ data class PlaybackInfo(
 @Serializable
 data class PlayOffer(val codec: String, val way: String, val source: String? = null)
 
+/**
+ * denpa が選んだ観方 (`playback?playable=` の `auto`)。`way` は `file` (`source` のファイルをそのまま) / `stream` (`codec` の fMP4) /
+ * `raw` (元の TS を `stream?codec=mpeg2` で)
+ */
+@Immutable
+@Serializable
+data class PlayAuto(val way: String, val codec: String, val source: String? = null) {
+    /** どれで観るか。知らない `way`・`source` の無いファイルは null (版のずれ) */
+    fun choice(): PlayChoice? = when (way) {
+        "file" -> source?.let { PlayChoice.File(codec, it) }
+        "stream" -> PlayChoice.Stream(codec)
+        "raw" -> PlayChoice.Stream("mpeg2")
+        else -> null
+    }
+}
+
 @Immutable
 @Serializable
 data class PlayAudio(val id: String, val label: String = "")
 
-/** どれで観るか (`pickPlayback`) */
+/** どれで観るか (`PlayAuto.choice`) */
 sealed interface PlayChoice {
+    /** 映像のコーデック (`av1` / `hevc` / `h264` / `mpeg2`) */
+    val codec: String
+
+    /** 端末の側で再生できなかったときに `playable` から外すもの */
+    val quality: LiveQuality? get() = LiveQuality.ofPlayback(codec)
+
     /** エンコード済みのファイルそのまま (`file?source=`)。Range で読み、シークはプレーヤーがする */
-    data class File(val codec: String, val source: String) : PlayChoice
+    data class File(override val codec: String, val source: String) : PlayChoice
 
     /**
-     * denpa に流してもらう (`stream?codec=`)。`codec` は `h264` / `av1` (fMP4) か `mpeg2` (元の TS)。
+     * denpa に流してもらう (`stream?codec=`)。`codec` は `h264` / `hevc` / `av1` (fMP4) か `mpeg2` (元の TS)。
      * 流しっぱなしの1本なので、**シークは `from` を変えてリクエストし直す**
      */
-    data class Stream(val codec: String) : PlayChoice {
+    data class Stream(override val codec: String) : PlayChoice {
         val mime: String get() = if (codec == "mpeg2") "video/mp2t" else "video/mp4"
     }
 }
@@ -57,46 +81,10 @@ fun PlayChoice.resumeSource(info: PlaybackInfo): String = when (this) {
     is PlayChoice.Stream -> info.axis
 }
 
-/**
- * **どれで観るか。** 「自動」の順 (`AutoOrder`) で、端末が流しっぱなしで回せる中から:
- *
- * 1. エンコード済みのファイルそのまま (`AutoOrder.encoded`: AV1 → H.265 → H.264。H.265 はテレビでは流さないので外れる)。
- *    denpa は読んで渡すだけ。**AV1 はハードでデコードできる端末だけ** — Android 10 からはどの端末にもソフトの AV1 デコーダがあり、
- *    「デコードできる」だけで選ぶと、ハードの無い端末 (Chromecast with Google TV など) で 1080 の AV1 をソフトで回してカクカクする
- * 2. その場で変換するもの (`AutoOrder.onTheFly`。ライブと同じ行): 家の中は 元の TS をそのまま (MPEG-2 を**ハードで**デコードできる端末) →
- *    H.264 → AV1、外は AV1 → H.264。元の TS は denpa がエンコードしないので、変換の枠を使わない (混んでいても断られない)。
- *    変換 (fMP4) は枠を使う。AV1 はハードでデコードできる端末だけ
- * 3. 最後の手: エンコード済みの AV1 のファイルをソフトで、だめなら元の TS をソフトのデコーダで
- *
- * 詰め替え (エンコード済みと同じコーデックの `stream`) は選ばない — Media3 は Matroska をそのまま読めるので、
- * ファイルで観られなければ詰め替えても同じコーデックで観られない。何も無ければ null
- */
-fun pickPlayback(info: PlaybackInfo, decoders: Decoders, indoor: Boolean): PlayChoice? {
-    /** 流しっぱなしで回せるか。AV1 と MPEG-2 はハードのデコーダがあるときだけ (H.264 はどの端末もハード) */
-    fun smooth(codec: String) = when (codec) {
-        "av1" -> decoders.av1Hardware
-        "h264" -> decoders.h264
-        "mpeg2" -> decoders.mpeg2Hardware
-        else -> false
-    }
-    fun file(codec: String) =
-        info.offers.firstOrNull { it.way == "file" && it.codec == codec && it.source != null }?.let { PlayChoice.File(codec, it.source!!) }
-    AutoOrder.encoded.firstNotNullOfOrNull { codec -> if (smooth(codec)) file(codec) else null }?.let { return it }
-    val raw = info.offers.any { it.way == "raw" && it.codec == "mpeg2" }
-    AutoOrder.onTheFly(indoor).firstNotNullOfOrNull { codec ->
-        when (codec) {
-            "raw" -> PlayChoice.Stream("mpeg2").takeIf { raw && smooth("mpeg2") }
-            else -> PlayChoice.Stream(codec).takeIf { smooth(codec) && info.offers.any { it.way == "stream" && it.codec == codec } }
-        }
-    }?.let { return it }
-    if (decoders.av1) file("av1")?.let { return it }
-    if (raw && decoders.mpeg2) return PlayChoice.Stream("mpeg2")
-    return null
-}
-
 /** 観方まわりのエンドポイント (denpa のルートからの相対) */
 object PlaybackPaths {
-    fun info(id: Long): String = "api/recordings/$id/playback"
+    /** `playable` は端末が再生できる形式。denpa が選んだ観方を `auto` に入れる */
+    fun info(id: Long, playable: Playable): String = "api/recordings/$id/playback?playable=${playable.query}"
 
     fun chapters(id: Long): String = "api/recordings/$id/chapters"
 

@@ -2,6 +2,8 @@ package io.github.danything.denpatv.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Handler
+import android.util.Log
 import android.view.View
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -70,11 +72,18 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.LoadControl
+import androidx.media3.exoplayer.analytics.PlayerId
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.TrackGroupArray
+import androidx.media3.exoplayer.trackselection.ExoTrackSelection
+import androidx.media3.exoplayer.upstream.Allocator
+import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.extractor.metadata.Chapter
 import io.github.danything.denpatv.data.BUSY_MESSAGE
 import io.github.danything.denpatv.data.BusyLoadErrorPolicy
 import io.github.danything.denpatv.data.EMPTY_STREAM_MESSAGE
+import io.github.danything.denpatv.data.NO_PLAYABLE_MESSAGE
 import io.github.danything.denpatv.data.EmptyGuardDataSource
 import io.github.danything.denpatv.data.EmptyStreamException
 import io.github.danything.denpatv.data.EngineHttp
@@ -107,8 +116,50 @@ enum class Buffering(val minMs: Int, val maxMs: Int, val startMs: Int, val after
     LowLatency(500, 2_000, 250, 500),
 }
 
-/** ライブ・追っかけの溜め方。元の TS は届いたそばから出す */
-val LiveQuality.buffering: Buffering get() = if (this == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
+/** ライブ・追っかけの溜め方。流れている形式 (応答ヘッダ `X-Denpa-Codec`) で決める。元の TS は届いたそばから出す */
+val LiveQuality?.buffering: Buffering get() = if (this == LiveQuality.Raw) Buffering.LowLatency else Buffering.Live
+
+/**
+ * **溜め方を、流しているあいだに替えられる LoadControl。** 自動 (`codec=auto`) では、MPEG-2 が来るか fMP4 が来るかは応答ヘッダを読むまで分からない。
+ * 溜め方ごとに `DefaultLoadControl` を作っておき (割り当てる領域 `allocator` は1つを使い回す)、`buffering` に当たるものに溜めるか・動き出すかを聞く。
+ * `buffering` は応答ヘッダを読んだときに読み込みのスレッドから替える (`TsClock.onCodec`)。溜めはじめる前なので、新しいストリームは初めから新しい溜め方になる。
+ * プレーヤーを作り直さないので、前の映像を残したまま MPEG-2 と fMP4 を行き来できる
+ */
+@OptIn(UnstableApi::class)
+class BufferingControl(initial: Buffering) : LoadControl {
+    private val allocator = DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
+    private val controls: Map<Buffering, DefaultLoadControl> = Buffering.entries.associateWith { b ->
+        DefaultLoadControl.Builder()
+            .setAllocator(allocator)
+            .setBufferDurationsMs(b.minMs, b.maxMs, b.startMs, b.afterRebufferMs)
+            .build()
+    }
+
+    @Volatile
+    var buffering: Buffering = initial
+
+    private val active: DefaultLoadControl get() = controls.getValue(buffering)
+
+    // 状態 (プレーヤーごとの溜めている途中か・目標の量) はどれにも同じように渡す。溜めるか・動き出すかだけ `active` に聞く
+    override fun onPrepared(playerId: PlayerId) = controls.values.forEach { it.onPrepared(playerId) }
+
+    override fun onTracksSelected(parameters: LoadControl.Parameters, trackGroups: TrackGroupArray, trackSelections: Array<out ExoTrackSelection?>) =
+        controls.values.forEach { it.onTracksSelected(parameters, trackGroups, trackSelections) }
+
+    override fun onStopped(playerId: PlayerId) = controls.values.forEach { it.onStopped(playerId) }
+
+    override fun onReleased(playerId: PlayerId) = controls.values.forEach { it.onReleased(playerId) }
+
+    override fun getAllocator(playerId: PlayerId): Allocator = allocator
+
+    override fun getBackBufferDurationUs(playerId: PlayerId): Long = active.getBackBufferDurationUs(playerId)
+
+    override fun retainBackBufferFromKeyframe(playerId: PlayerId): Boolean = active.retainBackBufferFromKeyframe(playerId)
+
+    override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean = active.shouldContinueLoading(parameters)
+
+    override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean = active.shouldStartPlayback(parameters)
+}
 
 /**
  * 映像を取得する経路。**Media3 のネットワーク スタックのページの勧めどおり**: Android 14 からは OS の
@@ -145,7 +196,7 @@ fun buildPlayer(
     context: Context,
     engine: EngineHttp?,
     token: String?,
-    buffering: Buffering,
+    loadControl: BufferingControl,
     clock: TsClock,
     dualMono: DualMonoProcessor,
 ): ExoPlayer =
@@ -155,11 +206,7 @@ fun buildPlayer(
                 // 変換の枠が埋まって断られたら、Media3 の中では読み直さない (繋ぎ直しは `Recovery` が何度かだけ)
                 .setLoadErrorHandlingPolicy(BusyLoadErrorPolicy()),
         )
-        .setLoadControl(
-            DefaultLoadControl.Builder()
-                .setBufferDurationsMs(buffering.minMs, buffering.maxMs, buffering.startMs, buffering.afterRebufferMs)
-                .build(),
-        )
+        .setLoadControl(loadControl)
         .build()
 
 /**
@@ -169,7 +216,8 @@ fun buildPlayer(
 @Composable
 fun CatchUp(player: ExoPlayer, buffering: Buffering) {
     val (speedUpMs, jumpMs) = if (buffering == Buffering.LowLatency) 1_500L to 4_000L else 4_000L to 10_000L
-    LaunchedEffect(player) {
+    // 溜め方は流れている形式で替わる (`BufferingControl`)。替わったら見張り直す
+    LaunchedEffect(player, buffering) {
         while (true) {
             delay(500)
             if (!player.playWhenReady || player.playbackState != Player.STATE_READY) continue
@@ -511,16 +559,31 @@ fun rememberFlash(): Flash {
 
 /**
  * `rememberPlayer` が返すもの。`val (player, error) = …` で受けられる。`dualMono` はデュアルモノの配り直し (`rememberTracks` に渡す)、
- * `recovery` は繋ぎ直しの様子 (`PlayerFrame` に渡す。リクエストし直すたびに `requested` を呼ぶ)
+ * `recovery` は繋ぎ直しの様子 (`PlayerFrame` に渡す。リクエストし直すたびに `requested` を呼ぶ)。
+ * `codec` は最後に開いたストリームの形式 (応答ヘッダ `X-Denpa-Codec`)。まだ開いていない・ヘッダが無ければ null。
+ * 新しいストリームの応答が届くまでは前のストリームの形式のまま (前の映像が残っている間は、その形式で数える)
  */
-data class PlayerHandle(val player: ExoPlayer, val error: String?, val dualMono: DualMonoProcessor, val recovery: Recovery)
+data class PlayerHandle(
+    val player: ExoPlayer,
+    val error: String?,
+    val dualMono: DualMonoProcessor,
+    val recovery: Recovery,
+    val codec: LiveQuality?,
+)
 
 /**
  * ExoPlayer を画面の寿命に合わせる。エラーは文にして返す。
- * `clock` は元の TS の字幕の時計 (`rememberRawCaptions` と同じものを渡す)。
+ * `clock` は元の TS の字幕の時計 (`rememberRawCaptions` と同じものを渡す)。応答ヘッダの形式もここから受け取る (`TsClock.onCodec`)。
  *
  * `reconnect` の決まりで、**切れた・止まったら繋ぎ直す** (`Recovery`)。繋ぎ直している間はエラーを出さず、前の映像を残して幕が
- * 「繋ぎ直しています」を出す。諦めたとき (直らないもの・回数を使い切った) だけエラーを返す
+ * 「繋ぎ直しています」を出す。諦めたとき (直らないもの・回数を使い切った) だけエラーを返す。
+ *
+ * `buffering` が録画でなければ (ライブ・追っかけ)、**溜め方は応答ヘッダの形式で替える** (MPEG-2 なら `Buffering.LowLatency`。`BufferingControl`)。
+ * プレーヤーは作り直さない。
+ *
+ * `unplayable` を渡すと、**端末の側で再生できなかった形式**を知らせる: デコーダを作れない・形式に対応していない
+ * (`Reconnect.deviceCannotPlay`) か、応答が届いてから `FIRST_FRAME_MS` たっても最初のフレームが出ないとき。形式は `codec` (`fixedCodec` を渡せばそれ)。
+ * 呼ぶ側がその形式を外してリクエストし直すなら true を返す (繋ぎ直しもエラーもしない)。false ならいつもどおり
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -530,20 +593,49 @@ fun rememberPlayer(
     onUnauthorized: () -> Unit,
     clock: TsClock,
     reconnect: ReconnectPlan,
+    unplayable: ((ExoPlayer, LiveQuality) -> Boolean)? = null,
+    fixedCodec: LiveQuality? = null,
 ): PlayerHandle {
     val context = LocalContext.current
     val dualMono = remember(buffering) { DualMonoProcessor() }
-    val player = remember(buffering) { buildPlayer(context, repo.app.engineHttp, repo.token, buffering, clock, dualMono) }
+    val loadControl = remember(buffering) { BufferingControl(buffering) }
+    val player = remember(buffering) { buildPlayer(context, repo.app.engineHttp, repo.token, loadControl, clock, dualMono) }
     val scope = rememberCoroutineScope()
     val recovery = remember(player) { Recovery(player, scope, reconnect) }
     recovery.plan = reconnect
     val unauthorized by rememberUpdatedState(onUnauthorized)
+    val unplaying by rememberUpdatedState(unplayable)
+    val fixed by rememberUpdatedState(fixedCodec)
     var error by remember { mutableStateOf<String?>(null) }
+    var codec by remember { mutableStateOf<LiveQuality?>(null) }
+    /** 最後の応答の形式と、それが届いたとき (uptime ミリ秒)。読み込みのスレッドが書く */
+    val seen = remember(player) { SeenCodec() }
+    DisposableEffect(clock, player) {
+        val main = Handler(player.applicationLooper)
+        clock.onCodec = { header ->
+            seen.codec = header
+            seen.at = SystemClock.uptimeMillis()
+            if (buffering != Buffering.Recording) loadControl.buffering = header.buffering
+            main.post { codec = header }
+        }
+        onDispose { clock.onCodec = null }
+    }
+    /** 端末の側で再生できなかった形式を、画面に渡す。受け取ってリクエストし直すなら true */
+    fun cannotPlay(reason: String): Boolean {
+        val handler = unplaying ?: return false
+        val failed = fixed ?: seen.codec ?: return false
+        if (!handler(player, failed)) return false
+        Log.i(Recovery.TAG, "${failed.codec} を外してリクエストし直します (${recovery.plan.label}): $reason")
+        recovery.cancel()
+        error = null
+        return true
+    }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) {
                 val http = e.cause as? HttpDataSource.InvalidResponseCodeException
                 val code = http?.responseCode
+                if (Reconnect.deviceCannotPlay(e.errorCode) && cannotPlay("error=${e.errorCodeName}")) return
                 // 変換の枠が埋まって断られた (503 の言い分で見分ける)。何度かだけリクエストし直し、諦めたら「サーバが混んでいます」
                 val busy = isBusyAnswer(code, http?.responseBody)
                 val verdict = Reconnect.verdict(e.errorCode, code, busy)
@@ -560,6 +652,8 @@ fun rememberPlayer(
                     e.cause is EmptyStreamException -> EMPTY_STREAM_MESSAGE
                     // 短く。勧め (MPEG-2) は画質の分かる画面が足す (`withBusyAdvice`)
                     busy -> BUSY_MESSAGE
+                    // denpa が playable の中から選べなかった
+                    code == 406 -> NO_PLAYABLE_MESSAGE
                     else -> {
                         val type = (e.cause as? HttpDataSource.InvalidContentTypeException)?.contentType
                         PLAYBACK_ERROR_PREFIX + playbackMessage(e.errorCode, e.errorCodeName, code, type)
@@ -588,11 +682,21 @@ fun rememberPlayer(
             player.release()
         }
     }
-    // 止まったかの見張り
+    // 止まったかの見張りと、最初のフレームが来ない形式の見張り
     LaunchedEffect(recovery) {
+        /** 最初のフレームが来ないと知らせたリクエスト (リクエストごとに1度だけ) */
+        var blamed = -1L
         while (true) {
             delay(1_000)
             recovery.watch()
+            if (unplaying == null || recovery.pictured || recovery.active || !recovery.started || !player.playWhenReady) continue
+            if (player.playbackState != Player.STATE_BUFFERING && player.playbackState != Player.STATE_READY) continue
+            val asked = recovery.requestedAt
+            // 応答が届いたとき (ストリームの形式が分かったとき) から数える。形式を決めて開くもの (録画) はリクエストしたときから
+            val since = if (fixed != null) asked else seen.at.takeIf { it >= asked } ?: continue
+            if (blamed == asked || SystemClock.uptimeMillis() - since < FIRST_FRAME_MS) continue
+            blamed = asked
+            cannotPlay("最初のフレームが ${FIRST_FRAME_MS / 1000} 秒来ない")
         }
     }
     // 裏に回っている間は繋ぎ直さない
@@ -609,16 +713,32 @@ fun rememberPlayer(
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
-    return PlayerHandle(player, error, dualMono, recovery)
+    return PlayerHandle(player, error, dualMono, recovery, codec)
 }
+
+/** 最後の応答の形式 (`X-Denpa-Codec`) と、それが届いたとき。読み込みのスレッドが書き、見張りが読む */
+private class SeenCodec {
+    @Volatile
+    var codec: LiveQuality? = null
+
+    @Volatile
+    var at = 0L
+}
+
+/**
+ * 応答が届いてから最初のフレームが出るまで待つ上限 (ミリ秒)。過ぎたら、その形式は端末の側で再生できないとみなす (`rememberPlayer` の `unplayable`)。
+ * denpa がエンコーダを温める間 (8 秒) と、溜め終えるまでの間より長く
+ */
+const val FIRST_FRAME_MS = 15_000L
 
 /** 再生のエラーの頭 (画質の切り替えに失敗したときは外して理由だけ出す) */
 const val PLAYBACK_ERROR_PREFIX = "再生できません: "
 
 /**
- * `url` をリクエストして流しはじめる。`startMs` は頭からの位置 (録画の続き)。流しっぱなしのもの (ライブ・追っかけ) は渡さない
+ * `url` をリクエストして流しはじめる。`mime` は中身の形式。分からなければ null (自動の `codec=auto` は応答を見るまで分からないので、
+ * Extractor が中身を見て決める)。`startMs` は頭からの位置 (録画の続き)。流しっぱなしのもの (ライブ・追っかけ) は渡さない
  */
-fun ExoPlayer.load(url: String, mime: String, startMs: Long? = null) {
+fun ExoPlayer.load(url: String, mime: String?, startMs: Long? = null) {
     val item = MediaItem.Builder().setUri(url).setMimeType(mime).build()
     if (startMs == null) setMediaItem(item) else setMediaItem(item, startMs)
     prepare()

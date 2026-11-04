@@ -2,19 +2,20 @@ package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.ChapterMark
-import io.github.danything.denpatv.data.Decoders
 import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.DenpaAudio
+import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.PlayAudio
+import io.github.danything.denpatv.data.PlayAuto
 import io.github.danything.denpatv.data.PlayChoice
 import io.github.danything.denpatv.data.PlayOffer
 import io.github.danything.denpatv.data.PlaybackInfo
 import io.github.danything.denpatv.data.PlaybackLookup
 import io.github.danything.denpatv.data.PlaybackPaths
+import io.github.danything.denpatv.data.Playable
 import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.StreamClock
 import io.github.danything.denpatv.data.parsePlaybackChapters
-import io.github.danything.denpatv.data.pickPlayback
 import io.github.danything.denpatv.data.resumeSource
 import io.github.danything.denpatv.data.streamAudios
 import kotlinx.coroutines.test.runTest
@@ -26,10 +27,6 @@ import org.junit.Test
 
 /** 録画の観方 (denpa の `playback`・`stream`・`chapters`)。docs/api.md の例の形式で */
 class PlaybackTest {
-    private val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
-    private val stick = Decoders(av1 = false, h264 = true, mpeg2 = true, av1Hardware = false, mpeg2Hardware = false)
-    private val bare = Decoders(av1 = false, h264 = true, mpeg2 = false, av1Hardware = false, mpeg2Hardware = false)
-
     /** エンコード済み (AV1) と、詰め替え・変換・元の TS */
     private val encoded = PlaybackInfo(
         duration = 1790.5,
@@ -49,60 +46,29 @@ class PlaybackTest {
         offers = listOf(PlayOffer("h264", "stream"), PlayOffer("av1", "stream"), PlayOffer("mpeg2", "raw")),
     )
 
+    /** denpa が選んだ観方 (`auto`) を、どれで観るかに直す */
     @Test
-    fun エンコード済みのファイルをデコードできればそのまま開く() {
-        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(encoded, tv, indoor = true))
-        // AV1 と H.264 の2本あれば、軽い AV1 から
-        val both = encoded.copy(offers = listOf(PlayOffer("h264", "file", "alt")) + encoded.offers)
-        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(both, tv, indoor = true))
-        assertEquals(PlayChoice.File("h264", "alt"), pickPlayback(both, stick, indoor = true))
-    }
-
-    @Test
-    fun AV1_をソフトでしかデコードできない端末はファイルより元の_TS_か変換を先にする() {
-        // Chromecast with Google TV など: ソフトの AV1 はあるがハードは無い。MPEG-2 はハード
-        val chromecast = tv.copy(av1Hardware = false)
-        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(encoded, chromecast, indoor = true))
-        // MPEG-2 もハードで無ければ H.264 に変換してもらう (AV1 の変換も選ばない)
-        val softOnly = chromecast.copy(mpeg2Hardware = false)
-        assertEquals(PlayChoice.Stream("h264"), pickPlayback(encoded, softOnly, indoor = true))
-        // 変換も元の TS も無ければ、最後の手として AV1 のファイルをソフトで
-        val fileOnly = encoded.copy(offers = encoded.offers.filter { it.way == "file" })
-        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(fileOnly, softOnly, indoor = true))
-    }
-
-    @Test
-    fun ファイルをデコードできなければ_MPEG2_をハードでデコードできる端末は元の_TS_をそのまま() {
-        val noAv1 = tv.copy(av1 = false, av1Hardware = false)
-        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(encoded, noAv1, indoor = true))
-        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(tsOnly, tv, indoor = true))
-    }
-
-    @Test
-    fun それ以外は変換を_H264_から_元の_TS_はソフトのデコーダで最後に() {
-        assertEquals(PlayChoice.Stream("h264"), pickPlayback(encoded, stick, indoor = true))
-        assertEquals(PlayChoice.Stream("h264"), pickPlayback(tsOnly, stick, indoor = true))
-        // H.264 の変換が無く (版のずれ)、AV1 もデコードできなければ元の TS を
-        val rawOnly = tsOnly.copy(offers = listOf(PlayOffer("av1", "stream"), PlayOffer("mpeg2", "raw")))
-        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(rawOnly, stick, indoor = true))
-        assertNull(pickPlayback(rawOnly, bare, indoor = true))
-        assertNull(pickPlayback(PlaybackInfo(), tv, indoor = true))
+    fun denpa_が選んだ観方を開く() {
+        assertEquals(PlayChoice.File("av1", "encoded"), PlayAuto("file", "av1", "encoded").choice())
+        assertEquals(PlayChoice.Stream("h264"), PlayAuto("stream", "h264").choice())
+        assertEquals(PlayChoice.Stream("mpeg2"), PlayAuto("raw", "mpeg2").choice())
+        // source の無いファイル・知らない way は開かない (版のずれ)
+        assertNull(PlayAuto("file", "av1").choice())
+        assertNull(PlayAuto("hls", "h264").choice())
         // 中身の形式は流し方で決まる
         assertEquals("video/mp2t", PlayChoice.Stream("mpeg2").mime)
-        assertEquals("video/mp4", PlayChoice.Stream("h264").mime)
+        assertEquals("video/mp4", PlayChoice.Stream("hevc").mime)
+        // 端末で再生できなかったときに外す形式
+        assertEquals(LiveQuality.Raw, PlayChoice.Stream("mpeg2").quality)
+        assertEquals(LiveQuality.Hevc, PlayChoice.File("hevc", "hevc").quality)
     }
 
-    /** 自動の順 (`AutoOrder`): ファイルは家の中でも外でも同じ、その場の変換は外なら AV1 → H.264 (元の TS は選ばない) */
+    /** 観方は、端末が再生できる形式を付けて聞く */
     @Test
-    fun 外ではファイルは同じ_その場の変換は_AV1_から() {
-        assertEquals(PlayChoice.File("av1", "encoded"), pickPlayback(encoded, tv, indoor = false))
-        assertEquals(PlayChoice.Stream("av1"), pickPlayback(tsOnly, tv, indoor = false))
-        // AV1 がハードで無ければ H.264。MPEG-2 がハードでも、外では変換を先にする
-        assertEquals(PlayChoice.Stream("h264"), pickPlayback(tsOnly, tv.copy(av1Hardware = false), indoor = false))
-        assertEquals(PlayChoice.Stream("h264"), pickPlayback(tsOnly, stick, indoor = false))
-        // 変換が無ければ、最後の手として元の TS を
-        val rawOnly = tsOnly.copy(offers = listOf(PlayOffer("mpeg2", "raw")))
-        assertEquals(PlayChoice.Stream("mpeg2"), pickPlayback(rawOnly, tv, indoor = false))
+    fun 観方は再生できる形式を付けて聞く() {
+        val playable = Playable(listOf(LiveQuality.Raw, LiveQuality.H264))
+        assertEquals("api/recordings/12/playback?playable=raw,h264", PlaybackPaths.info(12, playable))
+        assertEquals("api/recordings/12/playback?playable=", PlaybackPaths.info(12, Playable(emptyList())))
     }
 
     @Test
@@ -182,17 +148,23 @@ class PlaybackApiTest {
             """{ "duration": 1790.5, "axis": "encoded", "new": true,
                  "audios": [{ "id": "0", "label": "主音声" }],
                  "offers": [{ "codec": "av1", "way": "file", "source": "encoded", "codecs": "av01.0.08M.08,opus" },
-                            { "codec": "mpeg2", "way": "raw" }] }""",
+                            { "codec": "mpeg2", "way": "raw" }],
+                 "auto": { "way": "file", "codec": "av1", "source": "encoded" } }""",
         )
-        val found = api.playback(base, 12) as PlaybackLookup.Found
+        val playable = Playable(listOf(LiveQuality.Av1, LiveQuality.H264))
+        val found = api.playback(base, 12, playable) as PlaybackLookup.Found
         assertEquals("encoded", found.info.axis)
         assertEquals(PlayOffer("mpeg2", "raw"), found.info.offers.last())
-        assertEquals("/api/recordings/12/playback", denpa.requests.take().target)
-        // 録画中・ファイルが無い・エンドポイントの無い古い denpa
+        assertEquals(PlayAuto("file", "av1", "encoded"), found.info.auto)
+        assertEquals("/api/recordings/12/playback?playable=av1,h264", denpa.requests.take().target)
+        // 選べなければ null
+        denpa.enqueue("""{ "duration": 10, "axis": "ts", "offers": [], "auto": null }""")
+        assertNull((api.playback(base, 12, playable) as PlaybackLookup.Found).info.auto)
+        // 録画中・ファイルが無い
         denpa.enqueue("", code = 404)
-        assertEquals(PlaybackLookup.Missing, api.playback(base, 12))
+        assertEquals(PlaybackLookup.Missing, api.playback(base, 12, playable))
         denpa.enqueue("<html>")
-        assertTrue(api.playback(base, 12) is PlaybackLookup.Failed)
+        assertTrue(api.playback(base, 12, playable) is PlaybackLookup.Failed)
 
         denpa.enqueue("""{"chapters":[{"start":0,"end":10.5,"title":"本編"}]}""")
         assertEquals(listOf(ChapterMark(0, 10_500, "本編")), api.chapters(base, 12))

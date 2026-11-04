@@ -54,6 +54,9 @@ class SmokeTest {
         open("denpa://live/${FakeDenpa.SERVICE_ID}")
         awaitVideo(LIVE_COLOR)
         assertRequested("GET /api/services/${FakeDenpa.SERVICE_ID}/live")
+        // 画質は「自動」: denpa に選ばせ、再生できる形式に H.264 を必ず入れる
+        val live = denpa.targets.first { it.startsWith("/api/services/${FakeDenpa.SERVICE_ID}/live?") }
+        assertTrue("自動で denpa に選ばせていません: $live", "codec=auto&playable=" in live && "h264" in live.substringAfter("playable=").substringBefore('&').split(','))
     }
 
     /**
