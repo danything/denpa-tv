@@ -139,7 +139,7 @@ class DualMonoTest {
     @Test
     fun リクエストの_URL_に音声を足す() {
         assertEquals("&audio=0%3Asub", audioQuery(dual[1]))
-        assertEquals("api/recordings/9/chase?codec=h264&from=754&audio=0%3Amain", Chase.url("api/recordings/9/chase", "h264", 754_900, dual[0]))
-        assertEquals("api/recordings/9/chase?codec=raw&from=754", Chase.url("api/recordings/9/chase", "raw", 754_900))
+        assertEquals("api/recordings/9/chase?codec=h264&from=754&audio=0%3Amain", Chase.url("api/recordings/9/chase", "codec=h264", 754_900, dual[0]))
+        assertEquals("api/recordings/9/chase?codec=raw&from=754", Chase.url("api/recordings/9/chase", "codec=raw", 754_900))
     }
 }

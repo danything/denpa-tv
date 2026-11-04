@@ -50,7 +50,7 @@ class Settings(private val context: Context) {
     /** 前に繋いでいた先 (外れたあと、繋ぐ画面に最初から入れておく) */
     val lastServer: Flow<String?> = context.dataStore.data.map { it[lastServerKey] ?: it[serverKey] }
 
-    /** `LiveQuality` の名前。未設定なら null (端末に合わせて選ぶ) */
+    /** `LiveQuality` の名前。未設定なら null (「自動」。denpa に選ばせる) */
     val liveQuality: Flow<String?> = context.dataStore.data.map { it[liveQualityKey] }
 
     /** 既定で飛ばす (denpa が CM の区切りをチャプターに書いた録画だけ効く) */

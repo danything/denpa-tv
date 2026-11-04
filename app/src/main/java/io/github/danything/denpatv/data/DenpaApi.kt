@@ -92,11 +92,11 @@ class DenpaApi(
     }
 
     /**
-     * 録画を何で観られるか (`GET api/recordings/<id>/playback`)。観られない (404。録画中・ファイルが無い・このエンドポイントの無い古い denpa) は `Missing`、
-     * 届かない・読めないは `Failed`
+     * 録画を何で観られるか (`GET api/recordings/<id>/playback?playable=`)。`playable` を付けて、denpa が選んだ観方 (`auto`) も受け取る。
+     * 観られない (404。録画中・ファイルが無い) は `Missing`、届かない・読めないは `Failed`
      */
-    suspend fun playback(base: URI, id: Long): PlaybackLookup = withContext(Dispatchers.IO) {
-        val res = call(base, PlaybackPaths.info(id)) ?: return@withContext PlaybackLookup.Failed("denpa に接続できません")
+    suspend fun playback(base: URI, id: Long, playable: Playable): PlaybackLookup = withContext(Dispatchers.IO) {
+        val res = call(base, PlaybackPaths.info(id, playable)) ?: return@withContext PlaybackLookup.Failed("denpa に接続できません")
         if (res.code == 404) return@withContext PlaybackLookup.Missing
         if (!res.ok) return@withContext PlaybackLookup.Failed("denpa が答えません (${res.code})")
         runCatching { lenientJson.decodeFromString(PlaybackInfo.serializer(), res.text()) }.getOrNull()?.let { PlaybackLookup.Found(it) }
@@ -147,14 +147,13 @@ class DenpaApi(
     }
 
     /**
-     * 観るときの決まり (`GET api/playback/options`。denpa v2.27.0 から)。家の中か (「自動」の順 `AutoOrder`) と、画質のメニューから外すもの。
-     * **無い (404。古い denpa) ときだけ `PlaybackOptions.FALLBACK`。** 届かない・5xx・形式が違う (`warn` に書く) ときは null (呼ぶ側は控えずに後で聞き直す)
+     * 観るときの決まり (`GET api/playback/options`)。画質のメニューから外すもの。
+     * 届かない・2xx 以外・形式が違う (`warn` に書く) ときは null (呼ぶ側は控えずに後で聞き直す)
      * **ライブと追っかけはこの返事を待ってから流しはじめるので、`OPTIONS_TIMEOUT_MS` で打ち切る** (届かないまま HTTP のいつもの時間切れまで
-     * 待たせない)。打ち切ったら届かないのと同じ null で、呼ぶ側は `FALLBACK` (家の中) で流しはじめる
+     * 待たせない)。打ち切ったら届かないのと同じ null で、呼ぶ側は `FALLBACK` (何も外さない) で流しはじめる
      */
     suspend fun playbackOptions(base: URI): PlaybackOptions? = withContext(Dispatchers.IO) {
         val res = call(base, "api/playback/options", timeoutMs = OPTIONS_TIMEOUT_MS) ?: return@withContext null
-        if (res.code == 404) return@withContext PlaybackOptions.FALLBACK
         if (!res.ok) return@withContext null
         parsePlaybackOptions(res.text())
             ?: null.also { warn("観るときの決まりの形式が違います (denpa の版のずれ?): ${res.text().take(200)}") }
@@ -306,20 +305,19 @@ fun parseDenpaHealth(body: String): DenpaHealth? {
 }
 
 /**
- * 観るときの決まり (`api/playback/options`)。`indoor` は開いたホスト名が家の中か、`hideH264` は世帯の設定の
- * 「コーデックの選択肢に H.264 と H.265 を出さない」(`hidden` に `h264` がある。外すのはメニューだけ)
+ * 観るときの決まり (`api/playback/options`)。`hideH264` は世帯の設定の「コーデックの選択肢に H.264 と H.265 を出さない」
+ * (`hidden` に `h264` がある。外すのはメニューだけ。自動では denpa が今までどおり選ぶ)。家の中か (`indoor`) は読まない (自動の順は denpa が決める)
  */
-data class PlaybackOptions(val indoor: Boolean, val hideH264: Boolean) {
+data class PlaybackOptions(val hideH264: Boolean) {
     companion object {
-        /** 聞けない古い denpa: 家の中 (前からの既定: MPEG-2 から)、メニューから何も外さない */
-        val FALLBACK = PlaybackOptions(indoor = true, hideH264 = false)
+        /** 聞けない: メニューから何も外さない */
+        val FALLBACK = PlaybackOptions(hideH264 = false)
     }
 }
 
-/** `api/playback/options` の返事 (`{"indoor":true,"hidden":["h264","hevc"],…}`) を読む。`indoor` が読めなければ null。`hidden` が無ければ外さない */
+/** `api/playback/options` の返事 (`{"indoor":true,"hidden":["h264","hevc"],…}`) を読む。`hidden` (並び) が読めなければ null */
 fun parsePlaybackOptions(body: String): PlaybackOptions? {
     val json = runCatching { lenientJson.parseToJsonElement(body).jsonObject }.getOrNull() ?: return null
-    val indoor = runCatching { json["indoor"]?.jsonPrimitive?.booleanOrNull }.getOrNull() ?: return null
-    val hidden = runCatching { json["hidden"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } }.getOrNull().orEmpty()
-    return PlaybackOptions(indoor, hideH264 = "h264" in hidden)
+    val hidden = runCatching { json["hidden"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } }.getOrNull() ?: return null
+    return PlaybackOptions(hideH264 = "h264" in hidden)
 }

@@ -97,6 +97,18 @@ object Reconnect {
         else -> Verdict.RetryFew
     }
 
+    /**
+     * **端末の側で再生できない形式か** (デコーダを作れない・端末の力を超える・形式に対応していない)。denpa の側の失敗 (空の 200・5xx) とは分けて、
+     * 自動ならその形式を外してリクエストし直す (`rememberPlayer` の `unplayable`)。デコードの途中の失敗 (`ERROR_CODE_DECODING_FAILED`) は中身が壊れたこともあるので入れない
+     */
+    fun deviceCannotPlay(errorCode: Int): Boolean = errorCode in DEVICE
+
+    private val DEVICE = setOf(
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+    )
+
     /** 待っても同じもの */
     private val HOPELESS = setOf(
         PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
@@ -119,6 +131,50 @@ object Reconnect {
         Verdict.RetryFew -> stream && few < FEW
         // 流しっぱなしのものも録画も同じ (録画も、変換して流すエンドポイントは断られうる)
         Verdict.Busy -> few < FEW
+    }
+}
+
+/**
+ * **最初のフレームが来ない形式の見張り** (`rememberPlayer` の `unplayable`)。端末の側で再生できないのか、回線が遅いだけなのかを読み分けるため、
+ * **データが届いて溜まりはじめてから** (`bufferedAheadMs` が `arrivedMs` 以上になってから) 数える。回線が遅くて溜まらない間は数えない。
+ * 溜まっているのに `limitMs` たっても最初のフレームが出なければ、デコードできないとみなして true を返す (リクエストごとに1度だけ)。
+ *
+ * - `request` … いまのリクエストの印 (`Recovery.requestedAt`)。替わったら数え直す
+ * - `watching` … 見張るか (動かしている・まだ映していない・繋ぎ直しを待っていない・前に出ている)。見張らない間は数えない
+ *
+ * 時刻は呼ぶ側が渡す (`SystemClock.uptimeMillis`。テストでは好きに進める)
+ */
+class FirstFrameWatch(private val limitMs: Long = FIRST_FRAME_MS, private val arrivedMs: Long = FIRST_DATA_MS) {
+    private var request: Long? = null
+    private var since: Long? = null
+    private var blamed = false
+
+    fun check(now: Long, request: Long, watching: Boolean, bufferedAheadMs: Long): Boolean {
+        if (request != this.request) {
+            this.request = request
+            since = null
+            blamed = false
+        }
+        if (!watching || blamed) {
+            since = null
+            return false
+        }
+        if (bufferedAheadMs < arrivedMs) return false
+        val start = since ?: now.also { since = it }
+        if (now - start < limitMs) return false
+        blamed = true
+        return true
+    }
+
+    companion object {
+        /**
+         * データが溜まりはじめてから最初のフレームが出るまで待つ上限 (ミリ秒)。過ぎたら、その形式は端末の側で再生できないとみなす。
+         * denpa がエンコーダを温める間 (8 秒) より長く
+         */
+        const val FIRST_FRAME_MS = 15_000L
+
+        /** 届いたとみなす溜まりの長さ (ミリ秒)。どの溜め方でも動き出すのに足りる量 (MPEG-2 は 0.25 秒、ほかは 1 秒で動き出す) */
+        const val FIRST_DATA_MS = 1_000L
     }
 }
 

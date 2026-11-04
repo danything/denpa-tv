@@ -33,8 +33,8 @@ object YieldPlan {
      */
     const val EDGE_MS = 7L * 24 * 60 * 60 * 1000
 
-    /** 譲った録画の追っかけのエンドポイント (`GET api/recordings/<id>/chase`)。録れているところの少し手前から */
-    fun chaseUrl(recordingId: Long, codec: String): String = Chase.url("api/recordings/$recordingId/chase", codec, EDGE_MS)
+    /** 譲った録画の追っかけのエンドポイント (`GET api/recordings/<id>/chase`)。録れているところの少し手前から。`formats` は形式 (`codecQuery`) */
+    fun chaseUrl(recordingId: Long, formats: String): String = Chase.url("api/recordings/$recordingId/chase", formats, EDGE_MS)
 
     /**
      * リクエストし直したライブが**映らずに終わった** (エラー・空・ストリームが閉じた) とき、どの録画の追っかけに切り替えるか。切り替えずに

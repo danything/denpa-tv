@@ -31,6 +31,8 @@ import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.ClockNotice
 import io.github.danything.denpatv.data.CueTimeline
 import io.github.danything.denpatv.data.Http
+import io.github.danything.denpatv.data.CODEC_HEADER
+import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.ORIGIN_HEADER
 import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.Unauthorized
@@ -53,7 +55,10 @@ import java.net.URI
  * 同じ作り方の TsExtractor (ほかの形式はそのまま)。映像をリクエストし直すたびに Extractor も作り直されるので、最後に作ったものを見る。
  *
  * `mp4` なら、fragmented MP4 の Extractor にも同じように渡す (録画を denpa に流してもらうとき。denpa は塊の時刻を録画の時刻のまま書くので、
- * 寄せた幅から録画の時刻に戻せる。`StreamClock`)。応答の `X-Denpa-Origin` (元の TS のストリームで、録画の時刻の 0 にあたる PTS) も控える
+ * 寄せた幅から録画の時刻に戻せる。`StreamClock`)。応答の `X-Denpa-Origin` (元の TS のストリームで、録画の時刻の 0 にあたる PTS) も控える。
+ *
+ * **応答の `X-Denpa-Codec` (denpa が選んだ形式) も読んで `onCodec` に渡す** (`rememberPlayer` が溜め方を替える)。読むのは Extractor を作るとき、
+ * つまり応答が届いて中身を読みはじめる前なので、溜めはじめる前に溜め方を替えられる
  */
 @OptIn(UnstableApi::class, ExperimentalApi::class)
 class TsClock(
@@ -73,17 +78,26 @@ class TsClock(
     private var gopCodecs = C.VIDEO_CODEC_FLAG_H264 or C.VIDEO_CODEC_FLAG_H265
     private var parseHagc = true
 
+    /**
+     * 応答ヘッダの `X-Denpa-Codec` を受け取る (読み込みのスレッドから呼ぶ)。音声だけ・知らない値・無ければ null。
+     * 応答ごとに呼ぶので、リクエストし直したときも呼ぶ
+     */
+    @Volatile
+    var onCodec: ((LiveQuality?) -> Unit)? = null
+
     /** いまの寄せ幅 (マイクロ秒)。まだ PTS を1つも読んでいなければ null */
     fun offsetUs(): Long? = adjuster?.timestampOffsetUs?.takeIf { it != C.TIME_UNSET }
 
     override fun createExtractors(): Array<Extractor> = swap(inner.createExtractors())
 
     override fun createExtractors(uri: Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> {
-        origin = responseHeaders.entries
-            .firstOrNull { (name, _) -> name.equals(ORIGIN_HEADER, ignoreCase = true) }
-            ?.value?.firstOrNull()?.trim()?.toLongOrNull()
+        origin = header(responseHeaders, ORIGIN_HEADER)?.trim()?.toLongOrNull()
+        onCodec?.invoke(LiveQuality.ofHeader(header(responseHeaders, CODEC_HEADER)))
         return swap(inner.createExtractors(uri, responseHeaders))
     }
+
+    private fun header(headers: Map<String, List<String>>, name: String): String? =
+        headers.entries.firstOrNull { (key, _) -> key.equals(name, ignoreCase = true) }?.value?.firstOrNull()
 
     /** リクエストし直す前に、前のストリームの寄せ幅と origin を捨てる (新しいストリームを読みはじめるまで、前のもので数えないように) */
     fun reset() {

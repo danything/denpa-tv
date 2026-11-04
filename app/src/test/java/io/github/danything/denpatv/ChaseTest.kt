@@ -2,13 +2,16 @@ package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.AudioTrack
 import io.github.danything.denpatv.data.Chase
-import io.github.danything.denpatv.data.Decoders
+import io.github.danything.denpatv.data.LiveQuality
+import io.github.danything.denpatv.data.PlayAuto
 import io.github.danything.denpatv.data.PlayOffer
+import io.github.danything.denpatv.data.Playable
 import io.github.danything.denpatv.data.PlaybackInfo
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingFile
 import io.github.danything.denpatv.data.audioTrack
 import io.github.danything.denpatv.data.chasing
+import io.github.danything.denpatv.data.codecQuery
 import io.github.danything.denpatv.data.rememberedAudio
 import io.github.danything.denpatv.data.skipCmAtStart
 import kotlinx.serialization.json.Json
@@ -30,7 +33,11 @@ class ChaseTest {
         assertEquals(0L, Chase.clamp(3_000, 4_000))
         assertTrue(Chase.atEdge(585_000, recorded))
         assertFalse(Chase.atEdge(500_000, recorded))
-        assertEquals("api/recordings/9/chase?codec=raw&from=754", Chase.url("api/recordings/9/chase", "raw", 754_900))
+        assertEquals("api/recordings/9/chase?codec=raw&from=754", Chase.url("api/recordings/9/chase", "codec=raw", 754_900))
+        assertEquals(
+            "api/recordings/9/chase?codec=auto&playable=raw,h264&from=754",
+            Chase.url("api/recordings/9/chase", codecQuery(null, Playable(listOf(LiveQuality.Raw, LiveQuality.H264))), 754_900),
+        )
     }
 
     /** 録画中は追っかけ。録り終えて元のTSだけ残っているものは、ふつうのファイルで観る */
@@ -76,12 +83,11 @@ class ChaseTest {
     }
 
     /**
-     * エンコードが終わった録画をファイルの再生へ渡すのは、録り終えていて、録画の再生 (`pickPlayback`) がエンコード済みのファイルを開くときだけ
+     * エンコードが終わった録画をファイルの再生へ渡すのは、録り終えていて、denpa が選んだ観方 (`auto`) がエンコード済みのファイルのときだけ
      * (一覧が追いついていなければ待つ)
      */
     @Test
     fun エンコードが終わったらファイルの再生へ渡す() {
-        val decoders = Decoders(av1 = false, h264 = true, mpeg2 = false)
         val finished = Recording(
             id = 12, title = "番組", startAt = 0,
             files = listOf(RecordingFile("encoded", "h264")),
@@ -90,17 +96,18 @@ class ChaseTest {
             duration = 1800.0,
             axis = "encoded",
             offers = listOf(PlayOffer("h264", "file", "encoded"), PlayOffer("av1", "stream"), PlayOffer("mpeg2", "raw")),
+            auto = PlayAuto("file", "h264", "encoded"),
         )
-        assertTrue(Chase.handOff(finished, encoded, decoders))
+        assertTrue(Chase.handOff(finished, encoded))
         // 一覧がまだ録画中のまま・一覧から消えた・観方が読めない
-        assertFalse(Chase.handOff(finished.copy(recording = true, chase = "api/recordings/12/chase"), encoded, decoders))
-        assertFalse(Chase.handOff(null, encoded, decoders))
-        assertFalse(Chase.handOff(finished, null, decoders))
-        // エンコード済みのファイルをこの端末でデコードできない (AV1 だけ。録画の再生は変換して流してもらう)
-        val av1Only = encoded.copy(offers = listOf(PlayOffer("av1", "file", "encoded"), PlayOffer("h264", "stream")))
-        assertFalse(Chase.handOff(finished, av1Only, decoders))
-        // 元の TS だけ (「エンコードしない」設定・エンコード待ち) は渡さない。MPEG-2 をデコードできても
-        val ts = PlaybackInfo(duration = 1800.0, axis = "ts", offers = listOf(PlayOffer("h264", "stream"), PlayOffer("mpeg2", "raw")))
-        assertFalse(Chase.handOff(finished, ts, Decoders(av1 = false, h264 = true, mpeg2 = true, mpeg2Hardware = true)))
+        assertFalse(Chase.handOff(finished.copy(recording = true, chase = "api/recordings/12/chase"), encoded))
+        assertFalse(Chase.handOff(null, encoded))
+        assertFalse(Chase.handOff(finished, null))
+        // denpa が変換して流すほうを選んだ (エンコード済みのファイルをこの端末で再生できない)・選べなかった
+        assertFalse(Chase.handOff(finished, encoded.copy(auto = PlayAuto("stream", "h264"))))
+        assertFalse(Chase.handOff(finished, encoded.copy(auto = null)))
+        // 元の TS だけ (「エンコードしない」設定・エンコード待ち) は渡さない
+        val ts = PlaybackInfo(duration = 1800.0, axis = "ts", offers = listOf(PlayOffer("h264", "stream"), PlayOffer("mpeg2", "raw")), auto = PlayAuto("raw", "mpeg2"))
+        assertFalse(Chase.handOff(finished, ts))
     }
 }

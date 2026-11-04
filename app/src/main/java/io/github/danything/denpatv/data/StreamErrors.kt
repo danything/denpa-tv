@@ -119,6 +119,12 @@ fun playbackMessage(errorCode: Int, codeName: String, httpStatus: Int?, contentT
 const val EMPTY_STREAM_MESSAGE =
     "denpa が映像を送らずに閉じました (チューナーの空きが無い・放送休止・変換できなかったなど)。少し待つか、局か画質を替えてください"
 
+/**
+ * 再生できる形式が1つも無い。denpa が `playable` の中から選べなかった (406。denpa の docs/api.md「形式をサーバに選ばせる `codec=auto`」) か、
+ * 端末の側で再生できなかったものを外していって `playable` が空になった
+ */
+const val NO_PLAYABLE_MESSAGE = "再生できる形式がありません"
+
 /** denpa が「その場で変換する本数の枠が埋まっている」と断ったときの言い分 (503 の `message`。denpa の docs/api.md「その場で変換する本数」) */
 const val BUSY_MESSAGE = "サーバが混んでいます"
 
@@ -146,11 +152,11 @@ class BusyLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
 }
 
 /**
- * 画面に出すエラー。混んでいて断られた (`BUSY_MESSAGE`) なら、変換の要らない MPEG-2 を勧める — いま変換をリクエストしていて (MPEG-2 でない)、
+ * 画面に出すエラー。混んでいて断られた (`BUSY_MESSAGE`) なら、変換の要らない MPEG-2 を勧める。MPEG-2 を選んでいなくて (`choice`。自動も)、
  * この端末が MPEG-2 をハードでデコードできる (`LiveQuality.available` に入る) ときだけ。ほかはそのまま
  */
-fun withBusyAdvice(error: String?, quality: LiveQuality, decoders: Decoders): String? =
-    if (error == BUSY_MESSAGE && quality != LiveQuality.Raw && LiveQuality.Raw in LiveQuality.available(decoders)) {
+fun withBusyAdvice(error: String?, choice: LiveQuality?, decoders: Decoders): String? =
+    if (error == BUSY_MESSAGE && choice != LiveQuality.Raw && LiveQuality.Raw in LiveQuality.available(decoders)) {
         "$BUSY_MESSAGE。画質を MPEG-2 にしてください"
     } else {
         error

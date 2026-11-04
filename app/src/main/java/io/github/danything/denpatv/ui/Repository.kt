@@ -108,7 +108,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
         val health = api.health(base) ?: return
         denpaVersion = health.version
         denpaWarning = denpaTooOld(health.version)?.also { Log.w(TAG, it) }
-        // 観るときの決まりも聞き直す (世帯の設定の「家の中の名前」・メニューから外すものを変えたかもしれない)。届かなければ前のまま
+        // 観るときの決まりも聞き直す (メニューから外すものを変えたかもしれない)。届かなければ前のまま
         try {
             api.playbackOptions(base)?.let { optionsKnown = it }
         } catch (_: Unauthorized) {
@@ -121,7 +121,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     private var optionsKnown: PlaybackOptions? = null
 
     /**
-     * **観るときの決まり** (家の中か: 「自動」の順 `AutoOrder`、画質のメニューから外すもの)。控えが無ければ聞く。届かない・打ち切った (`DenpaApi.playbackOptions` は 2.5 秒で打ち切る) ときは
+     * **観るときの決まり** (画質のメニューから外すもの)。控えが無ければ聞く。届かない・打ち切った (`DenpaApi.playbackOptions` は 2.5 秒で打ち切る) ときは
      * `PlaybackOptions.FALLBACK` (控えないので、次に聞き直す)。アクセストークンが取り消されていれば `Unauthorized`
      */
     suspend fun playbackOptions(): PlaybackOptions =

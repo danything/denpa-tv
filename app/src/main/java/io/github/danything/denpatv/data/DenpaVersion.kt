@@ -22,10 +22,10 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 }
 
 /**
- * このアプリが要る denpa の版 (docs/pairing.md の「要る denpa の版」)。いちばん新しく頼るようになった denpa の動きに合わせる:
- * 番組が替わって映像・音声・字幕の並び (PMT) が変わったら、ライブを閉じて作り直させる (denpa #795) のが 1.59.0 から
+ * このアプリが要る denpa のバージョン (docs/pairing.md の「要る denpa のバージョン」)。いちばん新しく頼るようになった denpa の動きに合わせる:
+ * どの形式で流すかを denpa に選ばせる (`codec=auto`・`playback?playable=` の `auto`。denpa #2115) のが 2.29.0 から
  */
-val MIN_DENPA = DenpaVersion(1, 59, 0)
+val MIN_DENPA = DenpaVersion(2, 29, 0)
 
 /**
  * 実況を流すのに要る denpa の版。元の TS のライブの字幕のストリームが時計 (`clock`) を送り、録画の観方が `ruler` を返し、

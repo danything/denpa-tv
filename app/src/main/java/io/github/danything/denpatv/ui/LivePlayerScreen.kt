@@ -33,7 +33,10 @@ import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.LiveSelection
+import io.github.danything.denpatv.data.NO_PLAYABLE_MESSAGE
+import io.github.danything.denpatv.data.Playable
 import io.github.danything.denpatv.data.PlaybackOptions
+import io.github.danything.denpatv.data.codecQuery
 import io.github.danything.denpatv.data.NowProgram
 import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.RecordResult
@@ -71,7 +74,7 @@ import kotlinx.coroutines.launch
  *   (地上波 / BS / CS / SKY ごとの列。ブラウザのタブにあたる) が覗く。下キーで局の列に入り、左右で選んで決定で替える。
  *   **上で開くと、はじめから局の列のいま映している局にフォーカスがある** (一覧から局を選ぶ近道)。
  *   **操作の列 (いちばん上) でもう一度上を押すと閉じて映像に戻る** (`UpToClose`)。
- *   画質は選んだらすぐリクエストし直してこの端末で覚える (既定は端末がハードで MPEG-2 をデコードできれば元の TS)。映るまでは前の映像のまま
+ *   画質は選んだらすぐリクエストし直してこの端末で覚える (既定は「自動」で、denpa が選ぶ。`codec=auto`)。映るまでは前の映像のまま
  *   「AV1 に切り替え中」、映ったら「AV1 にしました」。映せなければ元の画質に戻して理由を出す (`rememberCodecSwitching`)。**戻るで閉じる** (もう一度でメニューの画面へ)。
  *   8 秒触らなければ閉じる
  * - **録画** はいま観ている番組を denpa に予約する (ブラウザのライブの録画ボタンと同じ。何度押しても二重には録らない)
@@ -90,8 +93,10 @@ import kotlinx.coroutines.launch
 @Composable
 fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
     val selection = rememberLiveSelection(repo) ?: return
-    val quality = selection.format
-    val buffering = quality.buffering
+    /** 選んでいる画質。null は「自動」(denpa に選ばせる。`codecQuery`) */
+    val quality = selection.choice
+    /** denpa に伝える、再生できる形式。端末の側で再生できなかったものは、この画面を開いている間だけ外す */
+    var playable by remember { mutableStateOf(Playable.of(repo.app.decoders)) }
 
     var services by remember { mutableStateOf(repo.services) }
     /**
@@ -165,15 +170,25 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
      * リクエストし直すのは裏から戻ったときと同じ経路 (`returns`)。再リクエストが映らずに終わったのが取り上げられたあと・「ライブに戻る」なら、
      * リクエストし直さずに譲った録画の追っかけへ。追っかけを観ている間は、切れたら追っかけをリクエストし直す (ストリームが終わったときは、録り終えたのかを聞いてから。下)
      */
-    val (player, error, dualMono, recovery) = rememberPlayer(
+    // `streamed` は流れている形式 (応答ヘッダ `X-Denpa-Codec`)。溜め方はプレーヤーがこれで替える
+    val (player, error, dualMono, recovery, streamed) = rememberPlayer(
         repo,
-        buffering,
+        Buffering.Live,
         onUnauthorized,
         clock,
         if (chasing != null) {
             ReconnectPlan("live 局 ${playing?.id} の代わりの追っかけ 録画 ${chasing.recording.id}", stream = true) { chaseLoads++ }
         } else {
             ReconnectPlan("live 局 ${playing?.id}", stream = true, endedIsLost = true) { if (!giveWay()) returns++ }
+        },
+        // 自動で denpa が選んだものを端末で再生できなければ、外してリクエストし直す (選んだ画質は `rememberCodecSwitching` が元に戻す)
+        unplayable = { _, failed ->
+            if (quality != null) {
+                false
+            } else {
+                playable = playable.without(failed)
+                true
+            }
         },
     )
     val flasher = rememberFlash()
@@ -200,10 +215,11 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         // 裏に回っている間は字幕のストリームも閉じる。追っかけを観ている間は録画の字幕 (映像と同じく、録れているところの少し手前から)
         path = when {
             background -> null
-            chasing != null -> CaptionPaths.recording(chasing.recording.id).takeIf { quality == LiveQuality.Raw }
-            quality == LiveQuality.Raw -> playing?.let { CaptionPaths.live(it.live) }
-            // 変換したライブの字幕と時計は、映像と同じ形式・音声を渡すと同じストリームのものが fMP4 の時刻で来る (新しい denpa だけ)
-            jikkyoSupported(repo.denpaVersion) -> playing?.let { CaptionPaths.live(it.live) }?.let { "$it?codec=${quality.codec}${audioQuery(baked.audio)}" }
+            chasing != null -> CaptionPaths.recording(chasing.recording.id).takeIf { streamed == LiveQuality.Raw }
+            streamed == LiveQuality.Raw -> playing?.let { CaptionPaths.live(it.live) }
+            // 変換したライブの字幕と時計は、映像と同じ形式 (denpa が選んだもの)・音声を渡すと同じストリームのものが fMP4 の時刻で来る。
+            // denpa の字幕のエンドポイントは H.265 を受けない (`codec` は raw・h264・av1。ほかは 400) ので、H.265 では字幕と時計を取らない
+            streamed != null && streamed != LiveQuality.Hevc && jikkyoSupported(repo.denpaVersion) -> playing?.let { CaptionPaths.live(it.live) }?.let { "$it?codec=${streamed.codec}${audioQuery(baked.audio)}" }
             else -> null
         },
         generation = chasing?.let { "chase ${it.recording.id} $chaseLoads" } ?: playing?.id,
@@ -219,7 +235,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         flash,
         captions,
         dualMono,
-        denpaAudios = playing?.takeIf { quality == LiveQuality.Raw && chasing == null }?.now?.audios.orEmpty(),
+        denpaAudios = playing?.takeIf { streamed == LiveQuality.Raw && chasing == null }?.now?.audios.orEmpty(),
     )
     /*
      * 実況のコメント。**いま映しているコマの放送時刻 W** は、字幕のストリームの時計 (`clock` の通知) と、いま映しているコマの時刻から出す
@@ -244,8 +260,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
      */
     val rankingOn = household && jikkyo.on && jikkyoSupported(repo.denpaVersion)
     val ranking = rememberJikkyoRanking(repo, rankingOn, JikkyoRanking.candidates(services).map { it.id }, onUnauthorized)
-    CatchUp(player, buffering)
-    val codec = rememberCodecSwitching(player, selection, error, flash, store = { repo.app.settings.setLiveQuality(it) })
+    CatchUp(player, streamed.buffering)
+    val codec = rememberCodecSwitching(player, selection, streamed, error, flash, store = { repo.app.settings.setLiveQuality(it) })
 
     LaunchedEffect(Unit) {
         if (services.isEmpty() || repo.servicesStale) {
@@ -266,27 +282,29 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
      * 画質だけを替えたときも出さない (切り替え中・切り替えたは `codec` が言う)
      */
     var shown by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(playing?.id, quality, baked.ready, baked.audio?.id, returns, codec.chosen, chasing?.recording?.id, chaseLoads) {
+    LaunchedEffect(playing?.id, quality, playable, baked.ready, baked.audio?.id, returns, codec.chosen, chasing?.recording?.id, chaseLoads) {
         val service = playing ?: return@LaunchedEffect
         if (background) return@LaunchedEffect
         // 選んだ画質が覚えている画質に届くまではリクエストしない (届いたらリクエストする。選び直しが1フレームにまとまって画質が変わらなくても、ここでリクエストし直す)
         if (codec.chosen != quality) return@LaunchedEffect
+        // 端末の側で再生できなかったものを外していって、再生できるものが無くなった (「再生できる形式がありません」を出す)
+        if (quality == null && playable.empty) return@LaunchedEffect player.stop()
         // 録画に譲っている間は、その追っかけ (録れているところの少し手前から。音声は denpa が主音声をエンコードする)
         if (chasing != null) {
-            val url = repo.url(YieldPlan.chaseUrl(chasing.recording.id, quality.codec)) ?: return@LaunchedEffect
+            val url = repo.url(YieldPlan.chaseUrl(chasing.recording.id, codecQuery(quality, playable))) ?: return@LaunchedEffect
             trying = false
             recovery.requested()
-            player.load(url, quality.mime)
+            player.load(url, quality?.mime)
             // 画質はメニューで替えられる (変換の枠が埋まって断られたら MPEG-2 へ)。替えたら、映ったかを見る
             codec.requested(quality)
             return@LaunchedEffect
         }
         if (!baked.ready) return@LaunchedEffect
-        val url = repo.url("${service.live}?codec=${quality.codec}${audioQuery(baked.audio)}") ?: return@LaunchedEffect
+        val url = repo.url("${service.live}?${codecQuery(quality, playable)}${audioQuery(baked.audio)}") ?: return@LaunchedEffect
         // 取り上げられたあと・「ライブに戻る」の再リクエスト。映らずに終わったら追っかけへ (`rememberPlayer` に渡した決まり)
         trying = returning || kicked?.serviceId == service.id
         recovery.requested()
-        player.load(url, quality.mime)
+        player.load(url, quality?.mime)
         codec.requested(quality)
         if (shown == service.id) return@LaunchedEffect
         shown = service.id
@@ -568,7 +586,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
          */
         (overlay ?: chasing?.let(::yieldNotice)).takeUnless { detail },
         // 譲った録画の追っかけは変換の枠を使う。埋まって断られたら MPEG-2 を勧める (ライブそのものは断られない)
-        withBusyAdvice(error, quality, repo.app.decoders),
+        if (quality == null && playable.empty) NO_PLAYABLE_MESSAGE else withBusyAdvice(error, quality, repo.app.decoders),
         active = menu == null && !detail && !leaving,
         // `::run` (関数の参照) にしない。Compose が参照を覚えたままにして、前の局から送ってしまう
         onKey = { event ->
@@ -625,7 +643,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 describe(current, codec.label),
                 groups = listOf(
                     qualities,
-                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + baked.controls(),
+                    // 元の TS が流れているときは、音声は端末で選ぶ (`tracks`)。denpa にリクエストする音声のボタンは出さない
+                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + baked.controls().takeIf { streamed != LiveQuality.Raw }.orEmpty(),
                     "" to listOf(recordControl(now) { record(fromDetail = false) }),
                 ),
                 // 上で開いたときは、操作の列ではなく局の列のいま映している局にフォーカスする (下の LaunchedEffect)
@@ -723,8 +742,8 @@ private const val MENU_IDLE_MS = 8_000L
 
 /**
  * **ライブの画質の選択** (画質のメニュー)。選んだものは端末に覚え (`Settings.liveQuality`)、家の中でも外でもそのまま。
- * 選んでいない・この端末で選べない・メニューから外した H.264 なら「自動」(`LiveQuality.read`)。自動で決まった画質は覚えない (ブラウザと同じ)。
- * 読み終えるまでは null。観るときの決まり (家の中か・外すもの) は開いたときに1度だけ見る (開いている間に変わっても、映しているものを替えない)
+ * 選んでいない・この端末で選べない・メニューから外した H.264 なら「自動」(`LiveQuality.read`)。自動で denpa が選んだ形式は覚えない (ブラウザと同じ)。
+ * 読み終えるまでは null。観るときの決まり (メニューから外すもの) は開いたときに1度だけ見る (開いている間に変わっても、映しているものを替えない)
  */
 @Composable
 fun rememberLiveSelection(repo: Repository): LiveSelection? {
@@ -758,7 +777,7 @@ private fun rememberPlaybackOptions(repo: Repository): PlaybackOptions? {
 }
 
 private fun selectionOf(choice: LiveQuality?, repo: Repository, options: PlaybackOptions) =
-    LiveSelection.of(choice, repo.app.decoders, options.indoor, options.hideH264)
+    LiveSelection.of(choice, repo.app.decoders, options.hideH264)
 
 private const val LOADING_QUALITY = "\u0000loading"
 

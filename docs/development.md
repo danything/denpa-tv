@@ -7,7 +7,7 @@
   API 24・28・31・34・36 の Android TV のエミュレータに `scripts/smoke-run.sh` で入れて走らせる)。
   端末が何台も繋がっているときは `ANDROID_SERIAL` で1台に絞る
 - 使っているライブラリと選んだ理由は [libraries.md](libraries.md)、リリースの出し方 (署名の鍵) は [release.md](release.md)
-- 要る denpa の版を上げるときは、[README](../README.md#denpa-に繋ぐ)・[pairing.md](pairing.md#要る-denpa-の版) と `MIN_DENPA` (`data/DenpaVersion.kt`) をいっしょに直す。
+- 要る denpa のバージョンを上げるときは、[README](../README.md#denpa-に繋ぐ)・[pairing.md](pairing.md#要る-denpa-のバージョン) と `MIN_DENPA` (`data/DenpaVersion.kt`) をいっしょに直す。
   古い denpa に合わせた作りは持たない
 
 ## スクリーンショット

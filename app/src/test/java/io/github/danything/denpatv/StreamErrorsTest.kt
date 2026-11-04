@@ -131,13 +131,14 @@ class StreamErrorsTest {
         assertFalse(isBusyAnswer(null, busy))
     }
 
-    /** 混んでいたら、変換をリクエストしていて MPEG-2 をハードでデコードできるときだけ MPEG-2 を勧める */
+    /** 混んでいたら、MPEG-2 を選んでいなくて (自動も) MPEG-2 をハードでデコードできるときだけ MPEG-2 を勧める */
     @Test
     fun 混んでいたら_MPEG_2_を勧める() {
         val tv = Decoders(av1 = true, h264 = true, mpeg2 = true, av1Hardware = true, mpeg2Hardware = true)
         val noMpeg2 = Decoders(av1 = false, h264 = true, mpeg2 = true, mpeg2Hardware = false)
         assertEquals("サーバが混んでいます。画質を MPEG-2 にしてください", withBusyAdvice(BUSY_MESSAGE, LiveQuality.H264, tv))
         assertEquals("サーバが混んでいます。画質を MPEG-2 にしてください", withBusyAdvice(BUSY_MESSAGE, LiveQuality.Av1, tv))
+        assertEquals("サーバが混んでいます。画質を MPEG-2 にしてください", withBusyAdvice(BUSY_MESSAGE, null, tv))
         // MPEG-2 をハードでデコードできない・もう MPEG-2 なら勧めない
         assertEquals(BUSY_MESSAGE, withBusyAdvice(BUSY_MESSAGE, LiveQuality.H264, noMpeg2))
         assertEquals(BUSY_MESSAGE, withBusyAdvice(BUSY_MESSAGE, LiveQuality.Raw, tv))
