@@ -2,6 +2,7 @@ package io.github.danything.denpatv
 
 import androidx.media3.common.PlaybackException
 import io.github.danything.denpatv.data.ChaseEnd
+import io.github.danything.denpatv.data.FirstFrameWatch
 import io.github.danything.denpatv.data.Reconnect
 import io.github.danything.denpatv.data.Reconnect.Verdict
 import io.github.danything.denpatv.data.StallWatch
@@ -57,6 +58,39 @@ class ReconnectTest {
         // ファイルが無い・平文が許されていない
         assertEquals(Verdict.GiveUp, Reconnect.verdict(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND, null))
         assertEquals(Verdict.GiveUp, Reconnect.verdict(PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED, null))
+    }
+
+    /** 溜まりはじめてから 15 秒たっても最初のフレームが出なければ、端末で再生できないとみなす (リクエストごとに1度だけ) */
+    @Test
+    fun 溜まってから最初のフレームが来なければ形式を外す() {
+        val watch = FirstFrameWatch()
+        // 届いて 1 秒ぶん溜まったときから数える
+        assertFalse(watch.check(0, request = 1, watching = true, bufferedAheadMs = 1_000))
+        assertFalse(watch.check(14_999, request = 1, watching = true, bufferedAheadMs = 8_000))
+        assertTrue(watch.check(15_000, request = 1, watching = true, bufferedAheadMs = 8_000))
+        // 同じリクエストでは2度言わない。リクエストし直したら数え直す
+        assertFalse(watch.check(40_000, request = 1, watching = true, bufferedAheadMs = 8_000))
+        assertFalse(watch.check(40_000, request = 2, watching = true, bufferedAheadMs = 8_000))
+        assertTrue(watch.check(55_000, request = 2, watching = true, bufferedAheadMs = 8_000))
+    }
+
+    /** 回線が遅くて溜まらない間・見張らない間 (止めている・繋ぎ直しの最中) は数えない */
+    @Test
+    fun 回線が遅いだけなら形式を外さない() {
+        val slow = FirstFrameWatch()
+        for (at in 0L..60_000L step 1_000) assertFalse(slow.check(at, request = 1, watching = true, bufferedAheadMs = 500))
+        // 60 秒かけてやっと溜まった: そこから数える
+        assertFalse(slow.check(61_000, request = 1, watching = true, bufferedAheadMs = 1_000))
+        assertFalse(slow.check(75_000, request = 1, watching = true, bufferedAheadMs = 2_000))
+        assertTrue(slow.check(76_000, request = 1, watching = true, bufferedAheadMs = 2_000))
+
+        val paused = FirstFrameWatch()
+        assertFalse(paused.check(0, request = 1, watching = true, bufferedAheadMs = 5_000))
+        assertFalse(paused.check(10_000, request = 1, watching = false, bufferedAheadMs = 5_000))
+        // 見張りに戻ったら、そこから数え直す
+        assertFalse(paused.check(20_000, request = 1, watching = true, bufferedAheadMs = 5_000))
+        assertFalse(paused.check(34_000, request = 1, watching = true, bufferedAheadMs = 5_000))
+        assertTrue(paused.check(35_000, request = 1, watching = true, bufferedAheadMs = 5_000))
     }
 
     /** 端末の側で再生できないもの (自動ならその形式を外してリクエストし直す)。デコードの途中の失敗と denpa の側の失敗は入れない */

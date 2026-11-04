@@ -87,6 +87,7 @@ import io.github.danything.denpatv.data.NO_PLAYABLE_MESSAGE
 import io.github.danything.denpatv.data.EmptyGuardDataSource
 import io.github.danything.denpatv.data.EmptyStreamException
 import io.github.danything.denpatv.data.EngineHttp
+import io.github.danything.denpatv.data.FirstFrameWatch
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.Http
@@ -582,7 +583,7 @@ data class PlayerHandle(
  * プレーヤーは作り直さない。
  *
  * `unplayable` を渡すと、**端末の側で再生できなかった形式**を知らせる: デコーダを作れない・形式に対応していない
- * (`Reconnect.deviceCannotPlay`) か、応答が届いてから `FIRST_FRAME_MS` たっても最初のフレームが出ないとき。形式は `codec` (`fixedCodec` を渡せばそれ)。
+ * (`Reconnect.deviceCannotPlay`) か、データが溜まりはじめてから 15 秒たっても最初のフレームが出ないとき (`FirstFrameWatch`)。形式は `codec` (`fixedCodec` を渡せばそれ)。
  * 呼ぶ側がその形式を外してリクエストし直すなら true を返す (繋ぎ直しもエラーもしない)。false ならいつもどおり
  */
 @OptIn(UnstableApi::class)
@@ -684,19 +685,20 @@ fun rememberPlayer(
     }
     // 止まったかの見張りと、最初のフレームが来ない形式の見張り
     LaunchedEffect(recovery) {
-        /** 最初のフレームが来ないと知らせたリクエスト (リクエストごとに1度だけ) */
-        var blamed = -1L
+        val firstFrame = FirstFrameWatch()
         while (true) {
             delay(1_000)
             recovery.watch()
-            if (unplaying == null || recovery.pictured || recovery.active || !recovery.started || !player.playWhenReady) continue
-            if (player.playbackState != Player.STATE_BUFFERING && player.playbackState != Player.STATE_READY) continue
             val asked = recovery.requestedAt
-            // 応答が届いたとき (ストリームの形式が分かったとき) から数える。形式を決めて開くもの (録画) はリクエストしたときから
-            val since = if (fixed != null) asked else seen.at.takeIf { it >= asked } ?: continue
-            if (blamed == asked || SystemClock.uptimeMillis() - since < FIRST_FRAME_MS) continue
-            blamed = asked
-            cannotPlay("最初のフレームが ${FIRST_FRAME_MS / 1000} 秒来ない")
+            // 形式は、決めて開くもの (録画) はそれ、denpa が選ぶものはこのリクエストの応答ヘッダで分かったもの
+            val known = fixed != null || (seen.codec != null && seen.at >= asked)
+            val watching = unplaying != null && known && !recovery.pictured && !recovery.active && recovery.started && player.playWhenReady &&
+                (player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY)
+            // 溜まりはじめてから数える (回線が遅いだけなら溜まらないので、形式を外さない)
+            val ahead = player.bufferedPosition - player.currentPosition
+            if (firstFrame.check(SystemClock.uptimeMillis(), asked, watching, ahead)) {
+                cannotPlay("溜まってから最初のフレームが ${FirstFrameWatch.FIRST_FRAME_MS / 1000} 秒来ない")
+            }
         }
     }
     // 裏に回っている間は繋ぎ直さない
@@ -724,12 +726,6 @@ private class SeenCodec {
     @Volatile
     var at = 0L
 }
-
-/**
- * 応答が届いてから最初のフレームが出るまで待つ上限 (ミリ秒)。過ぎたら、その形式は端末の側で再生できないとみなす (`rememberPlayer` の `unplayable`)。
- * denpa がエンコーダを温める間 (8 秒) と、溜め終えるまでの間より長く
- */
-const val FIRST_FRAME_MS = 15_000L
 
 /** 再生のエラーの頭 (画質の切り替えに失敗したときは外して理由だけ出す) */
 const val PLAYBACK_ERROR_PREFIX = "再生できません: "

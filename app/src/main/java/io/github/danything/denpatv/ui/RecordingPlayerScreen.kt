@@ -93,6 +93,11 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
     var lookup by remember { mutableStateOf<PlaybackLookup?>(null) }
     /** denpa に伝える、再生できる形式。端末の側で再生できなかったものは外す (この画面を開いている間だけ) */
     var playable by remember { mutableStateOf(Playable.of(repo.app.decoders)) }
+    /**
+     * 続きの位置 (録画の時刻)。初めは denpa の `resumeMs`。形式を外して聞き直したら、外す前に観ていた位置にする
+     * (作り直した画面が `resumeMs` まで戻らないように)
+     */
+    var resumeMs by remember { mutableStateOf(recording.resumeMs) }
     LaunchedEffect(recording.id, playable) {
         lookup = null
         lookup = try {
@@ -113,7 +118,10 @@ fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () ->
             if (choice == null) {
                 Centered(NO_PLAYABLE_MESSAGE)
             } else {
-                RecordingPlayback(repo, recording, found.info, choice, onLeave, onUnauthorized) { failed -> playable = playable.without(failed) }
+                RecordingPlayback(repo, recording.copy(resumeMs = resumeMs), found.info, choice, onLeave, onUnauthorized) { failed, atMs ->
+                    resumeMs = atMs
+                    playable = playable.without(failed)
+                }
             }
         }
     }
@@ -205,8 +213,8 @@ private fun RecordingPlayback(
     choice: PlayChoice,
     onLeave: () -> Unit,
     onUnauthorized: () -> Unit,
-    /** 端末の側で再生できなかった (デコーダを作れない・最初のフレームが来ない)。その形式を外して聞き直す */
-    onUnplayable: (LiveQuality) -> Unit,
+    /** 端末の側で再生できなかった (デコーダを作れない・最初のフレームが来ない)。その形式と、いまの位置 (録画の時刻) を渡す。呼ぶ側は形式を外して聞き直す */
+    onUnplayable: (LiveQuality, Long) -> Unit,
 ) {
     val stream = choice as? PlayChoice.Stream
     /** 元の TS を流してもらう (字幕は字幕のエンドポイントから、音声は全部入っているので端末で選ぶ) */
@@ -236,7 +244,7 @@ private fun RecordingPlayback(
             }
         },
         unplayable = { _, failed ->
-            onUnplayable(failed)
+            onUnplayable(failed, timeline.position())
             true
         },
         fixedCodec = choice.quality,

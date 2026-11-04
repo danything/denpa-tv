@@ -135,6 +135,50 @@ object Reconnect {
 }
 
 /**
+ * **最初のフレームが来ない形式の見張り** (`rememberPlayer` の `unplayable`)。端末の側で再生できないのか、回線が遅いだけなのかを読み分けるため、
+ * **データが届いて溜まりはじめてから** (`bufferedAheadMs` が `arrivedMs` 以上になってから) 数える。回線が遅くて溜まらない間は数えない。
+ * 溜まっているのに `limitMs` たっても最初のフレームが出なければ、デコードできないとみなして true を返す (リクエストごとに1度だけ)。
+ *
+ * - `request` … いまのリクエストの印 (`Recovery.requestedAt`)。替わったら数え直す
+ * - `watching` … 見張るか (動かしている・まだ映していない・繋ぎ直しを待っていない・前に出ている)。見張らない間は数えない
+ *
+ * 時刻は呼ぶ側が渡す (`SystemClock.uptimeMillis`。テストでは好きに進める)
+ */
+class FirstFrameWatch(private val limitMs: Long = FIRST_FRAME_MS, private val arrivedMs: Long = FIRST_DATA_MS) {
+    private var request: Long? = null
+    private var since: Long? = null
+    private var blamed = false
+
+    fun check(now: Long, request: Long, watching: Boolean, bufferedAheadMs: Long): Boolean {
+        if (request != this.request) {
+            this.request = request
+            since = null
+            blamed = false
+        }
+        if (!watching || blamed) {
+            since = null
+            return false
+        }
+        if (bufferedAheadMs < arrivedMs) return false
+        val start = since ?: now.also { since = it }
+        if (now - start < limitMs) return false
+        blamed = true
+        return true
+    }
+
+    companion object {
+        /**
+         * データが溜まりはじめてから最初のフレームが出るまで待つ上限 (ミリ秒)。過ぎたら、その形式は端末の側で再生できないとみなす。
+         * denpa がエンコーダを温める間 (8 秒) より長く
+         */
+        const val FIRST_FRAME_MS = 15_000L
+
+        /** 届いたとみなす溜まりの長さ (ミリ秒)。どの溜め方でも動き出すのに足りる量 (MPEG-2 は 0.25 秒、ほかは 1 秒で動き出す) */
+        const val FIRST_DATA_MS = 1_000L
+    }
+}
+
+/**
  * **止まったかの見張り。** 映していて (`watching`) 位置も溜まりも `limitMs` 動かなければ、止まっていた長さを返す
  * (返したら数え直す)。動いていれば、見張っていなければ (止めている・まだ映していない・繋ぎ直しの最中) 数え直す。
  * 時刻は呼ぶ側が渡す (`SystemClock.uptimeMillis`。テストでは好きに進める)
