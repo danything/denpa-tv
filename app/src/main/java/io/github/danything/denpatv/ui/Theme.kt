@@ -1,5 +1,6 @@
 package io.github.danything.denpatv.ui
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -105,6 +106,15 @@ private val Colors = darkColorScheme(
     borderVariant = Palette.Line,
     error = Palette.Recording,
 )
+
+/**
+ * 動きの時間と曲線。**ブラウザの denpa と同じ値** (src/app.css の `--dp-duration-move`・`--dp-ease`。使い分けは denpa の docs/design.md の「動き」)。
+ * `MOVE_MS` は場所や大きさが動くとき (番組表の過ぎた所の覆いが伸びる)、`Ease` は終わりをゆっくりにするふつうの曲線
+ */
+object Motion {
+    const val MOVE_MS = 300
+    val Ease = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+}
 
 /**
  * 字の大きさ。**離れて (2〜3 m) 読むので、tv-material の既定より小さいほうの段を上げる** (操作バーのタイトル 14→16sp・2行目 12→14sp、

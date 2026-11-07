@@ -3,10 +3,13 @@ package io.github.danything.denpatv.ui
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,7 +65,12 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -194,14 +203,28 @@ private fun GuideBody(
     var serviceId by remember { mutableStateOf(start.serviceId) }
     var programId by remember { mutableStateOf(start.programId) }
     var anchor by remember { mutableLongStateOf(start.anchor.coerceIn(origin, end - 1)) }
-    /** 表を基準の時刻に合わせて送り直す (開いたとき・上の段で日付や時刻を選んだとき・早送り)。増やすと送る */
-    var jump by remember { mutableIntStateOf(1) }
+    /** 表を基準の時刻に合わせて送り直す (開いたとき・上の段で種別・日付・時刻を選んだとき・早送り)。新しいものを入れると送る */
+    var jump by remember { mutableStateOf(GuideJump(NOW_ALIGN)) }
     /** いまの時刻。分の変わり目に合わせて進める (時刻の列のカプセルは分を書くので、時計の分とずらさない。ブラウザの番組表と同じ) */
     val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(MINUTE_MS - System.currentTimeMillis() % MINUTE_MS)
             now.longValue = System.currentTimeMillis()
+        }
+    }
+    /**
+     * 過ぎた所を暗くする位置の時刻。いまの時刻が進んだら、前の時刻から `Motion.MOVE_MS` かけて送る
+     * (ブラウザの番組表の `.program` の `background-size` の transition と同じ時間と曲線。覆いがマスごとに伸びる)
+     */
+    val shade = remember { mutableLongStateOf(now.longValue) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { now.longValue }.collectLatest { to ->
+            val from = shade.longValue
+            if (from == to) return@collectLatest
+            animate(0f, 1f, animationSpec = tween(Motion.MOVE_MS, easing = Motion.Ease)) { progress, _ ->
+                shade.longValue = from + ((to - from) * progress).toLong()
+            }
         }
     }
     val columns by remember { derivedStateOf { store.columns(type) } }
@@ -341,18 +364,18 @@ private fun GuideBody(
                     type = it
                     serviceId = repo.services.firstOrNull { s -> s.type == it && s.id == serviceId }?.id
                     programId = null
-                    jump++
+                    jump = GuideJump(null)
                 }
             },
             onDay = { target ->
                 anchor = (target + (anchor - day)).coerceIn(origin, end - 1)
                 programId = null
-                jump++
+                jump = GuideJump(null)
             },
-            onTime = { at ->
+            onTime = { at, align ->
                 anchor = at.coerceIn(origin, end - 1)
                 programId = null
-                jump++
+                jump = GuideJump(align)
             },
             now = { now.longValue },
         )
@@ -381,6 +404,7 @@ private fun GuideBody(
                 origin = origin,
                 end = end,
                 now = now,
+                shade = shade,
                 modifier = Modifier
                     .focusRequester(grid)
                     .onFocusChanged { gridFocused = it.isFocused }
@@ -403,8 +427,8 @@ private fun GuideBody(
                             KeyEvent.KEYCODE_DPAD_RIGHT -> go(moves.right(spot))
                             KeyEvent.KEYCODE_CHANNEL_UP -> go(moves.page(spot, PAGE_COLUMNS))
                             KeyEvent.KEYCODE_CHANNEL_DOWN -> go(moves.page(spot, -PAGE_COLUMNS))
-                            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { jump++; go(moves.shift(spot, SHIFT_MS)) }
-                            KeyEvent.KEYCODE_MEDIA_REWIND -> { jump++; go(moves.shift(spot, -SHIFT_MS)) }
+                            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { jump = GuideJump(null); go(moves.shift(spot, SHIFT_MS)) }
+                            KeyEvent.KEYCODE_MEDIA_REWIND -> { jump = GuideJump(null); go(moves.shift(spot, -SHIFT_MS)) }
                             KeyEvent.KEYCODE_MEDIA_RECORD -> {
                                 if (native.repeatCount == 0) recordKey()
                                 true
@@ -526,7 +550,8 @@ private fun TopBar(
     down: FocusRequester,
     onType: (String) -> Unit,
     onDay: (Long) -> Unit,
-    onTime: (Long) -> Unit,
+    /** 時刻 (`at`) へ表を送る。`align` はその時刻を表の上から高さのどの割合に置くか */
+    onTime: (at: Long, align: Float) -> Unit,
     now: () -> Long,
 ) {
     val days = remember(origin) { (0 until DAYS).map { dayHour(origin, 4 + 24 * it) } }
@@ -548,9 +573,10 @@ private fun TopBar(
                 }
             }
             item(key = "gap2") { Spacer(Modifier.width(4.dp)) }
-            item(key = "now") { Chip("今", selected = false, onClick = { onTime(now()) }) }
+            // 「今」は開いたときと同じ高さ (上から 4 分の 1)、朝・昼・夜・深夜はその時を表の上の端 (局の見出しのすぐ下) に置く (ブラウザの番組表と同じ)
+            item(key = "now") { Chip("今", selected = false, onClick = { onTime(now(), NOW_ALIGN) }) }
             JUMPS.forEach { (label, hour) ->
-                item(key = "jump:$label") { Chip(label, selected = false, onClick = { onTime(dayHour(day, hour)) }) }
+                item(key = "jump:$label") { Chip(label, selected = false, onClick = { onTime(dayHour(day, hour), 0f) }) }
             }
         }
         if (offline) {
@@ -609,10 +635,12 @@ private fun GuideGrid(
     focused: GuideProgram?,
     focusedSpot: State<GuideFocus?>,
     anchor: Long,
-    jump: Int,
+    jump: GuideJump,
     origin: Long,
     end: Long,
     now: State<Long>,
+    /** 過ぎた所を暗くする位置の時刻 (いまの時刻を滑らかに追う) */
+    shade: State<Long>,
     modifier: Modifier,
 ) {
     val density = LocalDensity.current
@@ -625,7 +653,9 @@ private fun GuideGrid(
     val scrollX = remember { Animatable(0f) }
     val scrollY = remember { Animatable((anchor - origin) * pxPerMs) }
     var firstColumn by remember { mutableIntStateOf(0) }
-    val lastJump = remember { IntArray(1) }
+    val lastJump = remember { arrayOfNulls<GuideJump>(1) }
+    /** 前に送ったときの基準の時刻の位置 (表の中の px)。`GuideJump.align` が null のとき、画面の上での位置をこれと変えない */
+    val lastAnchorY = remember { FloatArray(1) }
     val placed = remember { BooleanArray(1) }
     LaunchedEffect(column, focused?.id, focused?.startAt, anchor, jump, viewport, columns.size) {
         if (viewport.height == 0 || viewport.width == 0) return@LaunchedEffect
@@ -638,9 +668,13 @@ private fun GuideGrid(
         val h = viewport.height.toFloat()
         val y0 = scrollY.targetValue
         val anchorY = (anchor - origin) * pxPerMs
-        val target = if (jump != lastJump[0] || focused == null) {
-            lastJump[0] = jump
-            anchorY - h * ALIGN
+        val fresh = jump !== lastJump[0]
+        lastJump[0] = jump
+        val keepFrom = lastAnchorY[0]
+        lastAnchorY[0] = anchorY
+        val target = if (fresh || focused == null) {
+            val align = if (fresh) jump.align else null
+            if (align != null) anchorY - h * align else y0 + anchorY - keepFrom
         } else {
             val top = (focused.startAt - origin) * pxPerMs
             val bottom = (focused.endAt - origin) * pxPerMs
@@ -653,7 +687,7 @@ private fun GuideGrid(
             } else {
                 // 画面より長い番組: 基準の時刻が見えるように。番組の外までは送らない
                 val inView = anchorY in (y0 + pad)..(y0 + h - pad) && top <= y0 + h - pad
-                (if (inView) y0 else anchorY - h * ALIGN).coerceIn(top - pad, bottom - h + pad)
+                (if (inView) y0 else anchorY - h * NOW_ALIGN).coerceIn(top - pad, bottom - h + pad)
             }
         }.coerceIn(0f, (contentHeight - h).coerceAtLeast(0f))
         val x = first * columnPx
@@ -674,7 +708,7 @@ private fun GuideGrid(
         Box(Modifier.padding(start = TIME_WIDTH).fillMaxSize().clipToBounds()) {
             ServiceHeaders(repo, columns, column, columnPx, x, Modifier.fillMaxWidth().height(HEADER_HEIGHT).clipToBounds())
             Box(Modifier.padding(top = HEADER_HEIGHT).fillMaxSize().clipToBounds().onSizeChanged { viewport = it }) {
-                GuideCells(table, columns.size, focusedSpot, now, origin, pxPerMs, columnPx, x, y)
+                GuideCells(table, columns.size, focusedSpot, shade, origin, pxPerMs, columnPx, x, y)
             }
         }
     }
@@ -689,7 +723,7 @@ private fun GuideCells(
     table: GuideLayout,
     columnCount: Int,
     focusedSpot: State<GuideFocus?>,
-    now: State<Long>,
+    shade: State<Long>,
     origin: Long,
     pxPerMs: Float,
     columnPx: Float,
@@ -708,7 +742,9 @@ private fun GuideCells(
         lists
     }
     val widest = remember(table) { cells.maxOfOrNull { it.span } ?: 1 }
-    val provider = remember(table, pxPerMs, gap) {
+    val linePx = with(density) { NAME_LINE.toPx() }
+    val padPx = with(density) { CELL_PAD_TOP.toPx() }
+    val provider = remember(table, pxPerMs, gap, expanded, linePx, padPx) {
         object : LazyLayoutItemProvider {
             override val itemCount: Int get() = cells.size
 
@@ -716,7 +752,11 @@ private fun GuideCells(
             override fun Item(index: Int, key: Any) {
                 val cell = cells[index]
                 val isFocused by remember(cell) { derivedStateOf { focusedSpot.value?.holds(cell) == true } }
-                ProgramCell(cell, isFocused, now, pxPerMs, gap)
+                // 入る行数は、並べるときと同じ高さ (`cellHeight`) から出す。送っている間も、行数が変わったときだけ組み直す
+                val lines by remember(cell, isFocused) {
+                    derivedStateOf { cellLines(cellHeight(cell, origin, pxPerMs, y(), gap, isFocused, expanded), padPx, linePx) }
+                }
+                ProgramCell(cell, isFocused, lines, shade, pxPerMs, gap)
             }
 
             override fun getKey(index: Int): Any = cells[index].let { "${it.program.id}:${it.column}:${it.startAt}" }
@@ -744,20 +784,15 @@ private fun GuideCells(
                 val cell = cells[list[i]]
                 i++
                 if (cell.column + cell.span <= firstColumn) continue
-                val top = (cell.startAt - origin) * pxPerMs - sy
-                val bottom = (cell.endAt - origin) * pxPerMs - sy
-                // 上の端で切れるマスは、見えているところに字を寄せる
-                val shownTop = maxOf(top, 0f)
-                var cellTop = shownTop.roundToInt()
-                var cellHeight = (bottom - shownTop).roundToInt() - gap
+                // 上の端で切れるマスは、見えているところに字を寄せる。フォーカスして広げたマスは、下の端からはみ出さないように上げる
                 val front = focusNow?.holds(cell) == true
-                if (front && cellHeight < expanded) {
-                    cellHeight = expanded
-                    if (cellTop + cellHeight > height) cellTop = (height - cellHeight).coerceAtLeast(0)
-                }
-                if (cellHeight > 0) {
+                val natural = cellHeight(cell, origin, pxPerMs, sy, gap, false, expanded)
+                val shownHeight = cellHeight(cell, origin, pxPerMs, sy, gap, front, expanded)
+                var cellTop = maxOf((cell.startAt - origin) * pxPerMs - sy, 0f).roundToInt()
+                if (shownHeight > natural && cellTop + shownHeight > height) cellTop = (height - shownHeight).coerceAtLeast(0)
+                if (shownHeight > 0) {
                     val measurables = compose(list[i - 1])
-                    val constraint = Constraints.fixed((columnPx * cell.span - gap).roundToInt().coerceAtLeast(1), cellHeight)
+                    val constraint = Constraints.fixed((columnPx * cell.span - gap).roundToInt().coerceAtLeast(1), shownHeight)
                     measurables.forEach { placed += Placed(it.measure(constraint), (c * columnPx - sx).roundToInt(), cellTop, front) }
                 }
             }
@@ -781,16 +816,35 @@ private fun firstEndingAfter(cells: List<GuideCell>, list: List<Int>, at: Long):
 }
 
 /**
+ * マスの高さ (px)。上の端 (`sy` は表を送った量) で切れるマスは見えているぶんだけ、フォーカスして広げる (`grow`) 短いマスは `expanded` まで。
+ * 並べるとき (`GuideCells`) と、入る行数を出すとき (`cellLines`) の両方で使う
+ */
+private fun cellHeight(cell: GuideCell, origin: Long, pxPerMs: Float, sy: Float, gap: Int, grow: Boolean, expanded: Int): Int {
+    val top = (cell.startAt - origin) * pxPerMs - sy
+    val bottom = (cell.endAt - origin) * pxPerMs - sy
+    val height = (bottom - maxOf(top, 0f)).roundToInt() - gap
+    return if (grow && height < expanded) expanded else height
+}
+
+/**
+ * マスに入る字の行数。**行の途中で切らず、入りきらない行は「…」で止める** (ブラウザの番組表の `lines()`・`.clamp`)。
+ * 高さ `height` から上の余白 `pad` を引き、1 行 `line` で割って切り捨てる。1 行も入らないマスでも 1 行は出す
+ */
+internal fun cellLines(height: Int, pad: Float, line: Float): Int = maxOf(1, floor((height - pad) / line).toInt())
+
+/**
  * 番組の1マス。地はジャンルの色、録画中なら録画中の赤 (ブラウザの denpa の番組表と同じ決まり。`Palette.programCell`)。
- * 中はジャンルの色の点・始まりの時刻・印 (予約済み・録画中・競合)、番組名 (放送の字、15sp)、説明。
+ * 中は1つの文で、ジャンルの色の点・始まりの時刻・印 (予約済み・録画中・競合)・番組名 (放送の字、15sp) を続けて書き、次の行から説明。
+ * **行の途中で切らない**: 入る行数 (`lines`。`cellLines`) の最後の行を「…」で終える (ブラウザの番組表の `.clamp`。時刻と番組名を同じ行に置くのも同じ)。
  * **短いマス (`SHORT_MS` 未満) は地の色だけ**にし、フォーカスしたら字を出す (呼ぶ側が手前に広げて重ねる)。
  *
  * **放送が過ぎた所は、マスの上からいまの位置まで地を暗くする** (ブラウザの番組表の `.program` の `--past`・`--shade`)。
  * 放送中の番組は過ぎた所を 45%、終わった番組はマス全体を 78% の地の色で覆う。覆うのは地だけで、字はその上に描くので読めたまま。
+ * 位置は `shade` (いまの時刻を `Motion.MOVE_MS` かけて追う) で、分が進むと覆いが下へ伸びる。
  * フォーカスした終わった番組は覆わない (テレビでは詳細を開く前にマスで読むため)
  */
 @Composable
-private fun ProgramCell(cell: GuideCell, focused: Boolean, now: State<Long>, pxPerMs: Float, gap: Int) {
+private fun ProgramCell(cell: GuideCell, focused: Boolean, lines: Int, shade: State<Long>, pxPerMs: Float, gap: Int) {
     val program = cell.program
     val short = cell.endAt - cell.startAt < SHORT_MS
     val recording = program.reservation?.state == ReservationState.RECORDING
@@ -800,7 +854,7 @@ private fun ProgramCell(cell: GuideCell, focused: Boolean, now: State<Long>, pxP
             .clip(CELL_SHAPE)
             .background(Palette.programCell(program.genre, recording, focused))
             .drawBehind {
-                val at = now.value
+                val at = shade.value
                 if (at <= cell.startAt) return@drawBehind
                 if (at >= cell.endAt) {
                     if (!focused) drawRect(ENDED_SHADE)
@@ -818,50 +872,78 @@ private fun ProgramCell(cell: GuideCell, focused: Boolean, now: State<Long>, pxP
             }
             .then(if (focused) Modifier.border(2.dp, Palette.AccentBright, CELL_SHAPE) else Modifier),
     ) {
-        if (!short || focused) {
-            Column(Modifier.padding(start = 6.dp, end = 5.dp, top = 3.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // ジャンルの点 (ブラウザの番組表の時刻の前の点と同じ)
-                    Palette.genreTint(program.genre)?.let { Box(Modifier.size(GENRE_DOT).background(it, CircleShape)) }
-                    Text(TIME.format(Date(program.startAt)), style = MaterialTheme.typography.labelSmall, color = Palette.TextMuted, maxLines = 1)
-                    program.reservation?.let { StateMark(it) }
-                }
-                Text(
-                    program.name,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = NAME_SIZE, lineHeight = NAME_LINE, fontWeight = FontWeight.Medium).broadcast(),
-                    color = Palette.Text,
-                    overflow = TextOverflow.Ellipsis,
-                    maxLines = if (focused) 4 else Int.MAX_VALUE,
-                )
-                if (program.description.isNotEmpty()) {
-                    Text(
-                        program.description,
-                        style = MaterialTheme.typography.bodySmall.broadcast(),
-                        color = Palette.TextMuted,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
+        if (!short || focused) CellText(program, lines)
     }
 }
 
-/** マスの印。予約済みは琥珀、録画中は赤の「●」、競合は赤の「⚠ 競合」。ほかの状態 (録画しない・完了など) は名前を薄く */
+/**
+ * マスの字。ジャンルの点 (ブラウザの番組表の時刻の前の点と同じ)・始まりの時刻・印・番組名を続けて書き、改行して説明。
+ * 行の高さはどれも `NAME_LINE` にそろえる (行数を高さから数えるため)。
+ * 印: 予約済みは琥珀の「予約済み」、録画中は赤の「●」、競合は赤の「⚠ 競合」。ほかの状態 (録画しない・完了など) は名前を薄く
+ */
 @Composable
-private fun StateMark(reservation: Reservation) {
-    when (reservation.state) {
-        ReservationState.RECORDING -> Text("●", style = MaterialTheme.typography.labelSmall, color = Palette.Recording)
-        else -> {
-            val (background, color) = stateColors(reservation.state)
-            Text(
-                ReservationState.label(reservation.state),
-                style = MaterialTheme.typography.labelSmall,
-                color = color,
-                maxLines = 1,
-                modifier = if (background == Color.Transparent) Modifier else Modifier.background(background, TagShape).padding(horizontal = 4.dp),
-            )
+private fun CellText(program: GuideProgram, lines: Int) {
+    val density = LocalDensity.current
+    val label = MaterialTheme.typography.labelSmall
+    val descriptionSize = MaterialTheme.typography.bodySmall.fontSize
+    val family = BroadcastFont
+    val tint = Palette.genreTint(program.genre)
+    val state = program.reservation?.state
+    // 地を塗る印 (予約済み・競合) は角を丸めたラベルにするので、字の中に場所を空けて (`Placeholder`) 重ねる。幅は字を測って決める
+    val tag = state?.takeIf { it != ReservationState.RECORDING && stateColors(it).first != Color.Transparent }
+    val tagWidth = tag?.let {
+        val measurer = rememberTextMeasurer(cacheSize = 4)
+        remember(it, label, density) {
+            with(density) { (measurer.measure(ReservationState.label(it), label, maxLines = 1, softWrap = false).size.width + TAG_SPACE.toPx()).toSp() }
         }
     }
+    val text = remember(program, tint, tag, family, label, descriptionSize) {
+        buildAnnotatedString {
+            if (tint != null) appendInlineContent(DOT_ID, "●")
+            withStyle(SpanStyle(fontSize = label.fontSize, color = Palette.TextMuted)) {
+                append(TIME.format(Date(program.startAt)))
+                when {
+                    state == null -> {}
+                    state == ReservationState.RECORDING -> withStyle(SpanStyle(color = Palette.Recording)) { append(" ●") }
+                    tag != null -> appendInlineContent(TAG_ID, ReservationState.label(tag))
+                    else -> withStyle(SpanStyle(color = stateColors(state).second)) { append(" ${ReservationState.label(state)}") }
+                }
+            }
+            append(" ")
+            withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = Palette.Text)) { appendBroadcast(program.name) }
+            if (program.description.isNotEmpty()) {
+                append("\n")
+                withStyle(SpanStyle(fontSize = descriptionSize, color = Palette.TextMuted)) { appendBroadcast(program.description) }
+            }
+        }.let { if (family != null) it.withFont(family) else it }
+    }
+    val inline = remember(tint, tag, tagWidth, density, label) {
+        buildMap {
+            if (tint != null) {
+                val dot = with(density) { GENRE_DOT.toSp() }
+                put(DOT_ID, InlineTextContent(Placeholder(with(density) { (GENRE_DOT + DOT_SPACE).toSp() }, dot, PlaceholderVerticalAlign.TextCenter)) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) { Box(Modifier.size(GENRE_DOT).background(tint, CircleShape)) }
+                })
+            }
+            if (tag != null && tagWidth != null) {
+                val (background, color) = stateColors(tag)
+                put(TAG_ID, InlineTextContent(Placeholder(tagWidth, label.lineHeight, PlaceholderVerticalAlign.TextCenter)) {
+                    Box(Modifier.fillMaxSize().padding(start = DOT_SPACE).background(background, TagShape), contentAlignment = Alignment.Center) {
+                        Text(ReservationState.label(tag), style = label, color = color, maxLines = 1, softWrap = false)
+                    }
+                })
+            }
+        }
+    }
+    Text(
+        text,
+        modifier = Modifier.padding(start = 6.dp, end = 5.dp, top = CELL_PAD_TOP),
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = NAME_SIZE, lineHeight = NAME_LINE),
+        color = Palette.Text,
+        overflow = TextOverflow.Ellipsis,
+        maxLines = lines,
+        inlineContent = inline,
+    )
 }
 
 /** 予約の状態の色 (地と字)。予約済みは琥珀、競合・録画中は赤 (予約済みと同じ色にしない)。ほかは地を塗らない */
@@ -1168,16 +1250,33 @@ private val EDGE_PAD = 24.dp
 private val CELL_SHAPE = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
 private val GENRE_DOT = 7.dp
 
-/** 番組名の字 (14sp 以上。離れて読む) */
+/** 番組名の字 (14sp 以上。離れて読む) と、マスの字の 1 行の高さ (時刻・説明の行も同じ)、マスの上の余白 (1 行の高さと合わせて 10 分のマスに 1 行が入る) */
 private val NAME_SIZE = 15.sp
 private val NAME_LINE = 20.sp
+private val CELL_PAD_TOP = 2.dp
+
+/** マスの字の中の点と印 (`Placeholder`)。点の後ろと印の前の空き、印のラベルの左右の余白を足した幅 */
+private const val DOT_ID = "dot"
+private const val TAG_ID = "tag"
+private val DOT_SPACE = 4.dp
+private val TAG_SPACE = 12.dp
 
 /** 過ぎた所に重ねる地の色。放送中の番組は浅く (終わった番組と同じ濃さだと、いま観られる番組まで終わって見える) */
 private val AIRING_SHADE = Palette.Background.copy(alpha = 0.45f)
 private val ENDED_SHADE = Palette.Background.copy(alpha = 0.78f)
 
-/** 基準の時刻に合わせて送るとき、表の上からどこに置くか (高さの割合。少し前の番組も見えるように) */
-private const val ALIGN = 0.15f
+/**
+ * 表を送り直す合図。`align` は基準の時刻を表の上から高さのどの割合に置くか (0 は上の端)。
+ * null は画面の上での位置を前のまま変えない (種別・日付を替えたとき・早送り。ブラウザの番組表で種別や日を選び直しても縦の位置が残るのと同じ)。
+ * 同じ値でも新しく作ったものは別の合図 (`!==` で比べる)
+ */
+private class GuideJump(val align: Float?)
+
+/**
+ * 開いたときと「今」で、いまの時刻を表の上から高さの 4 分の 1 に置く (ブラウザの番組表の `nowTop`)。
+ * 上の端ちょうどに置くと、直前の番組が見えず、放送中の番組の始まりが切れる
+ */
+private const val NOW_ALIGN = 0.25f
 private const val SCROLL_MS = 250
 
 /** 時刻の列と見出しで、作る数 (見えるぶん + 1 より多め。1080p で時は 3 つほど、局は 6 つ見える) */

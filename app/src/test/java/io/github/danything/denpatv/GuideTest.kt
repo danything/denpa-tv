@@ -23,6 +23,7 @@ import io.github.danything.denpatv.data.mergeGuide
 import io.github.danything.denpatv.data.nextDay
 import io.github.danything.denpatv.data.parseGuide
 import io.github.danything.denpatv.ui.cancelNote
+import io.github.danything.denpatv.ui.cellLines
 import io.github.danything.denpatv.ui.reserveNote
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -281,6 +282,18 @@ class GuideTest {
         assertEquals("録画を始めました", reserveNote(ReserveResult.Reserved("recording", true, null)))
         assertEquals("録画を止めました。ここまでの録画は残ります", cancelNote(stopped = true, rule = false))
         assertEquals("予約を取り消しました。この放送はルールでも録画しません", cancelNote(stopped = false, rule = true))
+    }
+
+    /** マスに入る行数は切り捨てで、入りきらない行は出さない。1 行も入らなくても 1 行 (1080p: 1 行 40px、上の余白 4px) */
+    @Test
+    fun マスに入る行数() {
+        // 10 分のマス (48px からマスの間 4px を引いた 44px) はちょうど 1 行
+        assertEquals(1, cellLines(44, 4f, 40f))
+        // 18 分 (82px) でも 2 行目は途中までしか入らないので 1 行
+        assertEquals(1, cellLines(82, 4f, 40f))
+        assertEquals(2, cellLines(84, 4f, 40f))
+        // 5 分のマス (フォーカスしないと字を出さない) でも 1 行
+        assertEquals(1, cellLines(20, 4f, 40f))
     }
 
     private val denpa = FakeDenpa()
