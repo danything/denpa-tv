@@ -195,10 +195,10 @@ private fun GuideBody(
         }
     }
     val columns by remember { derivedStateOf { store.columns(type) } }
-    val layout = remember(columns) { guideLayout(columns) }
+    val table = remember(columns) { guideLayout(columns) }
     val column = columns.indexOfFirst { it.id == serviceId }.coerceAtLeast(0)
     // フォーカスで辿る番組 (サブチャンネルの列では、本チャンネルの番組が分割放送で2つに分かれて入ることがある。基準の時刻を含むほう)
-    val programs = layout.lanes.getOrNull(column).orEmpty()
+    val programs = table.lanes.getOrNull(column).orEmpty()
     val program = programs.indexOfFirst { it.id == programId && anchor >= it.startAt && anchor < it.endAt }.takeIf { it >= 0 }
         ?: programs.indexOfFirst { it.id == programId }.takeIf { it >= 0 }
         ?: GuideMoves.programAt(programs, anchor)
@@ -252,7 +252,7 @@ private fun GuideBody(
             is GuideMove.To -> {
                 val target = columns.getOrNull(move.spot.column) ?: return true
                 serviceId = target.id
-                programId = move.spot.program?.let { layout.lanes.getOrNull(move.spot.column)?.getOrNull(it)?.id }
+                programId = move.spot.program?.let { table.lanes.getOrNull(move.spot.column)?.getOrNull(it)?.id }
                 anchor = move.spot.anchor
             }
             GuideMove.OutUp -> runCatching { top.requestFocus() }
@@ -269,7 +269,7 @@ private fun GuideBody(
         }
         return true
     }
-    val moves = GuideMoves(layout.lanes, origin, end) { store.loaded(type, broadcastDay(it)) }
+    val moves = GuideMoves(table.lanes, origin, end) { store.loaded(type, broadcastDay(it)) }
     val spot = GuideSpot(column, program, anchor)
 
     /** 詳細を開いている番組 */
@@ -362,7 +362,7 @@ private fun GuideBody(
             GuideGrid(
                 repo = repo,
                 columns = columns,
-                layout = layout,
+                table = table,
                 column = column,
                 focused = focused,
                 focusedSpot = focusedSpot,
@@ -594,7 +594,7 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit, modifier
 private fun GuideGrid(
     repo: Repository,
     columns: List<GuideService>,
-    layout: GuideLayout,
+    table: GuideLayout,
     column: Int,
     focused: GuideProgram?,
     focusedSpot: State<GuideFocus?>,
@@ -664,7 +664,7 @@ private fun GuideGrid(
         Box(Modifier.padding(start = TIME_WIDTH).fillMaxSize().clipToBounds()) {
             ServiceHeaders(repo, columns, column, columnPx, x, Modifier.fillMaxWidth().height(HEADER_HEIGHT).clipToBounds())
             Box(Modifier.padding(top = HEADER_HEIGHT).fillMaxSize().clipToBounds().onSizeChanged { viewport = it }) {
-                GuideCells(layout, columns.size, focusedSpot, now, origin, pxPerMs, columnPx, x, y)
+                GuideCells(table, columns.size, focusedSpot, now, origin, pxPerMs, columnPx, x, y)
                 // いまの線 (赤)
                 Box(
                     Modifier
@@ -684,7 +684,7 @@ private fun GuideGrid(
  */
 @Composable
 private fun GuideCells(
-    layout: GuideLayout,
+    table: GuideLayout,
     columnCount: Int,
     focusedSpot: State<GuideFocus?>,
     now: State<Long>,
@@ -698,15 +698,15 @@ private fun GuideCells(
     val gap = with(density) { CELL_GAP.roundToPx() }
     val expanded = with(density) { FOCUSED_MIN_HEIGHT.roundToPx() }
     val margin = with(density) { HOUR_HEIGHT.toPx() }
-    val cells = layout.cells
+    val cells = table.cells
     /** 左の端の列ごとのマスの番号 (受け持つ時刻の順)。いちばん広いマスの列の数 */
-    val byColumn = remember(layout, columnCount) {
+    val byColumn = remember(table, columnCount) {
         val lists = List(columnCount) { ArrayList<Int>() }
         cells.forEachIndexed { i, cell -> lists.getOrNull(cell.column)?.add(i) }
         lists
     }
-    val widest = remember(layout) { cells.maxOfOrNull { it.span } ?: 1 }
-    val provider = remember(layout) {
+    val widest = remember(table) { cells.maxOfOrNull { it.span } ?: 1 }
+    val provider = remember(table) {
         object : LazyLayoutItemProvider {
             override val itemCount: Int get() = cells.size
 
