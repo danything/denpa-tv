@@ -87,6 +87,8 @@ import kotlinx.coroutines.launch
  *   追っかけは denpa の変換の枠を使うので、埋まっていれば断られる。何度かだけリクエストし直し、諦めたら「サーバが混んでいます」(MPEG-2 を勧める)
  * - アプリが裏に回ったら (ホーム・別のアプリ) 止めて denpa から降りる (チューナーを空ける)。戻ったら同じ局を映し直す
  * - **決定の長押しと情報キーで、いま放送中の番組の詳細** (`LiveDetailDialog`。録画の詳細と同じもの)。そこからも録画できる
+ * - **番組表へは、詳細の「番組表」と番組表キー**。メニューの画面の番組表を、いま映している局と時刻にフォーカスして開く
+ *   (`Repository.guideReturn`。番組表の「視聴」から来て戻るときと同じ)。操作の列には置かない (画質・字幕・実況・音声・録画で埋まっている)
  * - 何も開いていないときの戻るは、メニューの画面へ (「ライブ」にフォーカス)
  */
 @Composable
@@ -559,6 +561,14 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             if (result is RecordResult.Recorded) refresh()
         }
     }
+    /** メニューの画面の番組表へ。いま映している局 (送っている途中なら行き先) と、いまの時刻にフォーカスする */
+    fun openGuide() {
+        if (leaving) return
+        val service = stepping ?: current
+        repo.guideReturn = GuidePlace(service.type, service.id, null, System.currentTimeMillis())
+        leaving = true
+        onLeave()
+    }
     fun run(command: LiveCommand) = when (command) {
         LiveCommand.PreviousChannel -> zap(-1)
         LiveCommand.NextChannel -> zap(1)
@@ -570,6 +580,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             recordNote = null
             detail = true
         }
+        LiveCommand.Guide -> openGuide()
     }
     /** 「ライブに戻る」。同じ局をリクエストし直し、映らなければ追っかけに戻る (`rememberPlayer` に渡した決まり) */
     fun backToLive() {
@@ -675,6 +686,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             repo,
             current,
             onRecord = { record(fromDetail = true) },
+            onGuide = { openGuide() },
             note = recordNote,
             onClose = { detail = false },
             onUnauthorized = onUnauthorized,

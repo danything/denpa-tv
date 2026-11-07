@@ -16,6 +16,8 @@ class DeepLinkTest {
         assertEquals(DeepLink.Live("3227310008"), DeepLink.parse("denpa://live/3227310008"))
         assertEquals(DeepLink.Live("NHK総合"), DeepLink.parse("denpa://live/NHK総合"))
         assertEquals(DeepLink.Recordings, DeepLink.parse("denpa://recordings"))
+        assertEquals(DeepLink.Guide(null), DeepLink.parse("denpa://guide"))
+        assertEquals(DeepLink.Guide("NHK総合"), DeepLink.parse("denpa://guide/NHK%E7%B7%8F%E5%90%88"))
         assertEquals(DeepLink.Watch("12"), DeepLink.parse("denpa://recording/12"))
         // 録画の id が無ければ一覧
         assertEquals(DeepLink.Recordings, DeepLink.parse("denpa://recording"))
@@ -39,7 +41,7 @@ class DeepLinkTest {
         assertNull(DeepLink.parse(""))
         assertNull(DeepLink.parse("https://example.com/live"))
         assertNull(DeepLink.parse("denpa:live"))
-        assertNull(DeepLink.parse("denpa://guide"))
+        assertNull(DeepLink.parse("denpa://settings"))
     }
 
     private val nhk = service(3273601024, "GR", "ＮＨＫ総合１・東京", 1, airing = true)

@@ -231,19 +231,29 @@ internal object Showcase {
         }
     }
 
-    /** 番組表 (`api/programs?type=&from=&to=`)。その種別の局の、`from` から `to` にかかる番組 */
+    /**
+     * 番組表 (`api/programs?type=&from=&to=&subchannels=1`)。その種別の局の、`from` から `to` にかかる番組。
+     * `subchannels=1` なら、ＮＨＫＥテレ１のすぐ右にサブチャンネル (ＮＨＫＥテレ３) の列を足し、いまの番組のあとの 40 分だけ分割放送を流す
+     */
     fun guide(query: String): String {
         val params = query.split('&').associate { it.substringBefore('=') to it.substringAfter('=', "") }
         val type = params["type"].orEmpty()
         val from = params["from"]?.toLongOrNull() ?: 0L
         val to = params["to"]?.toLongOrNull() ?: 0L
-        val services = stations.filter { it.type == type }.joinToString(",", "[", "]") { s ->
+        fun program(id: Long, title: String, start: Long, end: Long, genre: Int, description: String, reservation: String?) =
+            """{"id":$id,"name":${q(title)},"startAt":$start,"endAt":$end,"description":${q(description)},
+            "genre":[{"lv1":$genre,"lv2":0}],"copyNever":false,"reservation":${reservation ?: "null"},"recordingId":null}"""
+        val services = stations.filter { it.type == type }.flatMap { s ->
             val programs = slots.getValue(s.id).filter { it.end > from && it.start < to }.joinToString(",", "[", "]") { p ->
-                """{"id":${p.id},"name":${q(p.title)},"startAt":${p.start},"endAt":${p.end},"description":${q(p.description)},
-                "genre":[{"lv1":${p.genre},"lv2":0}],"copyNever":false,"reservation":${reservation(p) ?: "null"},"recordingId":null}"""
+                program(p.id, p.title, p.start, p.end, p.genre, p.description, reservation(p))
             }
-            """{"id":${s.id},"name":${q(s.name)},"remoteControlKey":${s.key},"logo":"api/services/${s.id}/logo","programs":$programs}"""
-        }
+            val column = """{"id":${s.id},"name":${q(s.name)},"mainId":null,"remoteControlKey":${s.key},"logo":"api/services/${s.id}/logo","programs":$programs}"""
+            val now = slots.getValue(s.id).first { it.slot == 0 }
+            val split = now.end until now.end + SUB_MINUTES * 60_000L
+            val sub = """{"id":${s.id + 2},"name":${q(SUB_NAME)},"mainId":${s.id},"remoteControlKey":${s.key},"logo":null,"programs":[
+                ${program(s.id * 1000 + 900, SUB_TITLE, split.first, split.last + 1, 10, SUB_DESCRIPTION, null)}]}"""
+            listOf(column) + listOfNotNull(sub.takeIf { s.sid == 1032 && params["subchannels"] == "1" && split.first < to && split.last >= from })
+        }.joinToString(",", "[", "]")
         return """{"type":"$type","from":$from,"to":$to,"until":${epoch + 9 * DAY_MS},"services":$services}"""
     }
 
@@ -350,6 +360,12 @@ internal object Showcase {
     private const val DRAMA_TITLE = "ドラマ「月曜九時」第3話"
 
     private const val DAY_MS = 86_400_000L
+
+    /** 番組表のサブチャンネルの列と、その分割放送 */
+    private const val SUB_NAME = "ＮＨＫＥテレ３東京"
+    private const val SUB_TITLE = "高校講座「数学Ⅰ」第8回"
+    private const val SUB_DESCRIPTION = "2次関数のグラフと、その平行移動。"
+    private const val SUB_MINUTES = 40
 
     /** 競合した予約の理由 (番組表の詳細に出る) */
     private const val CONFLICT_REASON = "チューナーが足りません (同じ時間に 3 件の録画があります)"

@@ -543,6 +543,30 @@ class SmokeTest {
         assertRequested("DELETE /api/programs/${FakeDenpa.PROGRAM_ID}/record")
         press(KeyEvent.KEYCODE_BACK)
         assertTrue("戻るで詳細が閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in windowTexts() })
+
+        // 表で録画キーを押すと、フォーカスしている番組を予約する (詳細は開かない)
+        val reserve = "POST /api/programs/${FakeDenpa.PROGRAM_ID}/record"
+        press(KeyEvent.KEYCODE_MEDIA_RECORD)
+        assertTrue("録画キーで予約しません: ${denpa.requests.distinct()}", poll(TEXT_TIMEOUT_MS) { denpa.requests.count { it == reserve } >= 2 })
+        assertTrue("予約しました が出ません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "予約しました" in texts() })
+        assertTrue("録画キーで詳細が開きました: ${windowTexts()}", "閉じる" !in windowTexts())
+    }
+
+    /**
+     * 番組表を開く入口。ライブの詳細 (情報キー) の「番組表」で、メニューの画面の番組表が開く (局の見出しと「今」が出る)。
+     * `denpa://guide/<局>` のリンクでも開く
+     */
+    @Test
+    fun guideEntries() = watching {
+        open("denpa://live/${FakeDenpa.SERVICE_ID}")
+        awaitVideo(LIVE_COLOR)
+        pressUntil(KeyEvent.KEYCODE_INFO, "情報キーで番組の詳細が開きません") { liveDetailOpen() }
+        clickInWindows("番組表")
+        assertTrue("ライブの「番組表」で番組表が開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "今" in texts() && FakeDenpa.PROGRAM_TITLE in texts() })
+        open("denpa://recordings")
+        awaitText { it == FakeDenpa.RECORDING_TITLE }
+        open("denpa://guide/${FakeDenpa.NEXT_SERVICE_ID}")
+        assertTrue("リンクで番組表が開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "今" in texts() && FakeDenpa.PROGRAM_TITLE in texts() })
     }
 
     /** 録画の一覧から、左のメニュー (ナビゲーション ドロワー) で設定を開く */
