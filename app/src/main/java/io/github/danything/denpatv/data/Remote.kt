@@ -11,12 +11,13 @@ import android.view.KeyEvent
  * **上は同じメニューを、局の列のいま映している局にフォーカスを置いて開く** (局を一覧から選ぶ近道)。
  * **決定の長押しは情報キーと同じく、いま放送中の番組の詳細を開く** (`liveCenter`。録画の詳細と同じもの)。
  * **数字キーでワンタッチ選局** (`liveChannelKey`。テレビのリモコンの 1〜12 と同じく、局のリモコン番号で選ぶ)。
+ * **番組表キーで番組表へ** (いま映している局と時刻にフォーカスして開く)。
  * 録画: 左右で 10 秒戻す・送る、決定で止める・動かす、下でシークバーと操作の列、上・Menu で操作の列。
  * **決定の長押しと情報キーは番組の詳しいところ** (`recordingCenter`。ライブの長押し・情報キー、録画の一覧のカードの長押しと揃える)。
  * 開いたメニュー・操作バーは、いちばん上の段 (ライブは操作の列、録画はシークバー) で上を押すと閉じる (`UpToClose`)。
  * 決定の短押し・長押しは PlayerFrame が分ける (CenterPress)
  */
-enum class LiveCommand { PreviousChannel, NextChannel, Menu, Channels, Details }
+enum class LiveCommand { PreviousChannel, NextChannel, Menu, Channels, Details, Guide }
 
 fun liveCommand(keyCode: Int): LiveCommand? = when (keyCode) {
     KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_CHANNEL_DOWN -> LiveCommand.PreviousChannel
@@ -24,6 +25,7 @@ fun liveCommand(keyCode: Int): LiveCommand? = when (keyCode) {
     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_MENU -> LiveCommand.Menu
     KeyEvent.KEYCODE_DPAD_UP -> LiveCommand.Channels
     KeyEvent.KEYCODE_INFO -> LiveCommand.Details
+    KeyEvent.KEYCODE_GUIDE -> LiveCommand.Guide
     else -> null
 }
 

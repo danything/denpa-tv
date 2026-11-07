@@ -66,7 +66,7 @@ private enum class Destination(val label: String, val icon: Int) {
  * Android TV のデザインの指針は、行き先を 5〜6 までのドロワーにまとめるよう勧めている。
  * 局も録画も数が多いので、1つの画面に列で並べるより、それぞれの画面に分ける。
  * ライブは押すとすぐ全画面で映す (最後に観ていた局)。録画・番組表・設定はドロワーの右に出す。
- * 番組表から観に行って戻ったとき (`Repository.guideReturn`) は、左のメニューではなく番組表がフォーカスを取る
+ * 番組表から観に行って戻ったとき・ライブの「番組表」・番組表のリンク (どれも `Repository.guideReturn`) は、番組表を出して番組表がフォーカスを取る
  */
 @Composable
 fun MainScreen(
@@ -77,6 +77,12 @@ fun MainScreen(
     onLicenses: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf(Destination.Recordings) }
+    // 番組表から観に行って戻った・ライブの「番組表」・番組表のリンクなら、番組表を出す (この画面を作ったときに1回だけ見る)
+    val toGuide = remember { BooleanArray(1).also { it[0] = repo.guideReturn != null } }
+    if (toGuide[0]) {
+        toGuide[0] = false
+        selected = Destination.Guide
+    }
     val items = remember { Destination.entries.associateWith { FocusRequester() } }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val focusManager = LocalFocusManager.current

@@ -72,6 +72,8 @@ import androidx.tv.material3.Text
 import io.github.danything.denpatv.data.CancelResult
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.GuideAction
+import io.github.danything.denpatv.data.GuideCell
+import io.github.danything.denpatv.data.GuideLayout
 import io.github.danything.denpatv.data.GuideMove
 import io.github.danything.denpatv.data.GuideMoves
 import io.github.danything.denpatv.data.GuideProgram
@@ -88,6 +90,7 @@ import io.github.danything.denpatv.data.airing
 import io.github.danything.denpatv.data.broadcastDay
 import io.github.danything.denpatv.data.dayHour
 import io.github.danything.denpatv.data.guideActions
+import io.github.danything.denpatv.data.guideLayout
 import io.github.danything.denpatv.data.guideTooOld
 import io.github.danything.denpatv.data.guideTooOldMessage
 import io.github.danything.denpatv.data.liveChannelKey
@@ -116,7 +119,11 @@ data class GuidePlace(val type: String, val serviceId: Long?, val programId: Lon
  *
  * - 上の段に種別 (局のある種別だけ)・日付・時刻の飛び先 (今・朝・昼・夜・深夜)。決定でその種別・日・時刻へ表を動かす (フォーカスは上の段のまま。下キーで表へ)
  * - 表は**全体で1つのフォーカスできる部品** (`GuideGrid`) で、キーを全部ここで受ける。持つのは列・番組・基準の時刻 (`GuideMoves`)
- * - 開いたときは、今日・最後に観ていた局・いま流れている番組にフォーカスする。観に行って戻ったときは、出かけた番組に
+ * - 開いたときは、今日・最後に観ていた局・いま流れている番組にフォーカスする。観に行って戻ったときは、出かけた番組に。
+ *   ライブの「番組表」とリンク (`denpa://guide`) は、`Repository.guideReturn` に置いた局のいまの番組に
+ * - サブチャンネルの列は、分割放送の間だけ自分のマスを持ち、ほかの時間は本チャンネルのマスが横に伸びる (`guideLayout`)
+ * - マスの地の色はジャンルの大分類 (`Palette.genreCell`。ブラウザの denpa の番組表と同じ決まり)
+ * - 録画キーで、フォーカスしている番組を予約する (予約できない番組は詳細を開く)
  * - 取得は種別ごとに放送日 (4:00 から) の 24 時間ずつ。フォーカスが取得した端から 3 時間以内に来たら、次 (前) の 24 時間を先に取得する。
  *   denpa の `reservations`・`programs` の通知で、見ている種別の窓を取得し直す
  * - 古い denpa (`MIN_GUIDE` より前) では、真ん中に要るバージョンを出す (ほかの画面は今までどおり)。dev ビルドと読めないバージョンは確かめずに呼び、404 なら同じ文
@@ -188,11 +195,17 @@ private fun GuideBody(
         }
     }
     val columns by remember { derivedStateOf { store.columns(type) } }
+    val table = remember(columns) { guideLayout(columns) }
     val column = columns.indexOfFirst { it.id == serviceId }.coerceAtLeast(0)
-    val programs = columns.getOrNull(column)?.programs.orEmpty()
-    val program = programs.indexOfFirst { it.id == programId }.takeIf { it >= 0 } ?: GuideMoves.programAt(programs, anchor)
+    // フォーカスで辿る番組 (サブチャンネルの列では、本チャンネルの番組が分割放送で2つに分かれて入ることがある。基準の時刻を含むほう)
+    val programs = table.lanes.getOrNull(column).orEmpty()
+    val program = programs.indexOfFirst { it.id == programId && anchor >= it.startAt && anchor < it.endAt }.takeIf { it >= 0 }
+        ?: programs.indexOfFirst { it.id == programId }.takeIf { it >= 0 }
+        ?: GuideMoves.programAt(programs, anchor)
+    /** フォーカスしている番組。列で見えている時間に縮めたもの (詳細・予約・読み上げには `focusedProgram`) */
     val focused = program?.let { programs.getOrNull(it) }
-    val focusedId = rememberUpdatedState(focused?.id)
+    val focusedProgram = focused?.let { programOf(columns, it.id)?.second }
+    val focusedSpot = rememberUpdatedState(focused?.let { GuideFocus(it.id, column, it.startAt, it.endAt) })
 
     // ---- 取得: 基準の時刻を含む 24 時間と、端から 3 時間以内なら隣の 24 時間 ----
     val day = broadcastDay(anchor)
@@ -239,7 +252,7 @@ private fun GuideBody(
             is GuideMove.To -> {
                 val target = columns.getOrNull(move.spot.column) ?: return true
                 serviceId = target.id
-                programId = move.spot.program?.let { target.programs.getOrNull(it)?.id }
+                programId = move.spot.program?.let { table.lanes.getOrNull(move.spot.column)?.getOrNull(it)?.id }
                 anchor = move.spot.anchor
             }
             GuideMove.OutUp -> runCatching { top.requestFocus() }
@@ -256,7 +269,7 @@ private fun GuideBody(
         }
         return true
     }
-    val moves = GuideMoves(columns.map { it.programs }, origin, end) { store.loaded(type, broadcastDay(it)) }
+    val moves = GuideMoves(table.lanes, origin, end) { store.loaded(type, broadcastDay(it)) }
     val spot = GuideSpot(column, program, anchor)
 
     /** 詳細を開いている番組 */
@@ -273,6 +286,35 @@ private fun GuideBody(
     /** 観に行く前に、戻ったときの位置を預ける */
     fun leave() {
         repo.guideReturn = GuidePlace(type, columns.getOrNull(column)?.id, focused?.id, anchor)
+    }
+
+    /** 録画キーで予約した結果の1行 (表の下の端に `NOTICE_MS` だけ出す) */
+    var notice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(notice) {
+        if (notice != null) {
+            delay(NOTICE_MS)
+            notice = null
+        }
+    }
+
+    /**
+     * 録画キー: フォーカスしている番組を予約する。予約できない番組 (予約済み・終わった・コピー禁止) なら詳細を開く
+     * (予約の状態と、取り消すボタンが見える)
+     */
+    fun recordKey() {
+        val target = focusedProgram ?: return
+        if (GuideAction.Reserve !in guideActions(target, now.longValue, airing = false)) {
+            opened = target.id
+            return
+        }
+        notice = "予約しています…"
+        scope.launch {
+            notice = try {
+                reserveProgram(repo, target)
+            } catch (_: Unauthorized) {
+                return@launch onUnauthorized()
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize().background(Palette.Background).padding(top = SAFE_VERTICAL, end = SAFE_HORIZONTAL)) {
@@ -320,9 +362,10 @@ private fun GuideBody(
             GuideGrid(
                 repo = repo,
                 columns = columns,
+                table = table,
                 column = column,
                 focused = focused,
-                focusedId = focusedId,
+                focusedSpot = focusedSpot,
                 anchor = anchor,
                 jump = jump,
                 origin = origin,
@@ -352,6 +395,10 @@ private fun GuideBody(
                             KeyEvent.KEYCODE_CHANNEL_DOWN -> go(moves.page(spot, -PAGE_COLUMNS))
                             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { jump++; go(moves.shift(spot, SHIFT_MS)) }
                             KeyEvent.KEYCODE_MEDIA_REWIND -> { jump++; go(moves.shift(spot, -SHIFT_MS)) }
+                            KeyEvent.KEYCODE_MEDIA_RECORD -> {
+                                if (native.repeatCount == 0) recordKey()
+                                true
+                            }
                             in CENTER_KEYS -> {
                                 if (native.repeatCount == 0) centerDown[0] = true
                                 true
@@ -373,16 +420,32 @@ private fun GuideBody(
                     }
                     .semantics {
                         // 読み上げは表に1つ。フォーカスした番組を読ませる (表の中は1つのフォーカスなので、替わったら読み直させる)
-                        contentDescription = focused?.let { describe(columns.getOrNull(column), it) } ?: "番組表"
+                        contentDescription = focusedProgram?.let { describe(programOf(columns, it.id)?.first, it) } ?: "番組表"
                         liveRegion = LiveRegionMode.Polite
                     }
                     .focusable(),
             )
             message?.let { Centered(it) }
+            // 録画キーで予約した結果 (下の端に数秒)
+            notice?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Palette.Text,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = SAFE_VERTICAL)
+                        .widthIn(max = NOTICE_WIDTH)
+                        .background(Palette.SurfaceRaised, TagShape)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
         }
     }
 
-    val detail = opened?.let { id -> columns.firstNotNullOfOrNull { s -> s.programs.firstOrNull { it.id == id }?.let { s to it } } }
+    val detail = opened?.let { programOf(columns, it) }
     // 開いている番組が表から消えた (取得し直して無くなった) ら閉じる
     LaunchedEffect(opened != null && detail == null) { if (opened != null && detail == null) opened = null }
     detail?.let { (service, shown) ->
@@ -427,6 +490,16 @@ private fun GuideBody(
 }
 
 private val CENTER_KEYS = setOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER)
+
+/** 番組 `id` と、それを流している局 (表の列。サブチャンネルの列に伸びた本チャンネルの番組は本チャンネル) */
+private fun programOf(columns: List<GuideService>, id: Long): Pair<GuideService, GuideProgram>? =
+    columns.firstNotNullOfOrNull { s -> s.programs.firstOrNull { it.id == id }?.let { s to it } }
+
+/** フォーカスしている番組と、それを辿っている列・その列で見えている時間 (サブチャンネルの列では縮めたもの) */
+data class GuideFocus(val id: Long, val column: Int, val startAt: Long, val endAt: Long) {
+    /** マスがこのフォーカスに入るか (同じ番組で、その列に掛かり、時間がこの中) */
+    fun holds(cell: GuideCell): Boolean = cell.program.id == id && cell.covers(column) && cell.startAt >= startAt && cell.endAt <= endAt
+}
 
 /**
  * 上の段: 種別 (局のある種別だけ)、日付 (今日から `DAYS` 日。今日・明日のあとは「9(月)」)、時刻の飛び先。いま選んでいる種別と日付は塗る。
@@ -521,9 +594,10 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit, modifier
 private fun GuideGrid(
     repo: Repository,
     columns: List<GuideService>,
+    table: GuideLayout,
     column: Int,
     focused: GuideProgram?,
-    focusedId: State<Long?>,
+    focusedSpot: State<GuideFocus?>,
     anchor: Long,
     jump: Int,
     origin: Long,
@@ -543,7 +617,7 @@ private fun GuideGrid(
     var firstColumn by remember { mutableIntStateOf(0) }
     val lastJump = remember { IntArray(1) }
     val placed = remember { BooleanArray(1) }
-    LaunchedEffect(column, focused?.id, anchor, jump, viewport, columns.size) {
+    LaunchedEffect(column, focused?.id, focused?.startAt, anchor, jump, viewport, columns.size) {
         if (viewport.height == 0 || viewport.width == 0) return@LaunchedEffect
         val visible = (viewport.width / columnPx).toInt().coerceAtLeast(1)
         var first = firstColumn
@@ -590,7 +664,7 @@ private fun GuideGrid(
         Box(Modifier.padding(start = TIME_WIDTH).fillMaxSize().clipToBounds()) {
             ServiceHeaders(repo, columns, column, columnPx, x, Modifier.fillMaxWidth().height(HEADER_HEIGHT).clipToBounds())
             Box(Modifier.padding(top = HEADER_HEIGHT).fillMaxSize().clipToBounds().onSizeChanged { viewport = it }) {
-                GuideCells(columns, focusedId, now, origin, pxPerMs, columnPx, x, y)
+                GuideCells(table, columns.size, focusedSpot, now, origin, pxPerMs, columnPx, x, y)
                 // いまの線 (赤)
                 Box(
                     Modifier
@@ -604,11 +678,15 @@ private fun GuideGrid(
     }
 }
 
-/** 番組のマスを、見えている範囲だけ作って並べる。フォーカスしている番組は手前に置き、短い番組は読める高さまで下へ広げて重ねる */
+/**
+ * 番組のマスを、見えている範囲だけ作って並べる。サブチャンネルの列へ伸びたマスは、その列の数だけ幅を取る。
+ * フォーカスしているマスは手前に置き、短いマスは読める高さまで下へ広げて重ねる
+ */
 @Composable
 private fun GuideCells(
-    columns: List<GuideService>,
-    focusedId: State<Long?>,
+    table: GuideLayout,
+    columnCount: Int,
+    focusedSpot: State<GuideFocus?>,
     now: State<Long>,
     origin: Long,
     pxPerMs: Float,
@@ -620,22 +698,27 @@ private fun GuideCells(
     val gap = with(density) { CELL_GAP.roundToPx() }
     val expanded = with(density) { FOCUSED_MIN_HEIGHT.roundToPx() }
     val margin = with(density) { HOUR_HEIGHT.toPx() }
-    /** 列ごとの番組を1本に並べたもの (マスの番号)。`offsets[c]` は列 c の頭の番号 */
-    val cells = remember(columns) { columns.flatMapIndexed { c, s -> s.programs.map { c to it } } }
-    val offsets = remember(columns) { columns.runningFold(0) { acc, s -> acc + s.programs.size } }
-    val provider = remember(cells) {
+    val cells = table.cells
+    /** 左の端の列ごとのマスの番号 (受け持つ時刻の順)。いちばん広いマスの列の数 */
+    val byColumn = remember(table, columnCount) {
+        val lists = List(columnCount) { ArrayList<Int>() }
+        cells.forEachIndexed { i, cell -> lists.getOrNull(cell.column)?.add(i) }
+        lists
+    }
+    val widest = remember(table) { cells.maxOfOrNull { it.span } ?: 1 }
+    val provider = remember(table) {
         object : LazyLayoutItemProvider {
             override val itemCount: Int get() = cells.size
 
             @Composable
             override fun Item(index: Int, key: Any) {
-                val program = cells[index].second
-                val isFocused by remember(program.id) { derivedStateOf { focusedId.value == program.id } }
-                val past by remember(program.id) { derivedStateOf { now.value >= program.endAt } }
-                GuideCell(program, isFocused, past)
+                val cell = cells[index]
+                val isFocused by remember(cell) { derivedStateOf { focusedSpot.value?.holds(cell) == true } }
+                val past by remember(cell) { derivedStateOf { now.value >= cell.endAt } }
+                ProgramCell(cell, isFocused, past)
             }
 
-            override fun getKey(index: Int): Any = cells[index].second.id
+            override fun getKey(index: Int): Any = cells[index].let { "${it.program.id}:${it.column}:${it.startAt}" }
 
             override fun getContentType(index: Int): Any = CELL
         }
@@ -646,34 +729,36 @@ private fun GuideCells(
         val sx = x()
         val sy = y()
         val firstColumn = floor(sx / columnPx).toInt().coerceAtLeast(0)
-        val lastColumn = floor((sx + width) / columnPx).toInt().coerceAtMost(columns.size - 1)
+        val lastColumn = floor((sx + width) / columnPx).toInt().coerceAtMost(columnCount - 1)
         val from = origin + ((sy - margin) / pxPerMs).toLong()
         val to = origin + ((sy + height + margin) / pxPerMs).toLong()
-        val focusedNow = focusedId.value
+        val focusNow = focusedSpot.value
         class Placed(val placeable: androidx.compose.ui.layout.Placeable, val x: Int, val y: Int, val front: Boolean)
         val placed = ArrayList<Placed>()
-        for (c in firstColumn..lastColumn) {
-            val list = columns[c].programs
-            var i = firstEndingAfter(list, from)
-            while (i < list.size && list[i].startAt < to) {
-                val program = list[i]
-                val top = (program.startAt - origin) * pxPerMs - sy
-                val bottom = (program.endAt - origin) * pxPerMs - sy
-                // 上の端で切れる番組は、見えているところに字を寄せる
+        // 左の見えていない列から伸びてくるマスもあるので、いちばん広いマスのぶん左の列から見る
+        for (c in (firstColumn - widest + 1).coerceAtLeast(0)..lastColumn) {
+            val list = byColumn[c]
+            var i = firstEndingAfter(cells, list, from)
+            while (i < list.size && cells[list[i]].startAt < to) {
+                val cell = cells[list[i]]
+                i++
+                if (cell.column + cell.span <= firstColumn) continue
+                val top = (cell.startAt - origin) * pxPerMs - sy
+                val bottom = (cell.endAt - origin) * pxPerMs - sy
+                // 上の端で切れるマスは、見えているところに字を寄せる
                 val shownTop = maxOf(top, 0f)
                 var cellTop = shownTop.roundToInt()
                 var cellHeight = (bottom - shownTop).roundToInt() - gap
-                val front = program.id == focusedNow
+                val front = focusNow?.holds(cell) == true
                 if (front && cellHeight < expanded) {
                     cellHeight = expanded
                     if (cellTop + cellHeight > height) cellTop = (height - cellHeight).coerceAtLeast(0)
                 }
                 if (cellHeight > 0) {
-                    val measurables = compose(offsets[c] + i)
-                    val constraint = Constraints.fixed((columnPx - gap).roundToInt().coerceAtLeast(1), cellHeight)
+                    val measurables = compose(list[i - 1])
+                    val constraint = Constraints.fixed((columnPx * cell.span - gap).roundToInt().coerceAtLeast(1), cellHeight)
                     measurables.forEach { placed += Placed(it.measure(constraint), (c * columnPx - sx).roundToInt(), cellTop, front) }
                 }
-                i++
             }
         }
         layout(width, height) {
@@ -683,42 +768,35 @@ private fun GuideCells(
     }
 }
 
-/** 終わりが `at` より後の、最初の番組 (始まりの順に並んでいるので二分探索) */
-private fun firstEndingAfter(programs: List<GuideProgram>, at: Long): Int {
+/** `list` (マスの番号。受け持つ時刻の順) の中で、終わりが `at` より後の最初のもの (二分探索) */
+private fun firstEndingAfter(cells: List<GuideCell>, list: List<Int>, at: Long): Int {
     var low = 0
-    var high = programs.size
+    var high = list.size
     while (low < high) {
         val mid = (low + high) ushr 1
-        if (programs[mid].endAt <= at) low = mid + 1 else high = mid
+        if (cells[list[mid]].endAt <= at) low = mid + 1 else high = mid
     }
     return low
 }
 
 /**
- * 番組の1マス。左に色の帯 (ジャンル)、始まりの時刻と印 (予約済み・録画中・競合)、番組名 (放送の字、14sp)、説明。
- * **短い番組 (`SHORT_MS` 未満) は色の帯だけ**にし、フォーカスしたら字を出す (呼ぶ側が手前に広げて重ねる)。過ぎた番組は沈める
+ * 番組の1マス。地はジャンルの色 (ブラウザの denpa の番組表と同じ決まり。`Palette.genreCell`)、始まりの時刻と印 (予約済み・録画中・競合)、
+ * 番組名 (放送の字、15sp)、説明。**短いマス (`SHORT_MS` 未満) は地の色だけ**にし、フォーカスしたら字を出す (呼ぶ側が手前に広げて重ねる)。
+ * 過ぎたマスは沈める
  */
 @Composable
-private fun GuideCell(program: GuideProgram, focused: Boolean, past: Boolean) {
-    val genre = Palette.genre(program.genre)
-    val short = program.endAt - program.startAt < SHORT_MS
+private fun ProgramCell(cell: GuideCell, focused: Boolean, past: Boolean) {
+    val program = cell.program
+    val short = cell.endAt - cell.startAt < SHORT_MS
     Box(
         Modifier
             .fillMaxSize()
-            .background(
-                when {
-                    focused -> Palette.SurfaceRaised
-                    short -> genre.copy(alpha = 0.45f)
-                    else -> Palette.Surface
-                },
-                CELL_SHAPE,
-            )
+            .background(Palette.genreCell(program.genre, focused), CELL_SHAPE)
             .then(if (focused) Modifier.border(2.dp, Palette.AccentBright, CELL_SHAPE) else Modifier)
             .clipToBounds(),
     ) {
-        Box(Modifier.width(4.dp).fillMaxHeight().background(genre))
         if (!short || focused) {
-            Column(Modifier.padding(start = 9.dp, end = 5.dp, top = 3.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Column(Modifier.padding(start = 6.dp, end = 5.dp, top = 3.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(TIME.format(Date(program.startAt)), style = MaterialTheme.typography.labelSmall, color = Palette.TextMuted, maxLines = 1)
                     program.reservation?.let { StateMark(it) }
@@ -873,17 +951,10 @@ private fun GuideDetail(
     val primary = shown.firstOrNull { it == GuideAction.Reserve } ?: shown.firstOrNull { it == GuideAction.Watch } ?: shown.firstOrNull { it == GuideAction.Play }
 
     fun reserve() = scope.launch {
-        val result = try {
-            repo.api.reserveProgram(repo.base, program.id)
+        note = try {
+            reserveProgram(repo, program)
         } catch (_: Unauthorized) {
             return@launch onUnauthorized()
-        }
-        note = when (result) {
-            is ReserveResult.Reserved -> {
-                repo.guide.update(program.id) { it.copy(reservation = Reservation(result.state, result.reason, null)) }
-                reserveNote(result)
-            }
-            is ReserveResult.Failed -> "予約できません: ${result.message}"
         }
     }
 
@@ -938,6 +1009,16 @@ private fun GuideDetail(
         token = repo.token,
     )
 }
+
+/** 番組を予約し、手元のマスも書き換える (詳細の「予約」と、表の録画キー)。結果の1行を返す。401 は `Unauthorized` */
+private suspend fun reserveProgram(repo: Repository, program: GuideProgram): String =
+    when (val result = repo.api.reserveProgram(repo.base, program.id)) {
+        is ReserveResult.Reserved -> {
+            repo.guide.update(program.id) { it.copy(reservation = Reservation(result.state, result.reason, null)) }
+            reserveNote(result)
+        }
+        is ReserveResult.Failed -> "予約できません: ${result.message}"
+    }
 
 /** 予約した結果の1行。予約できたが録画できない (競合など) ときは理由も */
 internal fun reserveNote(result: ReserveResult.Reserved): String = when {
@@ -1056,6 +1137,10 @@ private const val NOW_TICK_MS = 30_000L
 private const val EVENT_SETTLE_MS = 1_000L
 private const val FOCUS_TRIES = 20
 private const val FOCUS_WAIT_MS = 50L
+
+/** 録画キーで予約した結果を出しておく長さと、その1行の幅の上限 */
+private const val NOTICE_MS = 4_000L
+private val NOTICE_WIDTH = 640.dp
 
 private val TIME = SimpleDateFormat("HH:mm", Locale.JAPAN)
 private val HOUR = SimpleDateFormat("H", Locale.JAPAN)

@@ -88,7 +88,8 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     /**
      * 番組表から観に行った (「視聴」「再生」) ときの、番組表のフォーカスの位置。戻ったら番組表がここにフォーカスし直す
-     * (左のメニューにはフォーカスしない)。番組表が読んだら消す
+     * (左のメニューにはフォーカスしない)。番組表が読んだら消す。
+     * ライブの「番組表」と番組表のリンク (`denpa://guide`) も、ここに局と時刻を置いてメニューの画面へ戻る (番組表が出る)
      */
     var guideReturn: GuidePlace? = null
 

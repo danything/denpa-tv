@@ -17,9 +17,12 @@ sealed interface DeepLink {
     /** 録画を観る。`id` は渡されたまま (数でなければ見つからないだけ) */
     data class Watch(val id: String) : DeepLink
 
+    /** 番組表。`channel` は局の id・名前・番号 (ライブと同じ探し方。無ければ最後に観ていた局) で、その局のいまの番組にフォーカスする */
+    data class Guide(val channel: String?) : DeepLink
+
     companion object {
         /**
-         * `denpa://live`・`denpa://live/<局>`・`denpa://recordings`・`denpa://recording/<id>` を読む。
+         * `denpa://live`・`denpa://live/<局>`・`denpa://recordings`・`denpa://recording/<id>`・`denpa://guide`・`denpa://guide/<局>` を読む。
          * 局の名前は % で符号化してもしなくてもよい。ほかの形式は null
          */
         fun parse(uri: String?): DeepLink? {
@@ -33,6 +36,7 @@ sealed interface DeepLink {
                 "live" -> Live(arg)
                 "recordings" -> Recordings
                 "recording" -> arg?.let(::Watch) ?: Recordings
+                "guide" -> Guide(arg)
                 else -> null
             }
         }

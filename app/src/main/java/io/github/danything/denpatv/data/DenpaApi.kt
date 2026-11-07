@@ -97,7 +97,8 @@ class DenpaApi(
      * 形式が違えば `warn` に書いて `Unreadable`。401 は `Unauthorized`
      */
     suspend fun guide(base: URI, type: String, from: Long, to: Long): GuideLookup = withContext(Dispatchers.IO) {
-        val res = call(base, "api/programs?type=$type&from=$from&to=$to") ?: return@withContext GuideLookup.Offline
+        // サブチャンネルの列もリクエストする (古い denpa は subchannels を読まないので、本チャンネルだけが返る)
+        val res = call(base, "api/programs?type=$type&from=$from&to=$to&subchannels=1") ?: return@withContext GuideLookup.Offline
         when {
             res.code == 404 -> GuideLookup.TooOld
             res.code == 403 -> GuideLookup.Forbidden
