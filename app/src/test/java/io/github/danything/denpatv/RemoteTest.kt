@@ -34,6 +34,7 @@ class RemoteTest {
         assertEquals(LiveCommand.Menu, liveCommand(KeyEvent.KEYCODE_MENU))
         assertEquals(LiveCommand.Channels, liveCommand(KeyEvent.KEYCODE_DPAD_UP))
         assertEquals(LiveCommand.Details, liveCommand(KeyEvent.KEYCODE_INFO))
+        assertEquals(LiveCommand.Guide, liveCommand(KeyEvent.KEYCODE_GUIDE))
         assertNull(liveCommand(KeyEvent.KEYCODE_DPAD_CENTER))
         // 戻るは受けない (何も開いていなければメニューの画面へ戻る)
         assertNull(liveCommand(KeyEvent.KEYCODE_BACK))

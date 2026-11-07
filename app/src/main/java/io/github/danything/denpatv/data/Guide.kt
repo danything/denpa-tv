@@ -24,11 +24,16 @@ data class GuidePage(
     val services: List<GuideService>,
 )
 
-/** 番組表の局 (1列)。番組は始まりの順 */
+/**
+ * 番組表の局 (1列)。番組は始まりの順。
+ * サブチャンネルの列 (`mainId` が本チャンネルの id) の番組は、本チャンネルと違う番組 (分割放送) だけ
+ */
 @Immutable
 data class GuideService(
     val id: Long,
     val name: String,
+    /** サブチャンネルなら本チャンネルの id。本チャンネルと、denpa が返さない (古い denpa) ときは null */
+    val mainId: Long? = null,
     val remoteControlKey: Int? = null,
     val logo: String? = null,
     val programs: List<GuideProgram> = emptyList(),
@@ -42,7 +47,7 @@ data class GuideProgram(
     val startAt: Long,
     val endAt: Long,
     val description: String = "",
-    /** ジャンルの大分類 (ARIB の content_nibble の上 4 ビット)。マスの左の帯の色。無ければ null */
+    /** ジャンルの大分類 (ARIB の content_nibble の上 4 ビット)。マスの色。無ければ null */
     val genre: Int? = null,
     /** コピー禁止 (denpa は録画しない。「予約」のボタンを出さない) */
     val copyNever: Boolean = false,
@@ -86,6 +91,7 @@ private fun parseGuideService(element: JsonElement, warn: (String) -> Unit): Gui
     return GuideService(
         id = id,
         name = string(obj["name"]) ?: "",
+        mainId = long(obj["mainId"])?.takeIf { it != id },
         remoteControlKey = long(obj["remoteControlKey"])?.toInt(),
         logo = string(obj["logo"]),
         programs = programs,
@@ -135,13 +141,14 @@ private fun boolean(element: JsonElement?): Boolean? =
 
 /**
  * 同じ種別の窓 (`pages`。取得した順、後ろほど新しい) を1つの表にする。局の並びはいちばん新しい窓のもの (ほかの窓にしか無い局は後ろへ)。
- * 同じ番組 (id) は新しい窓のもの。**古い窓の番組でも、始まりが新しい窓の時間に入っていれば捨てる** (取得し直して消えた・替わった番組を残さない)
+ * 同じ番組 (id) は新しい窓のもの。**古い窓の番組でも、始まりが新しい窓の時間に入っていれば捨てる** (取得し直して消えた・替わった番組を残さない)。
+ * サブチャンネルの列は、どの窓のものでも本チャンネルのすぐ右へ寄せる (分割放送のある日にだけ列が来る)
  */
 fun mergeGuide(pages: List<GuidePage>): List<GuideService> {
     val newest = pages.asReversed()
     val order = LinkedHashMap<Long, GuideService>()
     newest.forEach { page -> page.services.forEach { order.putIfAbsent(it.id, it) } }
-    return order.values.map { service ->
+    return besideMain(order.values.toList()).map { service ->
         val seen = HashSet<Long>()
         val programs = ArrayList<GuideProgram>()
         newest.forEachIndexed { index, page ->
@@ -155,6 +162,99 @@ fun mergeGuide(pages: List<GuidePage>): List<GuideService> {
         }
         service.copy(programs = programs.sortedBy { it.startAt })
     }
+}
+
+/** サブチャンネルの列を、本チャンネルのすぐ右へ寄せる (並びはそのまま)。本チャンネルが無いサブは元の位置のまま */
+private fun besideMain(services: List<GuideService>): List<GuideService> {
+    val ids = services.mapTo(HashSet()) { it.id }
+    val subs = services.filter { it.mainId != null && it.mainId in ids }.groupBy { it.mainId }
+    return services.flatMap { service ->
+        when {
+            service.mainId != null && service.mainId in ids -> emptyList()
+            else -> listOf(service) + subs[service.id].orEmpty()
+        }
+    }
+}
+
+/** 表の1マス。`column` から `span` 列ぶん横に伸ばし、`startAt`〜`endAt` を受け持つ (番組の途中で幅が変わると、番組の時間より短くなる) */
+@Immutable
+data class GuideCell(val program: GuideProgram, val column: Int, val span: Int, val startAt: Long, val endAt: Long) {
+    fun covers(c: Int): Boolean = c >= column && c < column + span
+}
+
+/**
+ * 表の形。`cells` は描くマス (受け持つ時刻の順)、`lanes` は列ごとにフォーカスで辿る番組 (始まりの順)。
+ * `lanes` の番組は、その列で見えている時間に縮めたもの (本チャンネルの番組がサブの列で分割放送に切られると、同じ番組が2つに分かれて入る)
+ */
+@Immutable
+data class GuideLayout(val cells: List<GuideCell>, val lanes: List<List<GuideProgram>>)
+
+/**
+ * **表のマスを組む** (denpa の Web の番組表の `cellsOf` と同じ形)。サブチャンネルの列は、分割放送の間だけ自分のマスを持ち、
+ * ほかの時間は本チャンネルのマスがサブの列まで横に伸びる。分割放送が本チャンネルの番組の途中で始まる・終わるなら、
+ * その時刻で本チャンネルのマスを切って、幅を変えたマスを上下に積む。
+ * サブの列は本チャンネルのすぐ右にあるもの (`mergeGuide` が寄せる) だけをサブとして扱う
+ */
+fun guideLayout(columns: List<GuideService>): GuideLayout {
+    val cells = ArrayList<GuideCell>()
+    var c = 0
+    while (c < columns.size) {
+        val service = columns[c]
+        var end = c + 1
+        while (end < columns.size && columns[end].mainId == service.id) end++
+        val subs = columns.subList(c + 1, end)
+        subs.forEachIndexed { i, sub -> sub.programs.forEach { cells += GuideCell(it, c + 1 + i, 1, it.startAt, it.endAt) } }
+        for (program in service.programs) {
+            // 番組の中で、分割放送が始まる・終わる時刻で切る
+            val edges = sortedSetOf(program.startAt, program.endAt)
+            subs.forEach { sub ->
+                sub.programs.forEach { p ->
+                    if (p.startAt > program.startAt && p.startAt < program.endAt) edges += p.startAt
+                    if (p.endAt > program.startAt && p.endAt < program.endAt) edges += p.endAt
+                }
+            }
+            val cuts = edges.toList()
+            // 区切りごとに、本チャンネルの番組を出す列のかたまり (左の端と列の数)
+            var runs = emptyList<Pair<Int, Int>>()
+            var from = cuts.first()
+            for (k in 0 until cuts.size - 1) {
+                val start = cuts[k]
+                val stop = cuts[k + 1]
+                val next = mutableListOf(c to 1)
+                subs.forEachIndexed { i, sub ->
+                    if (sub.programs.any { it.startAt < stop && it.endAt > start }) return@forEachIndexed
+                    val (left, span) = next.last()
+                    // 1 つ左の列も出しているなら、そのマスを伸ばす
+                    if (left + span == c + 1 + i) next[next.lastIndex] = left to span + 1 else next += (c + 1 + i) to 1
+                }
+                // 幅が変わらなければ切らない
+                if (k > 0 && next != runs) {
+                    runs.forEach { (left, span) -> cells += GuideCell(program, left, span, from, start) }
+                    from = start
+                }
+                runs = next
+            }
+            runs.forEach { (left, span) -> cells += GuideCell(program, left, span, from, cuts.last()) }
+        }
+        c = end
+    }
+    cells.sortWith(compareBy({ it.startAt }, { it.column }))
+    val lanes = List(columns.size) { ArrayList<GuideProgram>() }
+    val laneCells = List(columns.size) { ArrayList<GuideCell>() }
+    cells.forEach { cell -> for (k in cell.column until cell.column + cell.span) laneCells[k] += cell }
+    laneCells.forEachIndexed { k, list ->
+        // 同じ番組が続けて並ぶ (幅が変わって切ったマス) なら、フォーカスでは1つにまとめる
+        var i = 0
+        while (i < list.size) {
+            val program = list[i].program
+            val start = list[i].startAt
+            var stop = list[i].endAt
+            while (i + 1 < list.size && list[i + 1].program.id == program.id && list[i + 1].startAt == stop) stop = list[++i].endAt
+            lanes[k] += if (start == program.startAt && stop == program.endAt) program else program.copy(startAt = start, endAt = stop)
+            i++
+        }
+    }
+    return GuideLayout(cells, lanes)
 }
 
 /** 予約の状態 (denpa の `reservations.state`) */

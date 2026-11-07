@@ -39,9 +39,11 @@ import io.github.danything.denpatv.data.chasing
 import io.github.danything.denpatv.data.Connection
 import io.github.danything.denpatv.data.DeepLink
 import io.github.danything.denpatv.data.Unauthorized
+import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.findService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -146,6 +148,7 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
 
 /**
  * リンクの行き先を開く。**いまの再生の画面は置き換え、積み増さない。** 戻るで行く先は、ライブならメニュー、録画なら録画の一覧。
+ * 番組表はメニューの画面の番組表 (`Repository.guideReturn` に局を置く)。
  * 局・録画が見つからなければ、ライブ・一覧をふつうに開いて1行知らせる
  */
 private suspend fun open(
@@ -159,20 +162,20 @@ private suspend fun open(
     try {
         when (link) {
             is DeepLink.Live -> {
-                val channel = link.channel
-                if (channel != null) {
-                    val fetched = if (repo.services.isEmpty() || repo.servicesStale) refreshQuietly { repo.refreshServices() } else true
-                    // ライブは最後に観ていた局から映す。そこを替えて開く
-                    val service = findService(repo.services, channel)
-                    when {
-                        service != null -> repo.app.settings.setLastService(service.id)
-                        // 取れなかったのに「見つからない」とは言わない
-                        repo.services.isEmpty() && !fetched -> notice("局の一覧を取得できませんでした")
-                        else -> notice("${channel.take(NOTICE_MAX)} という局が見つかりませんでした")
-                    }
-                }
+                // ライブは最後に観ていた局から映す。そこを替えて開く
+                link.channel?.let { linkService(repo, it, notice) }?.let { repo.app.settings.setLastService(it.id) }
                 backStack.subList(1, backStack.size).clear()
                 backStack.add(Live(stamp))
+            }
+            is DeepLink.Guide -> {
+                // その局 (無い・見つからなければ最後に観ていた局) のいまの番組にフォーカスして開く。最後に観ていた局は替えない
+                val service = link.channel?.let { linkService(repo, it, notice) } ?: run {
+                    if (repo.services.isEmpty()) refreshQuietly { repo.refreshServices() }
+                    val last = repo.app.settings.lastService.first()
+                    repo.services.firstOrNull { it.id == last }
+                }
+                repo.guideReturn = GuidePlace(service?.type ?: "GR", service?.id, null, System.currentTimeMillis())
+                backStack.replaceAll(Main(stamp))
             }
             DeepLink.Recordings -> backStack.replaceAll(Main(stamp))
             is DeepLink.Watch -> {
@@ -188,6 +191,19 @@ private suspend fun open(
     } catch (_: Unauthorized) {
         unauthorized()
     }
+}
+
+/** リンクの局を探す (局の一覧が無い・古ければ取り直してから)。見つからなければ1行知らせて null */
+private suspend fun linkService(repo: Repository, channel: String, notice: (String) -> Unit): Service? {
+    val fetched = if (repo.services.isEmpty() || repo.servicesStale) refreshQuietly { repo.refreshServices() } else true
+    val service = findService(repo.services, channel)
+    when {
+        service != null -> {}
+        // 取れなかったのに「見つからない」とは言わない
+        repo.services.isEmpty() && !fetched -> notice("局の一覧を取得できませんでした")
+        else -> notice("${channel.take(NOTICE_MAX)} という局が見つかりませんでした")
+    }
+    return service
 }
 
 /** 取り直す。取れなくても続ける (手元の一覧で探す) — 取れたかを返す。401 と取り消し (次のリンクが来た) は上へ */

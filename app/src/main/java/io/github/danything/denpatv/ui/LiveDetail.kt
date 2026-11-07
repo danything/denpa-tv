@@ -21,9 +21,10 @@ import kotlinx.coroutines.delay
  *
  * - 中身は denpa の `api/programs/<局の now.id>` から開いたときに取る。取れるまでと、取れないとき (番組表から消えた・
  *   届かない) は `now` のぶん (番組名・時間) だけ
- * - ボタンは **「録画」→「閉じる」**。録画はメニューの「録画」と同じ API (`POST api/services/<id>/record`)。結果はボタンの下に1行。
+ * - ボタンは **「録画」→「番組表」→「閉じる」**。録画はメニューの「録画」と同じ API (`POST api/services/<id>/record`)。結果はボタンの下に1行。
  *   **録っている・録る予定なら「録画」のボタンは出さない** (押しても何も変わらない)。そのことはボタンの列の上の印 (「● 録画中」「予約済み」) で分かるので、
- *   ボタンは「閉じる」だけにして、開いたときもそこにフォーカスする
+ *   ボタンは「番組表」と「閉じる」だけにして、開いたときは「閉じる」にフォーカスする
+ * - 「番組表」は、いま映している局と時刻にフォーカスして番組表を開く (この番組の次に何があるかを見る・予約する)
  * - 番組が替わったら (局を取り直して `now` が替わる) 新しい番組を取り直す。映像はそのまま流れる
  */
 @Composable
@@ -31,6 +32,8 @@ fun LiveDetailDialog(
     repo: Repository,
     service: Service,
     onRecord: () -> Unit,
+    /** 番組表を開く */
+    onGuide: () -> Unit,
     /** 録画を押した結果の1行 */
     note: String?,
     onClose: () -> Unit,
@@ -58,7 +61,8 @@ fun LiveDetailDialog(
     val booked = now?.recording == true || now?.reserved == true
     val actions = listOfNotNull(
         DetailAction(RECORD, primary = true, onClick = onRecord).takeUnless { booked },
-        DetailAction(CLOSE, onClick = onClose),
+        DetailAction(GUIDE, onClick = onGuide),
+        DetailAction(CLOSE, initial = booked, onClick = onClose),
     )
     ProgramDetailDialog(liveFacts(service, info, clock).copy(logo = repo.url(service.logo)), actions, onClose, note, overVideo = true, token = repo.token)
 }
@@ -73,6 +77,7 @@ internal fun recordLabel(now: NowProgram?): String = when {
 }
 
 private const val RECORD = "録画"
+private const val GUIDE = "番組表"
 
 /** 録る予定の印 (局の列のカード・ライブの詳細・メニューの録画のボタンで同じ呼び方) */
 internal const val RESERVED = "予約済み"

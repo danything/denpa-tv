@@ -18,6 +18,7 @@ import io.github.danything.denpatv.data.ReservationState
 import io.github.danything.denpatv.data.broadcastDay
 import io.github.danything.denpatv.data.dayHour
 import io.github.danything.denpatv.data.guideActions
+import io.github.danything.denpatv.data.guideLayout
 import io.github.danything.denpatv.data.mergeGuide
 import io.github.danything.denpatv.data.nextDay
 import io.github.danything.denpatv.data.parseGuide
@@ -100,6 +101,51 @@ class GuideTest {
         // 11 は新しい窓の時間に始まるのに新しい窓に無い (取得し直して消えた) ので捨てる
         assertEquals(listOf(10L, 12L), a.map { it.id })
         assertEquals("scheduled", a[0].reservation?.state)
+    }
+
+    /** サブチャンネルの列 (`mainId`)。古い窓にしか無いサブも、本チャンネルのすぐ右へ寄せる。自分を指す mainId は本チャンネル */
+    @Test
+    fun サブチャンネルの列() {
+        val page = parseGuide(
+            """{"type":"GR","from":$day,"to":${day + 24 * hour},"services":[{"id":1,"name":"A","mainId":null},{"id":2,"name":"A2","mainId":1},{"id":3,"name":"B","mainId":3}]}""",
+        ) {}!!
+        assertEquals(listOf(null, 1L, null), page.services.map { it.mainId })
+        val older = GuidePage("GR", day, day + 24 * hour, null, listOf(GuideService(1, "A"), GuideService(2, "A2", mainId = 1), GuideService(3, "B")))
+        val newer = GuidePage("GR", day + 24 * hour, day + 48 * hour, null, listOf(GuideService(1, "A"), GuideService(3, "B")))
+        assertEquals(listOf(1L, 2L, 3L), mergeGuide(listOf(older, newer)).map { it.id })
+    }
+
+    /**
+     * マスを組む (denpa の `cellsOf` と同じ形)。分割放送の間だけサブの列が自分のマスを持ち、ほかの時間は本チャンネルのマスがサブの列まで伸びる。
+     * フォーカスで辿る番組は、サブの列では見えている時間に縮め、本チャンネルの番組が2つに分かれる
+     */
+    @Test
+    fun サブチャンネルのマス() {
+        val main = GuideService(1, "A", programs = listOf(program(10, day, day + 2 * hour)))
+        val sub = GuideService(2, "A2", mainId = 1, programs = listOf(program(20, day + hour, day + hour + 30 * 60_000)))
+        val other = GuideService(3, "B", programs = listOf(program(30, day, day + hour)))
+        val layout = guideLayout(listOf(main, sub, other))
+        val shape = layout.cells.map { listOf(it.program.id, it.column.toLong(), it.span.toLong(), (it.startAt - day) / 60_000, (it.endAt - day) / 60_000) }
+        assertEquals(
+            listOf(
+                listOf(10L, 0L, 2L, 0L, 60L),
+                listOf(30L, 2L, 1L, 0L, 60L),
+                listOf(10L, 0L, 1L, 60L, 90L),
+                listOf(20L, 1L, 1L, 60L, 90L),
+                listOf(10L, 0L, 2L, 90L, 120L),
+            ),
+            shape,
+        )
+        // 本チャンネルの列は番組1つ (縮めない)、サブの列は 10 (縮めたもの)・20・10 (縮めたもの)
+        assertEquals(main.programs, layout.lanes[0])
+        assertEquals(listOf(10L, 20L, 10L), layout.lanes[1].map { it.id })
+        assertEquals(listOf(day, day + hour, day + hour + 30 * 60_000), layout.lanes[1].map { it.startAt })
+        assertEquals(listOf(day + hour, day + hour + 30 * 60_000, day + 2 * hour), layout.lanes[1].map { it.endAt })
+        assertEquals(other.programs, layout.lanes[2])
+        // サブの無い表は、番組がそのまま1マスずつ
+        val plain = guideLayout(listOf(main, other))
+        assertEquals(listOf(1, 1), plain.cells.map { it.span })
+        assertEquals(listOf(main.programs, other.programs), plain.lanes)
     }
 
     /** 種別ごとに 2 つまで、合わせて 4 つまで。見ている窓は捨てない */
@@ -229,7 +275,7 @@ class GuideTest {
         denpa.enqueue("""{"type":"BS","from":$day,"to":${day + 24 * hour},"until":null,"services":[]}""")
         val found = api.guide(base, "BS", day, day + 24 * hour) as GuideLookup.Found
         assertEquals("BS", found.page.type)
-        assertEquals("/api/programs?type=BS&from=$day&to=${day + 24 * hour}", denpa.requests.take().target)
+        assertEquals("/api/programs?type=BS&from=$day&to=${day + 24 * hour}&subchannels=1", denpa.requests.take().target)
         denpa.enqueue("", code = 404)
         assertEquals(GuideLookup.TooOld, api.guide(base, "GR", day, day + hour))
         denpa.enqueue("", code = 403)
