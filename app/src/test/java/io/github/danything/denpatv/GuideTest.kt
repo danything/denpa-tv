@@ -113,6 +113,9 @@ class GuideTest {
         val older = GuidePage("GR", day, day + 24 * hour, null, listOf(GuideService(1, "A"), GuideService(2, "A2", mainId = 1), GuideService(3, "B")))
         val newer = GuidePage("GR", day + 24 * hour, day + 48 * hour, null, listOf(GuideService(1, "A"), GuideService(3, "B")))
         assertEquals(listOf(1L, 2L, 3L), mergeGuide(listOf(older, newer)).map { it.id })
+        // 本チャンネルが無いサブは元の位置のまま (ふつうの列として描く)
+        val orphan = GuidePage("GR", day, day + 24 * hour, null, listOf(GuideService(3, "B"), GuideService(2, "A2", mainId = 1)))
+        assertEquals(listOf(3L, 2L), mergeGuide(listOf(orphan)).map { it.id })
     }
 
     /**

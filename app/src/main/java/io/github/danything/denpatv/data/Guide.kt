@@ -193,7 +193,8 @@ data class GuideLayout(val cells: List<GuideCell>, val lanes: List<List<GuidePro
  * **表のマスを組む** (denpa の Web の番組表の `cellsOf` と同じ形)。サブチャンネルの列は、分割放送の間だけ自分のマスを持ち、
  * ほかの時間は本チャンネルのマスがサブの列まで横に伸びる。分割放送が本チャンネルの番組の途中で始まる・終わるなら、
  * その時刻で本チャンネルのマスを切って、幅を変えたマスを上下に積む。
- * サブの列は本チャンネルのすぐ右にあるもの (`mergeGuide` が寄せる) だけをサブとして扱う
+ * サブの列は本チャンネルのすぐ右にあるもの (`mergeGuide` が寄せる) だけをサブとして扱う。
+ * 長さの無い番組は `parseGuide` が捨てているので、ここには来ない
  */
 fun guideLayout(columns: List<GuideService>): GuideLayout {
     val cells = ArrayList<GuideCell>()
