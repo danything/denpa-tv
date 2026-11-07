@@ -753,7 +753,7 @@ private fun GuideCells(
                 val cell = cells[index]
                 val isFocused by remember(cell) { derivedStateOf { focusedSpot.value?.holds(cell) == true } }
                 // 入る行数は、並べるときと同じ高さ (`cellHeight`) から出す。送っている間も、行数が変わったときだけ組み直す
-                val lines by remember(cell, isFocused) {
+                val lines by remember(cell, isFocused, expanded, linePx, padPx) {
                     derivedStateOf { cellLines(cellHeight(cell, origin, pxPerMs, y(), gap, isFocused, expanded), padPx, linePx) }
                 }
                 ProgramCell(cell, isFocused, lines, shade, pxPerMs, gap)
