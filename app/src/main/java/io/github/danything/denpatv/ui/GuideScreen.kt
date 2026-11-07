@@ -196,10 +196,11 @@ private fun GuideBody(
     var anchor by remember { mutableLongStateOf(start.anchor.coerceIn(origin, end - 1)) }
     /** 表を基準の時刻に合わせて送り直す (開いたとき・上の段で日付や時刻を選んだとき・早送り)。増やすと送る */
     var jump by remember { mutableIntStateOf(1) }
+    /** いまの時刻。分の変わり目に合わせて進める (時刻の列のカプセルは分を書くので、時計の分とずらさない。ブラウザの番組表と同じ) */
     val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
-            delay(NOW_TICK_MS)
+            delay(MINUTE_MS - System.currentTimeMillis() % MINUTE_MS)
             now.longValue = System.currentTimeMillis()
         }
     }
@@ -1184,7 +1185,7 @@ private const val SHOWN_HOURS = 7
 private const val SHOWN_COLUMNS = 8
 
 private const val CELL = "cell"
-private const val NOW_TICK_MS = 30_000L
+private const val MINUTE_MS = 60_000L
 private const val EVENT_SETTLE_MS = 1_000L
 private const val FOCUS_TRIES = 20
 private const val FOCUS_WAIT_MS = 50L
