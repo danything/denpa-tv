@@ -178,9 +178,81 @@ internal object Showcase {
     /** ライブの映像。局ごとに色の違う3本を回す (`scripts/smoke-media.sh`) */
     fun liveAsset(id: Long): String = "showcase-live-${stations.indexOfFirst { it.id == id }.coerceAtLeast(0) % 3 + 1}.mp4"
 
-    /** 番組表の番組の中身 (`api/programs/<局の id × 10>`)。ドラマだけ放送の詳細まで揃える。ほかは番組名と局だけ */
+    // ---- 番組表 (局ごとに、いまの番組の前後へ作り物の番組を並べる) ----
+
+    /** 番組表の番組。`slot` はいまの番組から前 (負) と後 (正) へ何本目か */
+    private class Slot(val station: Station, val slot: Int, val start: Long, val end: Long, val title: String, val genre: Int, val description: String) {
+        val id: Long = if (slot == 0) station.id * 10 else station.id * 1000 + 500 + slot
+    }
+
+    /** 番組表を作った時刻 (分に丸める)。取得し直しても番組の時刻と ID が変わらないように */
+    private val epoch = System.currentTimeMillis() / 60_000 * 60_000
+
+    /**
+     * 局ごとの番組 (前後 9 日ぶん)。いまの番組は局の一覧の `now` と同じ番組名と時間で、そこから前後へ `PROGRAMS` を局ごとにずらして回す。
+     * 短い番組 (5〜10 分) も混ぜる (番組表では色の帯だけになる)
+     */
+    private val slots: Map<Long, List<Slot>> by lazy {
+        stations.withIndex().associate { (index, s) ->
+            val list = ArrayList<Slot>()
+            val start = epoch - s.since * 60_000L
+            val end = epoch + s.left * 60_000L
+            list += Slot(s, 0, start, end, s.title, if (s.title == DRAMA_TITLE) 3 else 0, "")
+            var t = end
+            var k = 1
+            while (t < epoch + 9 * DAY_MS) {
+                val p = PROGRAMS[Math.floorMod(index * 5 + k, PROGRAMS.size)]
+                list += Slot(s, k, t, t + p.minutes * 60_000L, p.title, p.genre, p.description)
+                t += p.minutes * 60_000L
+                k++
+            }
+            t = start
+            k = -1
+            while (t > epoch - 2 * DAY_MS) {
+                val p = PROGRAMS[Math.floorMod(index * 5 + k, PROGRAMS.size)]
+                list += Slot(s, k, t - p.minutes * 60_000L, t, p.title, p.genre, p.description)
+                t -= p.minutes * 60_000L
+                k--
+            }
+            s.id to list.sortedBy { it.start }
+        }
+    }
+
+    /** 番組表の予約。いまの番組は局の一覧の印と同じ。日テレの次の番組は競合、ＮＨＫ総合１の2本あとはルールの予約 */
+    private fun reservation(slot: Slot): String? {
+        val s = slot.station
+        return when {
+            slot.slot == 0 && s.recording -> """{"state":"recording","reason":null,"ruleId":null}"""
+            slot.slot == 0 && s.reserved -> """{"state":"scheduled","reason":null,"ruleId":null}"""
+            s.sid == 1040 && slot.slot == 1 -> """{"state":"conflict","reason":${q(CONFLICT_REASON)},"ruleId":null}"""
+            s.sid == 1024 && slot.slot == 2 -> """{"state":"scheduled","reason":null,"ruleId":1}"""
+            s.sid == 1072 && slot.slot == 3 -> """{"state":"scheduled","reason":null,"ruleId":null}"""
+            else -> null
+        }
+    }
+
+    /** 番組表 (`api/programs?type=&from=&to=`)。その種別の局の、`from` から `to` にかかる番組 */
+    fun guide(query: String): String {
+        val params = query.split('&').associate { it.substringBefore('=') to it.substringAfter('=', "") }
+        val type = params["type"].orEmpty()
+        val from = params["from"]?.toLongOrNull() ?: 0L
+        val to = params["to"]?.toLongOrNull() ?: 0L
+        val services = stations.filter { it.type == type }.joinToString(",", "[", "]") { s ->
+            val programs = slots.getValue(s.id).filter { it.end > from && it.start < to }.joinToString(",", "[", "]") { p ->
+                """{"id":${p.id},"name":${q(p.title)},"startAt":${p.start},"endAt":${p.end},"description":${q(p.description)},
+                "genre":[{"lv1":${p.genre},"lv2":0}],"copyNever":false,"reservation":${reservation(p) ?: "null"},"recordingId":null}"""
+            }
+            """{"id":${s.id},"name":${q(s.name)},"remoteControlKey":${s.key},"logo":"api/services/${s.id}/logo","programs":$programs}"""
+        }
+        return """{"type":"$type","from":$from,"to":$to,"until":${epoch + 9 * DAY_MS},"services":$services}"""
+    }
+
+    /** 番組表の番組の中身 (`api/programs/<id>`)。いまの番組 (局の id × 10) のドラマは放送の詳細まで、ほかは番組名と説明 */
     fun program(id: Long): String? {
-        val s = stations.firstOrNull { it.id * 10 == id } ?: return null
+        val s = stations.firstOrNull { it.id * 10 == id } ?: return slots.values.firstNotNullOfOrNull { list -> list.firstOrNull { it.id == id } }?.let { p ->
+            """{"name":${q(p.title)},"service_name":${q(p.station.name)},"description":${q(p.description)},"extended":{},
+            "genre_detail":[{"lv1":${p.genre},"lv2":0}],"audios":[{"componentType":3,"langs":["jpn"]}],"video_type":"mpeg2","video_resolution":"1080i","is_free":true}"""
+        }
         val drama = s.title == DRAMA_TITLE
         val extended = if (!drama) emptyList() else listOf(
             "番組内容①" to "町の小さな法律事務所を舞台に、弁護士・朝倉と新人事務員の凛が、依頼人それぞれの「小さな正義」に向き合うリーガルドラマ。",
@@ -276,6 +348,31 @@ internal object Showcase {
 
     /** 録画中で、詳細に放送の詳細まで揃えた番組 (ライブの詳細を撮る) */
     private const val DRAMA_TITLE = "ドラマ「月曜九時」第3話"
+
+    private const val DAY_MS = 86_400_000L
+
+    /** 競合した予約の理由 (番組表の詳細に出る) */
+    private const val CONFLICT_REASON = "チューナーが足りません (同じ時間に 3 件の録画があります)"
+
+    /** 番組表に並べる作り物の番組 (番組名・長さ (分)・ジャンルの大分類・説明) */
+    private class Template(val title: String, val minutes: Int, val genre: Int, val description: String)
+
+    private val PROGRAMS = listOf(
+        Template("ニュース", 30, 0, "国内外のニュースと、各地の天気。"),
+        Template("天気予報", 5, 0, ""),
+        Template("まち歩き紀行「川越 蔵の町をゆく」", 45, 8, "蔵造りの町並みが残る川越を歩く。時の鐘の下で、老舗の菓子屋と鍛冶屋を訪ねる。"),
+        Template("ミニ番組「季節の花」", 10, 10, ""),
+        Template("星読みの薬師 #19「霧の街道」", 30, 7, "霧に閉ざされた街道で、リセは道に迷った隊商と出会う。"),
+        Template("夜のバラエティ「街角クイズ王」", 60, 5, "街で出会った人たちが、町の名物をめぐるクイズに挑む。"),
+        Template("きょうの台所「秋の炊き込みごはん」", 25, 2, "きのこと栗の炊き込みごはん。土鍋で炊くこつを紹介する。"),
+        Template("スポーツ・ダイジェスト", 55, 1, "週末の試合の結果と、注目の選手のインタビュー。"),
+        Template("ショッピング情報", 15, 2, ""),
+        Template("週末シネマ「遠い灯台」", 120, 6, "岬の灯台守の老人と、都会から来た少年のひと夏の物語。"),
+        Template("サイエンス最前線「深海の生きもの」", 50, 8, "水深 6000 メートルの海で見つかった、光る生きものたちに迫る。"),
+        Template("歌の時間", 40, 4, "秋の歌を、合唱団と弦楽四重奏で。"),
+        Template("辺境に追放された薬師令嬢は、王都で最強の錬金術師になる #5", 30, 7, "王都の薬師ギルドに呼ばれたエルナは、古い錬金術の写本を託される。"),
+        Template("ドキュメント「港の朝」", 30, 8, "夜明け前の魚市場で働く人たちの一日。"),
+    )
 
     private const val LOGO_WIDTH = 128
     private const val LOGO_HEIGHT = 72

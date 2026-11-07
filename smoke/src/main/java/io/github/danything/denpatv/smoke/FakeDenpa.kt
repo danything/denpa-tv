@@ -115,8 +115,12 @@ class FakeDenpa(
         if (showcase && showcaseRoute(method, path, query, range, out)) return
         val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file|poster)").matchEntire(path)
         val live = Regex("/api/services/(\\d+)/live").matchEntire(path)?.groupValues?.get(1)?.toLong()
+        val reserve = Regex("/api/programs/(\\d+)/record").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
-            path == "/api/health" -> json(out, """{"ok":true,"version":"v2.29.0"}""")
+            path == "/api/health" -> json(out, """{"ok":true,"version":"v2.33.0"}""")
+            // 番組表 (地上波だけ。局の一覧と同じ2局)
+            path == "/api/programs" -> json(out, guide(query))
+            reserve != null -> reserveRoute(method, reserve, out)
             path == "/api/services" -> json(out, services())
             // 局の勢い。いま映している局 (勢いの小さい [SERVICE_ID]) より隣の局が上
             path == "/api/jikkyo/ranking" -> json(out, if (showcase) Showcase.ranking() else """{"at":${System.currentTimeMillis()},"channels":[{"serviceId":$SERVICE_ID,"force":3},{"serviceId":$NEXT_SERVICE_ID,"force":36}]}""")
@@ -194,6 +198,7 @@ class FakeDenpa(
             ?.takeIf { method == "GET" }?.let { (id, part) -> id.toLong() to part } ?: (null to null)
         val program = Regex("/api/programs/(\\d+)").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
+            path == "/api/programs" -> json(out, Showcase.guide(query))
             path == "/api/services" -> json(out, Showcase.services())
             path == "/api/recordings" -> json(out, Showcase.recordings())
             program != null -> Showcase.program(program)?.let { json(out, it) } ?: respond(out, 404, "text/plain", "not found".toByteArray())
@@ -224,6 +229,52 @@ class FakeDenpa(
             }
         }
         return true
+    }
+
+    /** 番組表で予約した番組 (番組 ID → 状態)。番組表の答えに載せる */
+    private val reservations = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    /**
+     * 番組表 (`api/programs?type=GR&from=&to=`)。地上波の2局に、1時間ごとの番組を `from` から `to` まで。
+     * [SERVICE_ID] のいまの番組は [PROGRAM_ID] (ライブと同じ番組。詳細の中身が引ける)。
+     * 地上波のほかの種別は局が無い
+     */
+    private fun guide(query: String): String {
+        val params = query.split('&').associate { it.substringBefore('=') to it.substringAfter('=', "") }
+        val type = params["type"].orEmpty()
+        val from = params["from"]?.toLongOrNull() ?: 0L
+        val to = params["to"]?.toLongOrNull() ?: 0L
+        if (type != "GR") return """{"type":"$type","from":$from,"to":$to,"until":null,"services":[]}"""
+        val nowHour = System.currentTimeMillis() / HOUR_MS * HOUR_MS
+        fun programs(service: Long, title: String): String = (from / HOUR_MS * HOUR_MS until to step HOUR_MS).joinToString(",") { start ->
+            val (id, name) = when {
+                service == SERVICE_ID && start == nowHour -> PROGRAM_ID to PROGRAM_TITLE
+                else -> service * 1_000_000 + start / HOUR_MS % 1_000_000 to "$title ${start / HOUR_MS % 24}"
+            }
+            val reservation = reservations[id]?.let { """{"state":"$it","reason":null,"ruleId":null}""" } ?: "null"
+            """{"id":$id,"name":"$name","startAt":$start,"endAt":${start + HOUR_MS},"description":"","genre":[{"lv1":0,"lv2":0}],"copyNever":false,"reservation":$reservation,"recordingId":null}"""
+        }
+        return """{"type":"GR","from":$from,"to":$to,"until":null,"services":[
+            {"id":$SERVICE_ID,"name":"$SERVICE_NAME","remoteControlKey":1,"logo":null,"programs":[${programs(SERVICE_ID, PROGRAM_TITLE)}]},
+            {"id":$NEXT_SERVICE_ID,"name":"$NEXT_SERVICE_NAME","remoteControlKey":2,"logo":null,"programs":[${programs(NEXT_SERVICE_ID, NEXT_PROGRAM_TITLE)}]}]}"""
+    }
+
+    /** 番組の予約 (`POST`) と取消 (`DELETE`)。予約は「予約済み」、取消は予約が無ければ 404 */
+    private fun reserveRoute(method: String, id: Long, out: OutputStream) {
+        when (method) {
+            "POST" -> {
+                reservations[id] = "scheduled"
+                pendingEvents += "event: reservations\ndata: 1\n\n"
+                json(out, """{"recorded":"","programId":$id,"reserved":true,"state":"scheduled","reason":null}""")
+            }
+            "DELETE" -> if (reservations.remove(id) != null) {
+                pendingEvents += "event: reservations\ndata: 1\n\n"
+                json(out, """{"stopped":false}""")
+            } else {
+                respond(out, 404, "application/json", """{"message":"予約がありません"}""".toByteArray())
+            }
+            else -> respond(out, 404, "text/plain", "not found".toByteArray())
+        }
     }
 
     /** 局は2つ (左右の局の切り替えで行き来する)。どちらも放送中 (番組名がある。サブチャンネルとして飛ばされない) */
@@ -406,6 +457,7 @@ class FakeDenpa(
         /** いまの番組の番組 ID (`now.id`。局の id × 10) と、その説明 (`api/programs/<id>`。ライブの詳細に出る) */
         const val PROGRAM_ID = SERVICE_ID * 10
         const val PROGRAM_DESCRIPTION = "偽の番組の説明"
+        private const val HOUR_MS = 3_600_000L
         /** 左右の切り替えで次に来る局 */
         const val NEXT_SERVICE_ID = 3273601032L
         const val NEXT_SERVICE_NAME = "偽の教育"

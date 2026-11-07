@@ -83,6 +83,15 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
      */
     var menuOnReturn = false
 
+    /** 手元に置く番組表 (番組表の画面から観に行って戻っても残す) */
+    val guide = GuideStore(api, base)
+
+    /**
+     * 番組表から観に行った (「視聴」「再生」) ときの、番組表のフォーカスの位置。戻ったら番組表がここにフォーカスし直す
+     * (左のメニューにはフォーカスしない)。番組表が読んだら消す
+     */
+    var guideReturn: GuidePlace? = null
+
     /** 録画の一覧に戻ったときフォーカスする先 (再生の画面で消したときの隣) */
     var focusOnReturn: Long? = null
 

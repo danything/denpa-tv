@@ -2,7 +2,10 @@ package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.DenpaVersion
 import io.github.danything.denpatv.data.MIN_DENPA
+import io.github.danything.denpatv.data.MIN_GUIDE
 import io.github.danything.denpatv.data.denpaTooOld
+import io.github.danything.denpatv.data.guideTooOld
+import io.github.danything.denpatv.data.guideTooOldMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -40,5 +43,17 @@ class DenpaVersionTest {
         // 手元・develop の dev や読めないタグは分からないので言わない
         assertNull(denpaTooOld("dev"))
         assertNull(denpaTooOld("something"))
+    }
+
+    /** 番組表だけは v2.33.0 から。dev と読めないバージョンは確かめない (API を呼んで 404 なら同じ文) */
+    @Test
+    fun 番組表に要るバージョン() {
+        assertEquals("v2.33.0", MIN_GUIDE.toString())
+        assertEquals("番組表には denpa v2.33.0 以上が必要です (いまは v2.32.1)", guideTooOld("v2.32.1"))
+        assertNull(guideTooOld("v2.33.0"))
+        assertNull(guideTooOld("dev"))
+        assertNull(guideTooOld(null))
+        assertEquals("番組表には denpa v2.33.0 以上が必要です (いまは dev)", guideTooOldMessage("dev"))
+        assertEquals("番組表には denpa v2.33.0 以上が必要です", guideTooOldMessage(null))
     }
 }

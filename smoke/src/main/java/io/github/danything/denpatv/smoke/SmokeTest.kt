@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.util.Log
 import android.view.InputDevice
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
@@ -490,6 +491,60 @@ class SmokeTest {
     /** 録画の操作バー (操作の列) が開いている */
     private fun barOpen() = texts().any { it.startsWith("CM 飛ばし") }
 
+    /**
+     * 番組表。左のメニューから開いて右で表へ入る。**上下左右で送ってもアプリが落ちず**、送るあいだのフレームの描き時間をログに出す
+     * (`GuideSpeed`。安いテレビ (API 24) での速さを見る)。上の段の「今」でいまの番組へ戻して決定を押すと詳細が開き、「予約」で denpa に予約し
+     * (`POST api/programs/<id>/record`)、ボタンが「予約取消」に替わって、押すと取り消す (`DELETE`)。戻るで詳細が閉じる
+     */
+    @Test
+    fun guide() = watching {
+        open("denpa://recordings")
+        awaitText { it == FakeDenpa.RECORDING_TITLE }
+        for (i in 0 until MENU_TRIES) {
+            press(KeyEvent.KEYCODE_DPAD_LEFT)
+            if (poll(MENU_WAIT_MS) { "番組表" in texts() }) break
+        }
+        val item = node { it.text?.toString() == "番組表" }?.let(::clickable) ?: throw AssertionError("メニューが開きません: ${texts()}")
+        val opened = SystemClock.uptimeMillis()
+        assertTrue("「番組表」を押せません", item.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        awaitText { it == FakeDenpa.PROGRAM_TITLE }
+        val shownMs = SystemClock.uptimeMillis() - opened
+        assertTrue("番組表を取得しません: ${denpa.requests.distinct()}", denpa.targets.any { it.startsWith("/api/programs?type=GR&from=") })
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        SystemClock.sleep(FOCUS_SETTLE_MS)
+
+        // 送るあいだのフレーム (dumpsys gfxinfo)。リモコンを続けて押す速さで、下へ・上へ・右へ・左へ
+        shell("dumpsys gfxinfo $APP reset")
+        // 上へは下へ送った数より少なく (表の外の上の段へ出ないように)
+        for ((key, count) in listOf(KeyEvent.KEYCODE_DPAD_DOWN to GUIDE_MOVES, KeyEvent.KEYCODE_DPAD_UP to GUIDE_MOVES / 2, KeyEvent.KEYCODE_DPAD_RIGHT to 1, KeyEvent.KEYCODE_DPAD_LEFT to 1)) {
+            repeat(count) {
+                press(key)
+                SystemClock.sleep(GUIDE_GAP_MS)
+            }
+        }
+        SystemClock.sleep(FOCUS_SETTLE_MS)
+        val frames = shell("dumpsys gfxinfo $APP").lines().map { it.trim() }
+            .filter { line -> GFX_KEYS.any { line.startsWith(it) } }
+        Log.i("GuideSpeed", "API ${Build.VERSION.SDK_INT}: 開いてから番組が出るまで ${shownMs}ms、送るあいだ ${frames.joinToString(" / ")}")
+
+        // 上の段の「今」でいまの番組へ戻し (フォーカスは表のまま)、決定で詳細。「予約」→「予約取消」
+        val now = node { it.text?.toString() == "今" }?.let(::clickable) ?: throw AssertionError("「今」がありません: ${texts()}")
+        assertTrue("「今」を押せません", now.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        SystemClock.sleep(FOCUS_SETTLE_MS)
+        pressUntil(KeyEvent.KEYCODE_DPAD_CENTER, "決定で番組表の詳細が開きません") { windowTexts().let { "予約" in it && "閉じる" in it } }
+        assertTrue("いま放送している番組に「視聴」がありません: ${windowTexts()}", "視聴" in windowTexts())
+        assertTrue("詳細の中身 (api/programs/<id>) が出ません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { FakeDenpa.PROGRAM_DESCRIPTION in windowTexts() })
+        clickInWindows("予約")
+        assertTrue("予約しました が出ません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "予約しました" in windowTexts() })
+        assertRequested("POST /api/programs/${FakeDenpa.PROGRAM_ID}/record")
+        assertTrue("予約取消 が出ません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "予約取消" in windowTexts() })
+        clickInWindows("予約取消")
+        assertTrue("取り消せません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "予約を取り消しました" in windowTexts() })
+        assertRequested("DELETE /api/programs/${FakeDenpa.PROGRAM_ID}/record")
+        press(KeyEvent.KEYCODE_BACK)
+        assertTrue("戻るで詳細が閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in windowTexts() })
+    }
+
     /** 録画の一覧から、左のメニュー (ナビゲーション ドロワー) で設定を開く */
     @Test
     fun recordingsAndSettings() = watching {
@@ -905,5 +960,10 @@ class SmokeTest {
         private const val REPEAT_MS = 50L
         /** キーでフォーカスを移してから次のキーを送るまで (フォーカスする先が出来てフォーカスが移り終えるのを待つ) */
         private const val FOCUS_SETTLE_MS = 1_000L
+        /** 番組表で続けて送る数と間 (リモコンを続けて押す速さ) */
+        private const val GUIDE_MOVES = 12
+        private const val GUIDE_GAP_MS = 200L
+        /** dumpsys gfxinfo の行のうち、ログに出すもの */
+        private val GFX_KEYS = listOf("Total frames rendered", "Janky frames", "50th percentile", "90th percentile", "95th percentile", "99th percentile")
     }
 }

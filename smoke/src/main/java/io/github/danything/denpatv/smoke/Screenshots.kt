@@ -55,6 +55,7 @@ class Screenshots {
 
             recordings()
             live(denpa)
+            guide()
             settings()
             recording()
             chase()
@@ -244,6 +245,46 @@ class Screenshots {
         // もう一度の戻るで、いちばん上のメニューへ (「ライブ」にフォーカス)
         press(KeyEvent.KEYCODE_BACK)
         await("ライブから戻りません") { "設定" in texts() }
+    }
+
+    /**
+     * 番組表。左のメニューから開き (最後に観ていたテレビ朝日の、いま録画中のドラマにフォーカス)、下で次の番組の詳細 (「予約」が主)、
+     * 左の日テレへ移って下で競合した予約の詳細。終わったら左のメニューを開いておく (続けて設定を押す)
+     */
+    private fun guide() {
+        click("番組表")
+        await("番組表が出ません") { "今日" in texts() }
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        await("番組表にいまの番組が出ません") { texts().any { "月曜九時" in it } }
+        SystemClock.sleep(SETTLE_MS)
+        shot("guide")
+
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        SystemClock.sleep(FOCUS_MS)
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        await("番組表の詳細が開きません") { windowTexts().let { "予約" in it && "閉じる" in it } }
+        SystemClock.sleep(SETTLE_MS)
+        shot("guide-detail")
+        press(KeyEvent.KEYCODE_BACK)
+        await("番組表の詳細が閉じません") { "閉じる" !in windowTexts() }
+
+        press(KeyEvent.KEYCODE_DPAD_LEFT)
+        SystemClock.sleep(FOCUS_MS)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        SystemClock.sleep(FOCUS_MS)
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        await("競合した予約の詳細が開きません") { windowTexts().let { "予約取消" in it && it.any { t -> t.startsWith("録画できません") } } }
+        SystemClock.sleep(SETTLE_MS)
+        shot("guide-conflict")
+        press(KeyEvent.KEYCODE_BACK)
+        await("競合した予約の詳細が閉じません") { "閉じる" !in windowTexts() }
+
+        for (i in 0 until 8) {
+            if ("設定" in texts()) break
+            press(KeyEvent.KEYCODE_DPAD_LEFT)
+            SystemClock.sleep(KEY_GAP_MS)
+        }
+        await("左でメニューが開きません") { "設定" in texts() }
     }
 
     /** 設定。バージョンを押してアップデートを確かめた後 (「最新です」) */

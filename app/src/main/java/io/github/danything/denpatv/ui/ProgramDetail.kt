@@ -73,6 +73,8 @@ data class DetailFacts(
     val chips: List<String> = emptyList(),
     /** ラベルの頭に出す印。「● 録画中」は赤、「予約済み」は琥珀 (`badgeColor`) */
     val badge: String? = null,
+    /** 印の地と字の色。null なら `badge` の名前で決める (`badgeColor`。番組表は予約の状態で決めて渡す) */
+    val badgeColors: Pair<Color, Color>? = null,
     /** 進み (位置, 長さ。ミリ秒) と、その横の1言 (「あと 32 分」「0:14:22 まで観た」)。null なら出さない */
     val progress: Pair<Long, Long>? = null,
     val progressLabel: String? = null,
@@ -196,14 +198,14 @@ private fun Header(facts: DetailFacts, token: String?) {
                 Box(
                     Modifier
                         .height(CHIP_HEIGHT)
-                        .background(if (badge) badgeColor(label) else MaterialTheme.colorScheme.surfaceVariant, TagShape)
+                        .background(if (badge) facts.badgeColors?.first ?: badgeColor(label) else MaterialTheme.colorScheme.surfaceVariant, TagShape)
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         label,
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (badge) badgeTextColor(label) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (badge) facts.badgeColors?.second ?: badgeTextColor(label) else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                     )
                 }
