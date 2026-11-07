@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
@@ -39,7 +40,11 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -49,6 +54,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -57,6 +63,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
@@ -64,6 +71,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
@@ -122,7 +130,8 @@ data class GuidePlace(val type: String, val serviceId: Long?, val programId: Lon
  * - 開いたときは、今日・最後に観ていた局・いま流れている番組にフォーカスする。観に行って戻ったときは、出かけた番組に。
  *   ライブの「番組表」とリンク (`denpa://guide`) は、`Repository.guideReturn` に置いた局のいまの番組に
  * - サブチャンネルの列は、分割放送の間だけ自分のマスを持ち、ほかの時間は本チャンネルのマスが横に伸びる (`guideLayout`)
- * - マスの地の色はジャンルの大分類 (`Palette.genreCell`。ブラウザの denpa の番組表と同じ決まり)
+ * - マスの地の色はジャンルの大分類、録画中は録画中の赤 (`Palette.programCell`。ブラウザの denpa の番組表と同じ決まり)
+ * - 「いま」は表に線を引かず、過ぎた所をマスの上から暗くして示す。時刻の列には、いまの位置に分だけのカプセルを置く
  * - 録画キーで、フォーカスしている番組を予約する (予約できない番組は詳細を開く)
  * - 取得は種別ごとに放送日 (4:00 から) の 24 時間ずつ。フォーカスが取得した端から 3 時間以内に来たら、次 (前) の 24 時間を先に取得する。
  *   denpa の `reservations`・`programs` の通知で、見ている種別の窓を取得し直す
@@ -665,14 +674,6 @@ private fun GuideGrid(
             ServiceHeaders(repo, columns, column, columnPx, x, Modifier.fillMaxWidth().height(HEADER_HEIGHT).clipToBounds())
             Box(Modifier.padding(top = HEADER_HEIGHT).fillMaxSize().clipToBounds().onSizeChanged { viewport = it }) {
                 GuideCells(table, columns.size, focusedSpot, now, origin, pxPerMs, columnPx, x, y)
-                // いまの線 (赤)
-                Box(
-                    Modifier
-                        .offset { IntOffset(0, ((now.value - origin) * pxPerMs - y()).roundToInt()) }
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .background(Palette.Now),
-                )
             }
         }
     }
@@ -706,7 +707,7 @@ private fun GuideCells(
         lists
     }
     val widest = remember(table) { cells.maxOfOrNull { it.span } ?: 1 }
-    val provider = remember(table) {
+    val provider = remember(table, pxPerMs, gap) {
         object : LazyLayoutItemProvider {
             override val itemCount: Int get() = cells.size
 
@@ -714,8 +715,7 @@ private fun GuideCells(
             override fun Item(index: Int, key: Any) {
                 val cell = cells[index]
                 val isFocused by remember(cell) { derivedStateOf { focusedSpot.value?.holds(cell) == true } }
-                val past by remember(cell) { derivedStateOf { now.value >= cell.endAt } }
-                ProgramCell(cell, isFocused, past)
+                ProgramCell(cell, isFocused, now, pxPerMs, gap)
             }
 
             override fun getKey(index: Int): Any = cells[index].let { "${it.program.id}:${it.column}:${it.startAt}" }
@@ -780,24 +780,48 @@ private fun firstEndingAfter(cells: List<GuideCell>, list: List<Int>, at: Long):
 }
 
 /**
- * 番組の1マス。地はジャンルの色 (ブラウザの denpa の番組表と同じ決まり。`Palette.genreCell`)、始まりの時刻と印 (予約済み・録画中・競合)、
- * 番組名 (放送の字、15sp)、説明。**短いマス (`SHORT_MS` 未満) は地の色だけ**にし、フォーカスしたら字を出す (呼ぶ側が手前に広げて重ねる)。
- * 過ぎたマスは沈める
+ * 番組の1マス。地はジャンルの色、録画中なら録画中の赤 (ブラウザの denpa の番組表と同じ決まり。`Palette.programCell`)。
+ * 中はジャンルの色の点・始まりの時刻・印 (予約済み・録画中・競合)、番組名 (放送の字、15sp)、説明。
+ * **短いマス (`SHORT_MS` 未満) は地の色だけ**にし、フォーカスしたら字を出す (呼ぶ側が手前に広げて重ねる)。
+ *
+ * **放送が過ぎた所は、マスの上からいまの位置まで地を暗くする** (ブラウザの番組表の `.program` の `--past`・`--shade`)。
+ * 放送中の番組は過ぎた所を 45%、終わった番組はマス全体を 78% の地の色で覆う。覆うのは地だけで、字はその上に描くので読めたまま。
+ * フォーカスした終わった番組は覆わない (テレビでは詳細を開く前にマスで読むため)
  */
 @Composable
-private fun ProgramCell(cell: GuideCell, focused: Boolean, past: Boolean) {
+private fun ProgramCell(cell: GuideCell, focused: Boolean, now: State<Long>, pxPerMs: Float, gap: Int) {
     val program = cell.program
     val short = cell.endAt - cell.startAt < SHORT_MS
+    val recording = program.reservation?.state == ReservationState.RECORDING
     Box(
         Modifier
             .fillMaxSize()
-            .background(Palette.genreCell(program.genre, focused), CELL_SHAPE)
-            .then(if (focused) Modifier.border(2.dp, Palette.AccentBright, CELL_SHAPE) else Modifier)
-            .clipToBounds(),
+            .clip(CELL_SHAPE)
+            .background(Palette.programCell(program.genre, recording, focused))
+            .drawBehind {
+                val at = now.value
+                if (at <= cell.startAt) return@drawBehind
+                if (at >= cell.endAt) {
+                    if (!focused) drawRect(ENDED_SHADE)
+                    return@drawBehind
+                }
+                // マスの下の端は番組の終わり (上の端は表の上で切れることがある) なので、下から測る。
+                // フォーカスして広げたマスは高さが番組の長さと合わないので、番組の長さに対する割合で
+                val natural = (cell.endAt - cell.startAt) * pxPerMs - gap
+                val shaded = if (size.height > natural + 1f) {
+                    size.height * (at - cell.startAt) / (cell.endAt - cell.startAt)
+                } else {
+                    size.height + gap - (cell.endAt - at) * pxPerMs
+                }
+                drawRect(AIRING_SHADE, size = Size(size.width, shaded.coerceIn(0f, size.height)))
+            }
+            .then(if (focused) Modifier.border(2.dp, Palette.AccentBright, CELL_SHAPE) else Modifier),
     ) {
         if (!short || focused) {
             Column(Modifier.padding(start = 6.dp, end = 5.dp, top = 3.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // ジャンルの点 (ブラウザの番組表の時刻の前の点と同じ)
+                    Palette.genreTint(program.genre)?.let { Box(Modifier.size(GENRE_DOT).background(it, CircleShape)) }
                     Text(TIME.format(Date(program.startAt)), style = MaterialTheme.typography.labelSmall, color = Palette.TextMuted, maxLines = 1)
                     program.reservation?.let { StateMark(it) }
                 }
@@ -818,7 +842,6 @@ private fun ProgramCell(cell: GuideCell, focused: Boolean, past: Boolean) {
                 }
             }
         }
-        if (past && !focused) Box(Modifier.matchParentSize().background(PAST_SCRIM))
     }
 }
 
@@ -847,7 +870,11 @@ internal fun stateColors(state: String): Pair<Color, Color> = when (state) {
     else -> Color.Transparent to Palette.TextMuted
 }
 
-/** 時刻の列。1時間ごとの時、放送日の頭 (4 時) には日付も。いまの時刻を赤で */
+/**
+ * 時刻の列。1時間ごとの時を左に寄せ、放送日の始まり (4 時) には日付も添える。**時の数字はその1時間のあいだ列の上の端に残る**
+ * (ブラウザの番組表の `.hour-label` と同じ。時の終わりで次の時に押し上げられる)。
+ * いまの位置には、分だけを書いたカプセルを重ねる (時は同じ高さの時の数字で読む。読み上げには時まで渡す)
+ */
 @Composable
 private fun TimeColumn(origin: Long, end: Long, pxPerMs: Float, now: State<Long>, y: () -> Float, modifier: Modifier) {
     val density = LocalDensity.current
@@ -858,22 +885,41 @@ private fun TimeColumn(origin: Long, end: Long, pxPerMs: Float, now: State<Long>
         for (h in firstHour until (firstHour + SHOWN_HOURS).coerceAtMost(hours)) {
             val at = origin + h * HOUR_MS
             Column(
-                Modifier.offset { IntOffset(0, (h * hourPx - y()).roundToInt()) }.padding(top = 4.dp, end = 6.dp).fillMaxWidth(),
-                horizontalAlignment = Alignment.End,
+                Modifier
+                    .fillMaxWidth()
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        layout(placeable.width, placeable.height) {
+                            // 時の頭が上へ出たら上の端に止め、時の終わりが来たら一緒に上へ出ていく
+                            val top = h * hourPx - y()
+                            placeable.place(0, top.coerceAtLeast(0f).coerceAtMost(top + hourPx - placeable.height).roundToInt())
+                        }
+                    }
+                    .padding(top = 4.dp, start = 4.dp),
             ) {
                 Text(HOUR.format(Date(at)), style = MaterialTheme.typography.titleSmall, color = Palette.Text)
-                if (h % 24 == 0) Text(SHORT_DAY.format(Date(at)), style = MaterialTheme.typography.labelSmall, color = Palette.TextMuted)
+                if (h % 24 == 0) Text(SHORT_DAY.format(Date(at)), style = MaterialTheme.typography.labelSmall, color = Palette.TextMuted, maxLines = 1, softWrap = false)
             }
         }
+        // いまの時刻のカプセル。高さの真ん中をいまの位置に合わせる
         Text(
-            TIME.format(Date(now.value)),
+            MINUTE.format(Date(now.value)),
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            color = Palette.RecordingText,
+            textAlign = TextAlign.Center,
             maxLines = 1,
             modifier = Modifier
-                .offset { IntOffset(0, ((now.value - origin) * pxPerMs - y()).roundToInt() - with(density) { 9.dp.roundToPx() }) }
-                .background(Palette.Now, TagShape)
-                .padding(horizontal = 3.dp),
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    layout(placeable.width, placeable.height) {
+                        placeable.place(0, ((now.value - origin) * pxPerMs - y() - placeable.height / 2f).roundToInt())
+                    }
+                }
+                .fillMaxWidth()
+                .shadow(4.dp, PillShape)
+                .background(Palette.SurfaceRaised, PillShape)
+                .semantics { contentDescription = "いま ${TIME.format(Date(now.value))}" },
         )
     }
 }
@@ -1077,8 +1123,8 @@ private val GUIDE_TYPES = listOf("GR", "BS", "CS")
 /** 取得し直す通知 */
 private val GUIDE_EVENTS = setOf("reservations", "programs")
 
-/** 時刻の飛び先と、放送日の何時か (深夜は 24 時 = 翌日の 0 時) */
-private val JUMPS = listOf("朝" to 6, "昼" to 12, "夜" to 19, "深夜" to 24)
+/** 時刻の飛び先と、放送日の何時か (ブラウザの番組表と同じ) */
+private val JUMPS = listOf("朝" to 6, "昼" to 12, "夜" to 19, "深夜" to 23)
 
 private const val NO_CHANNELS = "チャンネルがありません。チャンネルスキャンは denpa の設定でします"
 private const val NO_PROGRAMS = "番組表がまだありません。denpa が番組表を取得するとここに出ます"
@@ -1099,11 +1145,14 @@ private const val EDGE_MS = 3 * HOUR_MS
 private const val SHIFT_MS = 3 * HOUR_MS
 private const val PAGE_COLUMNS = 6
 
-/** この長さより短い番組は色の帯だけ (1 時間 96dp で 24dp。時刻と番組名の1行が入らない) */
-private const val SHORT_MS = 15 * 60_000L
+/** この長さより短い番組は色の帯だけ (1 時間 144dp で 24dp。時刻と番組名の1行が入らない) */
+private const val SHORT_MS = 10 * 60_000L
 
-/** 1時間の高さ、局の列の幅 (1080p で 6 局が並ぶ)、時刻の列の幅、局の見出しの高さ、上の段の高さ */
-private val HOUR_HEIGHT = 96.dp
+/**
+ * 1時間の高さ (ブラウザの番組表と同じ割合。5 分のマスが 0.75rem で、1 時間 9rem = 144px)、局の列の幅 (1080p で 6 局が並ぶ)、
+ * 時刻の列の幅、局の見出しの高さ、上の段の高さ
+ */
+private val HOUR_HEIGHT = 144.dp
 private val COLUMN_WIDTH = 128.dp
 private val TIME_WIDTH = 44.dp
 private val HEADER_HEIGHT = 44.dp
@@ -1111,24 +1160,26 @@ private val TOP_HEIGHT = 48.dp
 private val CHIP_MIN_WIDTH = 40.dp
 private val CHIP_HEIGHT = 34.dp
 
-/** マスの間、フォーカスした短い番組を広げる高さ、フォーカスした番組の上下に空ける余白 */
+/** マスの間、フォーカスした短い番組を広げる高さ、フォーカスした番組の上下に空ける余白、マスの形、ジャンルの点の大きさ (ブラウザの 0.4375rem) */
 private val CELL_GAP = 2.dp
 private val FOCUSED_MIN_HEIGHT = 96.dp
 private val EDGE_PAD = 24.dp
 private val CELL_SHAPE = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+private val GENRE_DOT = 7.dp
 
 /** 番組名の字 (14sp 以上。離れて読む) */
 private val NAME_SIZE = 15.sp
 private val NAME_LINE = 20.sp
 
-/** 過ぎた番組に重ねる地の色 */
-private val PAST_SCRIM = Palette.Background.copy(alpha = 0.55f)
+/** 過ぎた所に重ねる地の色。放送中の番組は浅く (終わった番組と同じ濃さだと、いま観られる番組まで終わって見える) */
+private val AIRING_SHADE = Palette.Background.copy(alpha = 0.45f)
+private val ENDED_SHADE = Palette.Background.copy(alpha = 0.78f)
 
 /** 基準の時刻に合わせて送るとき、表の上からどこに置くか (高さの割合。少し前の番組も見えるように) */
 private const val ALIGN = 0.15f
 private const val SCROLL_MS = 250
 
-/** 時刻の列と見出しで、作る数 (見えるぶん + 1) */
+/** 時刻の列と見出しで、作る数 (見えるぶん + 1 より多め。1080p で時は 3 つほど、局は 6 つ見える) */
 private const val SHOWN_HOURS = 7
 private const val SHOWN_COLUMNS = 8
 
@@ -1143,6 +1194,7 @@ private const val NOTICE_MS = 4_000L
 private val NOTICE_WIDTH = 640.dp
 
 private val TIME = SimpleDateFormat("HH:mm", Locale.JAPAN)
+private val MINUTE = SimpleDateFormat("mm", Locale.JAPAN)
 private val HOUR = SimpleDateFormat("H", Locale.JAPAN)
 private val SHORT_DAY = SimpleDateFormat("M/d(E)", Locale.JAPAN)
 private val DAY_OF_MONTH = SimpleDateFormat("d(E)", Locale.JAPAN)

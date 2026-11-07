@@ -49,7 +49,7 @@ class GuideTest {
         assertEquals(day, broadcastDay(day - 1 + 24 * hour, tokyo))
         assertEquals(day + 24 * hour, broadcastDay(day + 24 * hour, tokyo))
         assertEquals(day + 24 * hour, nextDay(day, tokyo))
-        // 深夜 (24 時) は翌日の 0 時
+        // 24 時は翌日の 0 時
         assertEquals(day + 20 * hour, dayHour(day, 24, tokyo))
         assertEquals(day + 2 * hour, dayHour(day, 6, tokyo))
     }

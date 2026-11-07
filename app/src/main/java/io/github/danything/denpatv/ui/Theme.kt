@@ -53,8 +53,8 @@ object Palette {
     val Cm = Color(0xCCFFB300)
     val OnScrimMuted = Color(0xFFD0D0D0)
 
-    /** 番組表の「いま」の線と時刻 (録画中の赤と同じ) */
-    val Now = Recording
+    /** 暗い地に置く録画中の赤の字 (番組表の「いま」の時刻。ブラウザの denpa の `--dp-rec-text`) */
+    val RecordingText = Color(0xFFF38F79)
 
     /**
      * 番組表のマスの地の色。**ブラウザの denpa の番組表と同じ決まり**: ジャンルの大分類 (0〜11) ごとの色 (hsl の色相だけを変え、
@@ -65,8 +65,18 @@ object Palette {
     private val GenreCells = GenreTints.map { mix(Surface, it, 0.14f) }
     private val GenreFocused = GenreTints.map { mix(SurfaceRaised, it, 0.24f) }
 
-    fun genreCell(lv1: Int?, focused: Boolean): Color =
-        lv1?.let { (if (focused) GenreFocused else GenreCells).getOrNull(it) } ?: if (focused) SurfaceRaised else Surface
+    /** 録画中のマスの地。録画中の赤をジャンルより 6% 多く (20%)、フォーカスしたマスは一段明るい面に 28% 混ぜる (ブラウザと同じ) */
+    private val RecordingCell = mix(Surface, Recording, 0.20f)
+    private val RecordingFocused = mix(SurfaceRaised, Recording, 0.28f)
+
+    /** ジャンルの色そのもの (マスの時刻の前の点)。分からなければ null */
+    fun genreTint(lv1: Int?): Color? = lv1?.let { GenreTints.getOrNull(it) }
+
+    /** 番組表のマスの地。録画中はジャンルより録画中の赤を優先する */
+    fun programCell(lv1: Int?, recording: Boolean, focused: Boolean): Color = when {
+        recording -> if (focused) RecordingFocused else RecordingCell
+        else -> lv1?.let { (if (focused) GenreFocused else GenreCells).getOrNull(it) } ?: if (focused) SurfaceRaised else Surface
+    }
 
     /** sRGB のまま混ぜる (ブラウザの `color-mix(in srgb, …)` と同じ) */
     private fun mix(base: Color, tint: Color, amount: Float) = Color(
