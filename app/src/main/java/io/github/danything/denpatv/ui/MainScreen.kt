@@ -55,16 +55,18 @@ private enum class Destination(val label: String, val icon: Int) {
     // いちばん使う録画を上に (開いたときもここ)
     Recordings("録画", R.drawable.ic_recordings),
     Live("ライブ", R.drawable.ic_live),
+    Guide("番組表", R.drawable.ic_guide),
     Settings("設定", R.drawable.ic_settings),
 }
 
 /**
  * いちばん上の画面。**左に Compose for TV のナビゲーション ドロワー** (畳むとアイコンだけの細い列、
- * 左キーで開く) を置き、録画・ライブ・設定へ行く。
+ * 左キーで開く) を置き、録画・ライブ・番組表・設定へ行く。
  *
  * Android TV のデザインの指針は、行き先を 5〜6 までのドロワーにまとめるよう勧めている。
  * 局も録画も数が多いので、1つの画面に列で並べるより、それぞれの画面に分ける。
- * ライブは押すとすぐ全画面で映す (最後に観ていた局)。録画と設定はドロワーの右に出す
+ * ライブは押すとすぐ全画面で映す (最後に観ていた局)。録画・番組表・設定はドロワーの右に出す。
+ * 番組表から観に行って戻ったとき (`Repository.guideReturn`) は、左のメニューではなく番組表がフォーカスを取る
  */
 @Composable
 fun MainScreen(
@@ -95,7 +97,7 @@ fun MainScreen(
      * 戻ってきたときにフォーカスを取りにいくので、そちらには取らせない (`takeFocus`)。フォーカスが移るまで何フレームか試す —
      * フォーカスし損ねると、どこにもフォーカスが無くなってリモコンが効かなくなる
      */
-    var toMenu by remember { mutableStateOf(repo.menuOnReturn.also { repo.menuOnReturn = false }) }
+    var toMenu by remember { mutableStateOf((repo.menuOnReturn && repo.guideReturn == null).also { repo.menuOnReturn = false }) }
     LaunchedEffect(Unit) {
         if (!toMenu) return@LaunchedEffect
         val live = items.getValue(Destination.Live)
@@ -149,6 +151,12 @@ fun MainScreen(
         // 観て戻ったら右の画面がフォーカスを取る (録画の一覧なら開いた録画、設定なら頭のボタン)
         when (selected) {
             Destination.Settings -> SettingsScreen(repo, onLicenses)
+            Destination.Guide -> GuideScreen(
+                repo,
+                onLive = onLive,
+                onWatch = { id -> repo.recordings.firstOrNull { it.id == id }?.let { onWatch(it, false) } },
+                onUnauthorized = onUnauthorized,
+            )
             else -> RecordingsScreen(repo, onWatch, onUnauthorized, onLive = onLive, takeFocus = !toMenu)
         }
     }

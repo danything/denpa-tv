@@ -52,6 +52,21 @@ object Palette {
     val Reserved = Color(0xFFFECC63)
     val Cm = Color(0xCCFFB300)
     val OnScrimMuted = Color(0xFFD0D0D0)
+
+    /** 番組表の「いま」の線と時刻 (録画中の赤と同じ) */
+    val Now = Recording
+
+    /**
+     * 番組表のマスの左の帯の色。ジャンルの大分類 (0〜15) ごと。**地の色に沈む、くすんだ色** (状態の色の赤と琥珀とは別の段に置き、
+     * 予約・録画中の印と見分けられるように)。分からないジャンルは線の色
+     */
+    val Genres = listOf(
+        Color(0xFF5B7DB1), Color(0xFF4F9A78), Color(0xFFB0875A), Color(0xFF9A6BB0),
+        Color(0xFF5FA3A8), Color(0xFFB57A8E), Color(0xFF8C8C5A), Color(0xFF7E7BC4),
+        Color(0xFF6E9A5C), Color(0xFFA8735C), Color(0xFF5E8CA6), Color(0xFF8A9AA8),
+    )
+
+    fun genre(lv1: Int?): Color = lv1?.let { Genres.getOrNull(it) } ?: Line
 }
 
 /** tv-material の色に当てる。部品の既定 (Surface の地・本文の色・進行バー・見出し) がこれで揃う */

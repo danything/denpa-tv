@@ -92,6 +92,52 @@ class DenpaApi(
     }
 
     /**
+     * 番組表 (`GET api/programs?type=&from=&to=`。denpa v2.33.0 から)。種別 `type` (GR・BS・CS) の `from` から `to` まで (24 時間まで)。
+     * 古い denpa (エンドポイントが無い) は 404 で `TooOld`、断られた (403) は `Forbidden`、届かない・ほかの失敗は `Offline`、
+     * 形式が違えば `warn` に書いて `Unreadable`。401 は `Unauthorized`
+     */
+    suspend fun guide(base: URI, type: String, from: Long, to: Long): GuideLookup = withContext(Dispatchers.IO) {
+        val res = call(base, "api/programs?type=$type&from=$from&to=$to") ?: return@withContext GuideLookup.Offline
+        when {
+            res.code == 404 -> GuideLookup.TooOld
+            res.code == 403 -> GuideLookup.Forbidden
+            !res.ok -> GuideLookup.Offline
+            else -> parseGuide(res.text(), warn)?.let { page ->
+                // 答えに範囲が無ければ、リクエストした範囲 (手元の窓を合わせるのに使う)
+                GuideLookup.Found(page.copy(type = page.type.ifEmpty { type }, from = page.from.takeIf { it > 0 } ?: from, to = page.to.takeIf { it > 0 } ?: to))
+            } ?: GuideLookup.Unreadable
+        }
+    }
+
+    /**
+     * **番組表の番組を予約する** (`POST api/programs/<id>/record`)。予約の状態 (`state`) と、録画できない理由 (`reason`。競合など) を返す。
+     * 断られた (404・400) は denpa の文言 (`message`)
+     */
+    suspend fun reserveProgram(base: URI, id: Long): ReserveResult = withContext(Dispatchers.IO) {
+        val res = call(base, "api/programs/$id/record", "POST") ?: return@withContext ReserveResult.Failed("denpa に接続できません")
+        val body = runCatching { lenientJson.decodeFromString(ReserveResponse.serializer(), res.text()) }.getOrNull()
+        when {
+            res.ok && body?.state != null -> ReserveResult.Reserved(body.state, body.reserved, body.reason)
+            res.ok -> ReserveResult.Failed("denpa の応答を読めません (${res.code})")
+            else -> ReserveResult.Failed(body?.message ?: "${res.code}")
+        }
+    }
+
+    /**
+     * **番組の予約を取り消す** (`DELETE api/programs/<id>/record`)。録画中なら録画を止める (`stopped`。録れたところまでは残る)。
+     * 予約が無い (404) は `Missing`
+     */
+    suspend fun cancelProgram(base: URI, id: Long): CancelResult = withContext(Dispatchers.IO) {
+        val res = call(base, "api/programs/$id/record", "DELETE") ?: return@withContext CancelResult.Failed("denpa に接続できません")
+        val body = runCatching { lenientJson.decodeFromString(CancelResponse.serializer(), res.text()) }.getOrNull()
+        when {
+            res.ok -> CancelResult.Canceled(body?.stopped == true)
+            res.code == 404 -> CancelResult.Missing
+            else -> CancelResult.Failed(body?.message ?: "${res.code}")
+        }
+    }
+
+    /**
      * 録画を何で観られるか (`GET api/recordings/<id>/playback?playable=`)。`playable` を付けて、denpa が選んだ観方 (`auto`) も受け取る。
      * 観られない (404。録画中・ファイルが無い) は `Missing`、届かない・読めないは `Failed`
      */
@@ -249,6 +295,44 @@ sealed interface RecordResult {
     data class Recorded(val title: String, val reserved: Boolean) : RecordResult
     /** 断られた。`message` は denpa の文言 (画面にそのまま出せる) */
     data class Failed(val message: String) : RecordResult
+}
+
+/** 番組表を引いた結果 (`DenpaApi.guide`) */
+sealed interface GuideLookup {
+    data class Found(val page: GuidePage) : GuideLookup
+    /** エンドポイントが無い (404。denpa v2.33.0 より前) */
+    data object TooOld : GuideLookup
+    /** 断られた (403) */
+    data object Forbidden : GuideLookup
+    /** 届かない・2xx でない */
+    data object Offline : GuideLookup
+    /** 形式が違う (denpa のバージョンのずれ) */
+    data object Unreadable : GuideLookup
+}
+
+/** `api/programs/<id>/record` (POST) の答え。断られたとき (404・400) は `message` だけ来る */
+@Serializable
+private data class ReserveResponse(val state: String? = null, val reserved: Boolean = true, val reason: String? = null, val message: String? = null)
+
+/** `api/programs/<id>/record` (DELETE) の答え */
+@Serializable
+private data class CancelResponse(val stopped: Boolean = false, val message: String? = null)
+
+/** 番組表の番組を予約した結果 (`DenpaApi.reserveProgram`) */
+sealed interface ReserveResult {
+    /** 予約した。`reserved` が false (たいていは `state` が競合) なら予約はあるが録画しない。`reason` はその理由 */
+    data class Reserved(val state: String, val reserved: Boolean, val reason: String?) : ReserveResult
+    /** 断られた。`message` は denpa の文言 */
+    data class Failed(val message: String) : ReserveResult
+}
+
+/** 予約を取り消した結果 (`DenpaApi.cancelProgram`) */
+sealed interface CancelResult {
+    /** 取り消した。`stopped` なら録画中の録画を止めた */
+    data class Canceled(val stopped: Boolean) : CancelResult
+    /** 予約が無かった (404) */
+    data object Missing : CancelResult
+    data class Failed(val message: String) : CancelResult
 }
 
 @Serializable

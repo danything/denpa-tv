@@ -28,6 +28,27 @@ data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Compar
 val MIN_DENPA = DenpaVersion(2, 29, 0)
 
 /**
+ * **番組表と予約が要る denpa のバージョン** (`GET api/programs`・`POST`/`DELETE api/programs/<id>/record` が 2.33.0 から)。
+ * `MIN_DENPA` より新しいが、ほかの画面は古い denpa でも使えるので `MIN_DENPA` は上げず、番組表の画面だけがこれを見る
+ */
+val MIN_GUIDE = DenpaVersion(2, 33, 0)
+
+/**
+ * 番組表の画面の真ん中に出す1行。`version` が `MIN_GUIDE` より古ければ出す。**dev ビルドと読めないバージョン (null も) は確かめない** (null を返す。
+ * 呼ぶ側は API を呼び、404 なら `guideTooOldMessage` を出す)
+ */
+fun guideTooOld(version: String?): String? {
+    val running = version?.let { DenpaVersion.parse(it) } ?: return null
+    return if (running < MIN_GUIDE) guideTooOldMessage(version) else null
+}
+
+/** 番組表に要る denpa のバージョンの1行。いまのバージョンが分かれば添える */
+fun guideTooOldMessage(version: String?): String {
+    val running = version?.let { DenpaVersion.parse(it)?.toString() ?: it.trim() }?.takeIf { it.isNotEmpty() }
+    return "番組表には denpa $MIN_GUIDE 以上が必要です" + (running?.let { " (いまは $it)" } ?: "")
+}
+
+/**
  * 繋いだ denpa が古すぎれば、画面に出す1行。足りていれば・分からなければ (`dev` など) null。
  * `version` が無い (null) のは版を返さないとても古い denpa。
  * **古くても止めない** (あるエンドポイントは読み、無いものは出ないだけ)。言うだけ
