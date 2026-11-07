@@ -41,7 +41,7 @@ class DeepLinkTest {
         assertNull(DeepLink.parse(""))
         assertNull(DeepLink.parse("https://example.com/live"))
         assertNull(DeepLink.parse("denpa:live"))
-        assertNull(DeepLink.parse("denpa://guide"))
+        assertNull(DeepLink.parse("denpa://settings"))
     }
 
     private val nhk = service(3273601024, "GR", "ＮＨＫ総合１・東京", 1, airing = true)
