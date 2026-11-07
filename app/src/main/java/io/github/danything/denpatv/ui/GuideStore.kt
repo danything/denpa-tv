@@ -26,6 +26,8 @@ class GuideStore(private val api: DenpaApi, private val base: URI) {
     private val fetched = mutableMapOf<GuideWindows.Key, Long>()
     private var fetches = 0L
     private val loading = mutableSetOf<GuideWindows.Key>()
+    /** 取得している最中に取得し直しを頼まれた窓 (終わったらもう1回取得する) */
+    private val again = mutableSetOf<GuideWindows.Key>()
 
     /** 取得できなかった (届かない・denpa が答えない)。取得できているぶんは出したまま、上の段に「denpa に繋がっていません」 */
     var offline by mutableStateOf(false)
@@ -61,7 +63,8 @@ class GuideStore(private val api: DenpaApi, private val base: URI) {
     fun days(type: String): List<Long> = pages.keys.filter { it.type == type }.map { it.day }
 
     /**
-     * 窓 (`type` の放送日 `day`) を取得する。取得してあれば何もしない (`force` なら取得し直す)。取得している最中なら待たない。
+     * 窓 (`type` の放送日 `day`) を取得する。取得してあれば何もしない (`force` なら取得し直す)。取得している最中なら待たない
+     * (`force` なら、その取得が終わってからもう1回取得する)。
      * `keep` は捨てない窓 (いま見ている窓)。401 は `Unauthorized`
      */
     suspend fun load(type: String, day: Long, keep: Set<GuideWindows.Key>, force: Boolean = false) {
@@ -70,7 +73,11 @@ class GuideStore(private val api: DenpaApi, private val base: URI) {
             windows.touch(key, keep + key).forEach(::forget)
             return
         }
-        if (!loading.add(key)) return
+        if (!loading.add(key)) {
+            // 取得している最中に取得し直しを頼まれた (予約の通知が重なった)。その答えは通知より前のものかもしれないので、終わったらもう1回
+            if (force) again += key
+            return
+        }
         try {
             when (val result = api.guide(base, type, day, nextDay(day))) {
                 is GuideLookup.Found -> {
@@ -91,6 +98,7 @@ class GuideStore(private val api: DenpaApi, private val base: URI) {
         } finally {
             loading.remove(key)
         }
+        if (again.remove(key)) load(type, day, keep, force = true)
     }
 
     /**
