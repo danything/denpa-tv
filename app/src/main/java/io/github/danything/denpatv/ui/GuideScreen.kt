@@ -227,12 +227,13 @@ private fun GuideBody(
         }
     }
 
-    /** 動いた先へ。`OutUp` は上の段へ、`OutLeft` は false (フォーカスを左のメニューへ移させる) */
     val top = remember { FocusRequester() }
     val grid = remember { FocusRequester() }
     var gridFocused by remember { mutableStateOf(false) }
     /** 決定を表で押しはじめたか (前の画面で押した決定の離しで、詳細を開かない) */
     val centerDown = remember { BooleanArray(1) }
+
+    /** 動いた先へ。`OutUp` は上の段へ、`OutLeft` は false (フォーカスを左のメニューへ移させる) */
     fun go(move: GuideMove): Boolean {
         when (move) {
             is GuideMove.To -> {
@@ -304,79 +305,80 @@ private fun GuideBody(
             now = { now.longValue },
         )
         Spacer(Modifier.height(10.dp))
-        Box(Modifier.fillMaxWidth().weight(1f)) {
-            when {
-                columns.isEmpty() && !store.has(type) -> Centered(
-                    when {
-                        store.offline -> NOT_CONNECTED
-                        store.unreadable -> UNREADABLE
-                        else -> "読み込んでいます…"
-                    },
-                )
-                columns.isEmpty() -> Centered(NO_CHANNELS)
-                columns.all { it.programs.isEmpty() } && !store.offline -> Centered(NO_PROGRAMS)
-                else -> GuideGrid(
-                    repo = repo,
-                    columns = columns,
-                    column = column,
-                    focused = focused,
-                    focusedId = focusedId,
-                    anchor = anchor,
-                    jump = jump,
-                    origin = origin,
-                    end = end,
-                    now = now,
-                    modifier = Modifier
-                        .focusRequester(grid)
-                        .onFocusChanged { gridFocused = it.isFocused }
-                        .focusProperties { up = top }
-                        .onKeyEvent { event ->
-                            val native = event.nativeKeyEvent
-                            if (event.type == KeyEventType.KeyUp) {
-                                if (native.keyCode in CENTER_KEYS && !native.isCanceled && focused != null && centerDown[0]) {
-                                    centerDown[0] = false
-                                    opened = focused.id
-                                    return@onKeyEvent true
-                                }
-                                return@onKeyEvent native.keyCode in CENTER_KEYS
-                            }
-                            if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
-                            when (native.keyCode) {
-                                KeyEvent.KEYCODE_DPAD_UP -> go(moves.up(spot))
-                                KeyEvent.KEYCODE_DPAD_DOWN -> go(moves.down(spot))
-                                KeyEvent.KEYCODE_DPAD_LEFT -> go(moves.left(spot))
-                                KeyEvent.KEYCODE_DPAD_RIGHT -> go(moves.right(spot))
-                                KeyEvent.KEYCODE_CHANNEL_UP -> go(moves.page(spot, PAGE_COLUMNS))
-                                KeyEvent.KEYCODE_CHANNEL_DOWN -> go(moves.page(spot, -PAGE_COLUMNS))
-                                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { jump++; go(moves.shift(spot, SHIFT_MS)) }
-                                KeyEvent.KEYCODE_MEDIA_REWIND -> { jump++; go(moves.shift(spot, -SHIFT_MS)) }
-                                in CENTER_KEYS -> {
-                                    if (native.repeatCount == 0) centerDown[0] = true
-                                    true
-                                }
-                                else -> liveChannelKey(native.keyCode)?.let { key ->
-                                    // ライブの数字キーと同じ決め方 (いまの種別を先に、次に放送している局)
-                                    val pick = remoteKeyService(repo.services.filter { it.type in types }, key, type)
-                                        ?.takeIf { s -> s.type != type || columns.any { it.id == s.id } }
-                                    if (pick != null) {
-                                        type = pick.type
-                                        serviceId = pick.id
-                                        programId = null
-                                    } else {
-                                        columns.indexOfFirst { it.remoteControlKey == key }.takeIf { it >= 0 }?.let { go(moves.column(it, anchor)) }
-                                    }
-                                    true
-                                } ?: false
-                            }
-                        }
-                        .semantics {
-                            // 読み上げは表に1つ。フォーカスした番組を読ませる (表の中は1つのフォーカスなので、替わったら読み直させる)
-                            contentDescription = focused?.let { describe(columns.getOrNull(column), it) } ?: "番組表"
-                            liveRegion = LiveRegionMode.Polite
-                        }
-                        .focusable(),
-                )
+        // 表は番組が無いときも置いたままにし (フォーカスの行き場を無くさない。数字キーで種別を替えて読み込んでいる間も)、真ん中に1行を重ねる
+        val message = when {
+            columns.isEmpty() && !store.has(type) -> when {
+                store.offline -> NOT_CONNECTED
+                store.unreadable -> UNREADABLE
+                else -> "読み込んでいます…"
             }
+            columns.isEmpty() -> NO_CHANNELS
+            columns.all { it.programs.isEmpty() } && !store.offline -> NO_PROGRAMS
+            else -> null
+        }
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            GuideGrid(
+                repo = repo,
+                columns = columns,
+                column = column,
+                focused = focused,
+                focusedId = focusedId,
+                anchor = anchor,
+                jump = jump,
+                origin = origin,
+                end = end,
+                now = now,
+                modifier = Modifier
+                    .focusRequester(grid)
+                    .onFocusChanged { gridFocused = it.isFocused }
+                    .focusProperties { up = top }
+                    .onKeyEvent { event ->
+                        val native = event.nativeKeyEvent
+                        if (event.type == KeyEventType.KeyUp) {
+                            if (native.keyCode in CENTER_KEYS && !native.isCanceled && focused != null && centerDown[0]) {
+                                centerDown[0] = false
+                                opened = focused.id
+                                return@onKeyEvent true
+                            }
+                            return@onKeyEvent native.keyCode in CENTER_KEYS
+                        }
+                        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                        when (native.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_UP -> go(moves.up(spot))
+                            KeyEvent.KEYCODE_DPAD_DOWN -> go(moves.down(spot))
+                            KeyEvent.KEYCODE_DPAD_LEFT -> go(moves.left(spot))
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> go(moves.right(spot))
+                            KeyEvent.KEYCODE_CHANNEL_UP -> go(moves.page(spot, PAGE_COLUMNS))
+                            KeyEvent.KEYCODE_CHANNEL_DOWN -> go(moves.page(spot, -PAGE_COLUMNS))
+                            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { jump++; go(moves.shift(spot, SHIFT_MS)) }
+                            KeyEvent.KEYCODE_MEDIA_REWIND -> { jump++; go(moves.shift(spot, -SHIFT_MS)) }
+                            in CENTER_KEYS -> {
+                                if (native.repeatCount == 0) centerDown[0] = true
+                                true
+                            }
+                            else -> liveChannelKey(native.keyCode)?.let { key ->
+                                // ライブの数字キーと同じ決め方 (いまの種別を先に、次に放送している局)
+                                val pick = remoteKeyService(repo.services.filter { it.type in types }, key, type)
+                                    ?.takeIf { s -> s.type != type || columns.any { it.id == s.id } }
+                                if (pick != null) {
+                                    type = pick.type
+                                    serviceId = pick.id
+                                    programId = null
+                                } else {
+                                    columns.indexOfFirst { it.remoteControlKey == key }.takeIf { it >= 0 }?.let { go(moves.column(it, anchor)) }
+                                }
+                                true
+                            } ?: false
+                        }
+                    }
+                    .semantics {
+                        // 読み上げは表に1つ。フォーカスした番組を読ませる (表の中は1つのフォーカスなので、替わったら読み直させる)
+                        contentDescription = focused?.let { describe(columns.getOrNull(column), it) } ?: "番組表"
+                        liveRegion = LiveRegionMode.Polite
+                    }
+                    .focusable(),
+            )
+            message?.let { Centered(it) }
         }
     }
 
@@ -401,18 +403,19 @@ private fun GuideBody(
                 }
             },
             onPlay = { id ->
-                scope.launch {
-                    if (repo.recordings.none { it.id == id }) {
-                        try {
-                            repo.refreshRecordings()
-                        } catch (_: Unauthorized) {
-                            return@launch onUnauthorized()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (_: Exception) {
-                        }
+                // 録画の一覧に無ければ (番組表から来たばかりの録画) 読み直してから。それでも無ければ false
+                if (repo.recordings.none { it.id == id }) {
+                    try {
+                        repo.refreshRecordings()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Unauthorized) {
+                        throw e
+                    } catch (_: Exception) {
                     }
-                    if (repo.recordings.any { it.id == id }) {
+                }
+                repo.recordings.any { it.id == id }.also { found ->
+                    if (found) {
                         leave()
                         onWatch(id)
                     }
@@ -847,7 +850,8 @@ private fun GuideDetail(
     now: Long,
     onClose: () -> Unit,
     onLive: () -> Unit,
-    onPlay: (Long) -> Unit,
+    /** 録画を観に行く。録画が見つからなければ false */
+    onPlay: suspend (Long) -> Boolean,
     onUnauthorized: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -895,7 +899,7 @@ private fun GuideDetail(
                 // ルールが立てた予約は「録画しない」になって残る (取得し直すと denpa の状態に揃う)
                 val after = if (rule != null && reservation.state != ReservationState.SKIPPED) Reservation(ReservationState.SKIPPED, null, rule) else null
                 repo.guide.update(program.id) { it.copy(reservation = after) }
-                cancelNote(stopped = result.stopped || recording, rule = rule != null)
+                cancelNote(stopped = result.stopped || recording, rule = rule != null && reservation.state != ReservationState.SKIPPED)
             }
             CancelResult.Missing -> {
                 repo.guide.update(program.id) { it.copy(reservation = null) }
@@ -905,6 +909,16 @@ private fun GuideDetail(
         }
     }
 
+    fun play() = scope.launch {
+        val id = program.recordingId ?: return@launch
+        val found = try {
+            onPlay(id)
+        } catch (_: Unauthorized) {
+            return@launch onUnauthorized()
+        }
+        if (!found) note = "録画が見つかりません"
+    }
+
     val actions = shown.map { action ->
         when (action) {
             GuideAction.Reserve -> DetailAction("予約", primary = action == primary, initial = action == primary) { reserve() }
@@ -912,7 +926,7 @@ private fun GuideDetail(
                 if (!recording || stop.press()) cancel()
             }
             GuideAction.Watch -> DetailAction("視聴", primary = action == primary, initial = action == primary, onClick = onLive)
-            GuideAction.Play -> DetailAction("再生", primary = action == primary, initial = action == primary) { program.recordingId?.let(onPlay) }
+            GuideAction.Play -> DetailAction("再生", primary = action == primary, initial = action == primary) { play() }
         }
     } + DetailAction(CLOSE, onClick = onClose)
     val conflict = reservation?.takeIf { it.state == ReservationState.CONFLICT }?.let { "録画できません: ${it.reason ?: ReservationState.label(it.state)}" }
