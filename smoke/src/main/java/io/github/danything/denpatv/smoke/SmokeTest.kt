@@ -507,7 +507,8 @@ class SmokeTest {
         val item = node { it.text?.toString() == "番組表" }?.let(::clickable) ?: throw AssertionError("メニューが開きません: ${texts()}")
         val opened = SystemClock.uptimeMillis()
         assertTrue("「番組表」を押せません", item.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-        awaitText { it == FakeDenpa.PROGRAM_TITLE }
+        // マスの字は時刻・番組名・説明を続けた 1 つの文
+        awaitText { FakeDenpa.PROGRAM_TITLE in it }
         val shownMs = SystemClock.uptimeMillis() - opened
         assertTrue("番組表を取得しません: ${denpa.requests.distinct()}", denpa.targets.any { it.startsWith("/api/programs?type=GR&from=") })
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -543,6 +544,12 @@ class SmokeTest {
         assertRequested("DELETE /api/programs/${FakeDenpa.PROGRAM_ID}/record")
         press(KeyEvent.KEYCODE_BACK)
         assertTrue("戻るで詳細が閉じません: ${windowTexts()}", poll(TEXT_TIMEOUT_MS) { "閉じる" !in windowTexts() })
+        // 詳細の字がツリーから消えても、入力フォーカスはまだ閉じかけの詳細の窓にあることがある (CI の API 24)。
+        // そこへ録画キーを送ると詳細の窓が受けて捨てるので、表 (読み上げにフォーカスした番組名を持つ) にフォーカスが戻るまで待つ
+        assertTrue(
+            "詳細を閉じても表にフォーカスが戻りません: ${focusedTexts()}",
+            poll(TEXT_TIMEOUT_MS) { focusedTexts().any { FakeDenpa.PROGRAM_TITLE in it } },
+        )
 
         // 表で録画キーを押すと、フォーカスしている番組を予約する (詳細は開かない)
         val reserve = "POST /api/programs/${FakeDenpa.PROGRAM_ID}/record"
@@ -562,11 +569,11 @@ class SmokeTest {
         awaitVideo(LIVE_COLOR)
         pressUntil(KeyEvent.KEYCODE_INFO, "情報キーで番組の詳細が開きません") { liveDetailOpen() }
         clickInWindows("番組表")
-        assertTrue("ライブの「番組表」で番組表が開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "今" in texts() && FakeDenpa.PROGRAM_TITLE in texts() })
+        assertTrue("ライブの「番組表」で番組表が開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { texts().let { t -> "今" in t && t.any { FakeDenpa.PROGRAM_TITLE in it } } })
         open("denpa://recordings")
         awaitText { it == FakeDenpa.RECORDING_TITLE }
         open("denpa://guide/${FakeDenpa.NEXT_SERVICE_ID}")
-        assertTrue("リンクで番組表が開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { "今" in texts() && FakeDenpa.PROGRAM_TITLE in texts() })
+        assertTrue("リンクで番組表が開きません: ${texts()}", poll(TEXT_TIMEOUT_MS) { texts().let { t -> "今" in t && t.any { FakeDenpa.PROGRAM_TITLE in it } } })
     }
 
     /** 録画の一覧から、左のメニュー (ナビゲーション ドロワー) で設定を開く */
