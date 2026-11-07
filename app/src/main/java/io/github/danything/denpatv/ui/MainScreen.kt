@@ -77,8 +77,12 @@ fun MainScreen(
     onLicenses: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf(Destination.Recordings) }
-    // 番組表から観に行って戻った・ライブの「番組表」・番組表のリンクなら、番組表を出す
-    remember { if (repo.guideReturn != null) selected = Destination.Guide }
+    // 番組表から観に行って戻った・ライブの「番組表」・番組表のリンクなら、番組表を出す (この画面を作ったときに1回だけ見る)
+    val toGuide = remember { BooleanArray(1).also { it[0] = repo.guideReturn != null } }
+    if (toGuide[0]) {
+        toGuide[0] = false
+        selected = Destination.Guide
+    }
     val items = remember { Destination.entries.associateWith { FocusRequester() } }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val focusManager = LocalFocusManager.current
