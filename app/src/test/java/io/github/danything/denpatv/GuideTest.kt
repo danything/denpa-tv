@@ -142,6 +142,23 @@ class GuideTest {
         assertEquals(listOf(day, day + hour, day + hour + 30 * 60_000), layout.lanes[1].map { it.startAt })
         assertEquals(listOf(day + hour, day + hour + 30 * 60_000, day + 2 * hour), layout.lanes[1].map { it.endAt })
         assertEquals(other.programs, layout.lanes[2])
+        // サブが2つ。本チャンネルの番組の途中で分割放送が始まって終わり、重なる間は本チャンネルの列だけ、空いた列には本チャンネルのマスが伸びる
+        val minute = 60_000L
+        val two = guideLayout(
+            listOf(
+                main,
+                GuideService(4, "A2", mainId = 1, programs = listOf(program(40, day + 30 * minute, day + 60 * minute))),
+                GuideService(5, "A3", mainId = 1, programs = listOf(program(50, day + 45 * minute, day + 90 * minute))),
+            ),
+        )
+        assertEquals(
+            listOf(listOf(0L, 3L, 0L, 30L), listOf(0L, 1L, 30L, 45L), listOf(2L, 1L, 30L, 45L), listOf(0L, 1L, 45L, 60L), listOf(0L, 2L, 60L, 90L), listOf(0L, 3L, 90L, 120L)),
+            two.cells.filter { it.program.id == 10L }.map { listOf(it.column.toLong(), it.span.toLong(), (it.startAt - day) / minute, (it.endAt - day) / minute) },
+        )
+        fun lane(k: Int) = two.lanes[k].map { listOf(it.id, (it.startAt - day) / minute, (it.endAt - day) / minute) }
+        assertEquals(listOf(listOf(10L, 0L, 120L)), lane(0))
+        assertEquals(listOf(listOf(10L, 0L, 30L), listOf(40L, 30L, 60L), listOf(10L, 60L, 120L)), lane(1))
+        assertEquals(listOf(listOf(10L, 0L, 45L), listOf(50L, 45L, 90L), listOf(10L, 90L, 120L)), lane(2))
         // サブの無い表は、番組がそのまま1マスずつ
         val plain = guideLayout(listOf(main, other))
         assertEquals(listOf(1, 1), plain.cells.map { it.span })
