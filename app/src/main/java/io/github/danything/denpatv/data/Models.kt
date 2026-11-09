@@ -72,8 +72,8 @@ fun remoteKeyService(services: List<Service>, key: Int, currentType: String?): S
         .sortedWith(compareBy<Service>({ it.type != currentType }, { !it.airing }))
         .firstOrNull()
 
-/** 種別の並びと名前 (denpa の局の一覧と同じ並び。SKY も左右の局の切り替えで回るので、列にも出す) */
-val SERVICE_TYPES = listOf("GR" to "地上波", "BS" to "BS", "CS" to "CS", "SKY" to "SKY")
+/** 種別の並びと名前 (denpa の局の一覧と同じ並びと呼び名。スカパー！プレミアムの局は denpa がライブに出さない (`airing` が false) ので、ふだんは列に出ない) */
+val SERVICE_TYPES = listOf("GR" to "地上波", "BS" to "BS", "CS" to "CS", "SKY" to "スカパー！プレミアム")
 
 /** 局のいま放送中の番組 (`now`)。時刻は UNIX ミリ秒 */
 @Immutable
