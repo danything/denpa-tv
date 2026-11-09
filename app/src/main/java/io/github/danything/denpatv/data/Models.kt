@@ -1,6 +1,7 @@
 package io.github.danything.denpatv.data
 
 import androidx.compose.runtime.Immutable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -21,6 +22,11 @@ data class Service(
     val now: NowProgram? = null,
     /** 実況のチャンネル (`jk1` など)。実況の無い局と、世帯の設定 (連携の「実況」) がオフなら null */
     val jikkyo: String? = null,
+    /**
+     * ブラウザの denpa のライブの一覧に出る局か (denpa の `airing`)。この値を返さない古い denpa なら null。
+     * 読むのは拡張プロパティの `airing` から
+     */
+    @SerialName("airing") val listed: Boolean? = null,
 )
 
 /**
@@ -31,10 +37,12 @@ val Service.number: Int?
     get() = remoteControlKey ?: if (type == "GR") null else (id % 100_000).toInt()
 
 /**
- * いま放送しているか。**ブラウザの denpa (`airing`) と同じく、名前のある番組をいま放送している局だけ。**
- * 本放送と同じものを流しているサブチャンネル (NHK総合2、Eテレ2・3 など) は番組名が空で来る
+ * いま放送しているか。**ブラウザの denpa のライブの一覧と同じ局だけ。** denpa が返す `airing` (`listed`) をそのまま使う。
+ * 本チャンネルと同じ番組を流しているサブチャンネル (NHK総合2、Eテレ2・3 など) は、番組名が空のときも、
+ * 本チャンネルと同じ番組名のときもある。後者はアプリの側では見分けられないので、denpa の判定に任せる。
+ * `airing` を返さない古い denpa のときだけ、名前のある番組をいま放送している局とみなす
  */
-val Service.airing: Boolean get() = now?.title?.isNotBlank() == true
+val Service.airing: Boolean get() = listed ?: (now?.title?.isNotBlank() == true)
 
 /** 放送している局だけ。番組表がまだ空などで1つも無ければ、全部 (何も選べなくならないように) */
 fun airing(services: List<Service>): List<Service> = services.filter { it.airing }.ifEmpty { services }
