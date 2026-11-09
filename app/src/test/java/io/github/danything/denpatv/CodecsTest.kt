@@ -158,6 +158,21 @@ class NeighborTest {
     }
 
     @Test
+    fun denpa_が返す_airing_を番組名より先に見る() {
+        // 総合2 が総合1 と同じ名前の番組を流している (denpa-tv#131)。denpa は false を返す
+        val same = listOf(
+            on(1, "大相撲").copy(listed = true),
+            on(2, "大相撲").copy(listed = false),
+            on(3, "アニメ").copy(listed = true),
+        )
+        assertEquals(listOf(1L, 3L), io.github.danything.denpatv.data.airing(same).map { it.id })
+        assertEquals(3L, io.github.danything.denpatv.data.neighbor(same, 1, 1)?.id)
+        // 名前が空でも、denpa が true なら並べる
+        val nameless = listOf(on(4, "").copy(listed = true), on(5, "野球").copy(listed = false))
+        assertEquals(listOf(4L), io.github.danything.denpatv.data.airing(nameless).map { it.id })
+    }
+
+    @Test
     fun 番組表が空なら全部から選ぶ() {
         val empty = listOf(on(1, null), on(2, ""), on(3, null))
         assertEquals(3, io.github.danything.denpatv.data.airing(empty).size)
