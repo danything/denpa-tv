@@ -19,7 +19,6 @@ import androidx.media3.extractor.Extractor
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
-import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import androidx.media3.extractor.mp4.FragmentedMp4Extractor
 import androidx.media3.extractor.ts.TsExtractor
 import io.github.danything.denpatv.data.CaptionCue
@@ -52,7 +51,8 @@ import java.net.URI
  *
  * Media3 の TsExtractor は、最初の PTS を 0 に寄せた時刻でサンプルを出す。寄せ幅は渡した `TimestampAdjuster` が持って
  * いるので、**Extractor を作るところで自分の `TimestampAdjuster` を渡して控えておく**。中身は `DefaultExtractorsFactory` と
- * 同じ作り方の TsExtractor (ほかの形式はそのまま)。映像をリクエストし直すたびに Extractor も作り直されるので、最後に作ったものを見る。
+ * 同じ作り方の TsExtractor (ほかの形式はそのまま)。AAC だけは、形式が途中で替わったら `Format` を出し直す (`RawTsPayloadReaderFactory`)。
+ * 映像をリクエストし直すたびに Extractor も作り直されるので、最後に作ったものを見る。
  *
  * `mp4` なら、fragmented MP4 の Extractor にも同じように渡す (録画を denpa に流してもらうとき。denpa は塊の時刻を録画の時刻のまま書くので、
  * 寄せた幅から録画の時刻に戻せる。`StreamClock`)。応答の `X-Denpa-Origin` (元の TS のストリームで、録画の時刻の 0 にあたる PTS) も控える。
@@ -162,14 +162,17 @@ class TsClock(
         null,
     )
 
-    /** `DefaultExtractorsFactory` の TS と同じ作り。違うのは `TimestampAdjuster` を控えることだけ */
+    /**
+     * `DefaultExtractorsFactory` の TS と同じ作り。違うのは `TimestampAdjuster` を控えることと、AAC の形式が途中で替わったら
+     * 出し直すこと (`RawTsPayloadReaderFactory`)
+     */
     private fun ts(made: TimestampAdjuster): TsExtractor {
         return TsExtractor(
             TsExtractor.MODE_SINGLE_PMT,
             if (transcoding) 0 else TsExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
             subtitleParserFactory,
             made,
-            DefaultTsPayloadReaderFactory(0, emptyList()),
+            RawTsPayloadReaderFactory(),
             TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES,
         )
     }
