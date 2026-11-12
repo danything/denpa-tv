@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.danything.denpatv"
+    namespace = "io.doany.denpatv"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "io.github.danything.denpatv"
+        applicationId = "io.doany.denpatv"
         // Navigation 3 の下限 (Android 7.0)。Media3 と AndroidX の 23 より1つ上 (docs/libraries.md)
         minSdk = 24
         targetSdk = 37

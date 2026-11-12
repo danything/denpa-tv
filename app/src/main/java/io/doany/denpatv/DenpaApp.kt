@@ -1,0 +1,77 @@
+package io.doany.denpatv
+
+import android.app.Application
+import android.os.Build
+import android.os.ext.SdkExtensions
+import android.util.Log
+import io.doany.denpatv.data.Decoders
+import io.doany.denpatv.data.EngineHttp
+import io.doany.denpatv.data.Images
+import io.doany.denpatv.data.OldApp
+import io.doany.denpatv.data.Settings
+import io.doany.denpatv.data.WatchNextRows
+import io.doany.denpatv.ui.DenpaFont
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+/**
+ * アプリ全体で1つずつ持つもの。**DI の仕組みは入れない** (docs/libraries.md)。
+ * 数が少ないので、ここで作って画面に渡すほうが追いやすい
+ */
+class DenpaApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        // 画像を覚えておく量を、端末のメモリに合わせる
+        Images.init(this)
+        // 放送の字 (番組名・字幕)。一覧のタイトルが出る前に読み終えておく (読み終えるまでは端末の字)
+        scope.launch { denpaFont.load() }
+    }
+
+    val settings: Settings by lazy { Settings(this) }
+    val decoders: Decoders by lazy { Decoders.detect() }
+    val updater: Updater by lazy { Updater(this) }
+
+    /** 古いアプリ (io.github.danything.denpatv) が残っているか。残っていれば削除する1行を出す */
+    val oldApp: OldApp by lazy { OldApp(this) }
+
+    /**
+     * 映像を HttpEngine で取得するクライアント。**アプリで1つを使い回す** (Media3 のネットワーク スタックのページの推奨)。
+     * OS に入っているのは Android 14 (S 拡張 7) から。使えない端末では null で、
+     * Media3 の DefaultHttpDataSource (OS の HttpURLConnection) を使う。
+     * 型を `HttpEngine?` にしないわけは EngineHttp に書いた
+     */
+    val engineHttp: EngineHttp? by lazy {
+        if (hasHttpEngine()) {
+            try {
+                EngineHttp(this)
+            } catch (error: LinkageError) {
+                // 拡張の版は足りていると言うのに、OS にクラスが無い機種がある (下の hasHttpEngine)
+                Log.w("denpa", "HttpEngine を使えないので OS の HttpURLConnection で取ります", error)
+                null
+            }
+        } else {
+            null
+        }
+    }
+
+    /** 放送の字 (APK に入れてある丸ゴシック)。字幕の文字の配置と、番組名・説明・局名に使う */
+    val denpaFont: DenpaFont by lazy { DenpaFont(assets) }
+
+    /** Google TV のホームの「続きを視聴」。TvProvider の WatchNextPrograms は Android 8.0 からで、それより前は何もしない */
+    val watchNext: WatchNextRows by lazy { WatchNextRows(this) }
+
+    /** 画面より長く続く処理 (閉じたときに観た位置を預けるなど) */
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+}
+
+/**
+ * HttpEngine が使えるか。**S 拡張の版だけでは決めない** — Android TV 12 の BRAVIA (KJ-75X80WK) は
+ * S 拡張 7 以上と答えるのに `android.net.http.HttpEngine` が無く、映像を開いた瞬間に
+ * NoClassDefFoundError で落ちる。クラスが本当に引けるかも確かめる
+ */
+fun hasHttpEngine(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+        SdkExtensions.getExtensionVersion(Build.VERSION_CODES.S) >= 7 &&
+        runCatching { Class.forName("android.net.http.HttpEngine") }.isSuccess

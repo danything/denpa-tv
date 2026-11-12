@@ -1,0 +1,224 @@
+package io.doany.denpatv.data
+
+import androidx.media3.common.PlaybackException
+
+/**
+ * **映像が切れた・止まったときの繋ぎ直し** (ui/Recovery.kt)。決まりはブラウザの denpa のライブ (`live-player.svelte.ts` の
+ * `reconnect`) と同じ: 待ち時間は `RETRY_FIRST_MS` から倍々に伸ばして `RETRY_MOST_MS` で頭打ち、**回数の上限は置かない**
+ * (点けっぱなしで戻ってきたときに映っていてほしい)。次のフレームが出たら数え直す。
+ *
+ * 切れる理由でいちばん多いのは denpa の側の入れ替え (番組の境目での再エンコード・GPU からソフトウェアへ降りた・denpa の再起動) と、
+ * チューナーのドライバが黙ること。どれも待てば帰ってくるので、こちらから諦める理由が無い。
+ * ただし**待っても直らないもの** (局が無い 404 など) は繋ぎ直さずに理由を出す (`verdict`)
+ */
+object Reconnect {
+    /** 1回目に待つ時間 (ミリ秒)。ブラウザの `RETRY_FIRST` と同じ */
+    const val RETRY_FIRST_MS = 1_000L
+
+    /** 待つ時間の上限 (ミリ秒)。ブラウザの `RETRY_MOST` と同じ */
+    const val RETRY_MOST_MS = 10_000L
+
+    /**
+     * 直らないかもしれない失敗 (`Verdict.RetryFew`。中身が読めない・デコードできない、映る前にストリームが終わった) と、
+     * 変換の枠が埋まって断られた (`Verdict.Busy`) を続けて繋ぎ直す回数。
+     * 録画のファイルは、回線の失敗もこの回数まで (Media3 が中で読み直したうえでの失敗なので)
+     */
+    const val FEW = 3
+
+    /**
+     * 映していて (フレームを1枚でも出したあと)、これだけ何も進まなければ止まったとみなして繋ぎ直す (ミリ秒)。
+     * 位置も溜まりも伸びないこと。**`RETRY_MOST_MS` と同じ 10 秒**: denpa がストリームの中でエンコーダを温め直す間 (`WARM_WAIT` 8 秒) より長く、
+     * 読みの待ち (`Http.READ_TIMEOUT_MS` 30 秒) より十分短い。前の映像を残すのは 6 秒 (`HOLD_MOST`) までなので、
+     * 暗くなってから少しで繋ぎ直しに入る
+     */
+    const val STALL_MS = 10_000L
+
+    /**
+     * 映したあとにライブが終わった (denpa が番組の替わり目で作り直した) のが、これより短い間に続いたら待ちを伸ばす (ミリ秒)。
+     * ブラウザの `RESTART_CALM` と同じ。替わり目の前後で並びが行き来する局で、リクエストし直しを連打しない
+     */
+    const val RESTART_CALM_MS = 30_000L
+
+    /**
+     * 映したあとにライブが終わったとき、何回失敗したものとして待つか (`delayMs` に渡す)。`sinceLastMs` は前に終わってからの長さ
+     * (初めてなら null)、`last` は前に終わったときの回数。間が空いていれば 0 (1 秒)、続けて来たら前の次 (倍々に伸ばす)。
+     * 失敗の回数は映れば 0 に戻るので、こちらは別に数える
+     */
+    fun restartAttempts(sinceLastMs: Long?, last: Int): Int =
+        if (sinceLastMs == null || sinceLastMs >= RESTART_CALM_MS) 0 else last + 1
+
+    /** `attempts` 回失敗したあと、次に繋ぎ直すまで待つ時間。0 回目は `RETRY_FIRST_MS` */
+    fun delayMs(attempts: Int): Long {
+        val shift = attempts.coerceIn(0, 30)
+        return (RETRY_FIRST_MS shl shift).coerceAtMost(RETRY_MOST_MS)
+    }
+
+    /** 失敗をどう扱うか */
+    enum class Verdict {
+        /** アクセストークンが外された・期限切れ (401)。繋ぐ画面へ */
+        Unauthorized,
+
+        /** 待っても直らない (404 などの 4xx・ファイルが無い・権限が無い)。理由を出して止める */
+        GiveUp,
+
+        /** 回線・denpa の入れ替え。流しっぱなしのもの (ライブ・追っかけ) は何度でも */
+        Retry,
+
+        /** 直らないかもしれない (中身が読めない・デコードできない)。`FEW` 回まで */
+        RetryFew,
+
+        /**
+         * denpa の変換の枠が埋まって断られた (503 と `BUSY_MESSAGE`。`isBusyAnswer`)。ほかの人が観終えれば空くが、いつかは分からない。
+         * 何度でもリクエストし直すと denpa を呼び続けるだけなので、`RetryFew` と同じく `FEW` 回まで (待ちは倍々で 1・2・4 秒)。
+         * 諦めたら「サーバが混んでいます」と出す
+         */
+        Busy,
+    }
+
+    /**
+     * Media3 のエラー (`PlaybackException.errorCode`) と、HTTP の応答の番号 (あれば) から決める。
+     * 番号は Media3 の `PlaybackException.ERROR_CODE_*` (1xxx その他・2xxx 読み・3xxx 中身・4xxx デコード・5xxx 音・6xxx DRM)。
+     * `busy` は変換の枠が埋まって断られたか (`isBusyAnswer`。ほかの 503 は denpa の入れ替えなので、待てば通る)
+     */
+    fun verdict(errorCode: Int, httpStatus: Int?, busy: Boolean = false): Verdict = when {
+        httpStatus == 401 -> Verdict.Unauthorized
+        busy -> Verdict.Busy
+        // 408 (待ちきれない) と 429 (混んでいる) は待てば通る
+        httpStatus == 408 || httpStatus == 429 -> Verdict.Retry
+        httpStatus != null && httpStatus in 400..499 -> Verdict.GiveUp
+        // ファイルが無い・権限が無い・平文が許されていない (どれも待っても同じ)
+        errorCode in HOPELESS -> Verdict.GiveUp
+        // 型が違う (denpa ではないものが答えた) と読む位置が外れたは、何度か
+        errorCode in DOUBTFUL -> Verdict.RetryFew
+        // 読み (2xxx。5xx の応答もここ)・待ちきれない・遅れすぎ
+        errorCode in 2000..2999 || errorCode == PlaybackException.ERROR_CODE_TIMEOUT || errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> Verdict.Retry
+        // DRM は denpa には無い
+        errorCode in 6000..6999 -> Verdict.GiveUp
+        else -> Verdict.RetryFew
+    }
+
+    /**
+     * **端末の側で再生できない形式か** (デコーダを作れない・端末の力を超える・形式に対応していない)。denpa の側の失敗 (空の 200・5xx) とは分けて、
+     * 自動ならその形式を外してリクエストし直す (`rememberPlayer` の `unplayable`)。デコードの途中の失敗 (`ERROR_CODE_DECODING_FAILED`) は中身が壊れたこともあるので入れない
+     */
+    fun deviceCannotPlay(errorCode: Int): Boolean = errorCode in DEVICE
+
+    private val DEVICE = setOf(
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+    )
+
+    /** 待っても同じもの */
+    private val HOPELESS = setOf(
+        PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+        PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+        PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED,
+    )
+    /** 何度か試すもの */
+    private val DOUBTFUL = setOf(
+        PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE,
+        PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+    )
+
+    /**
+     * 繋ぎ直すか。`stream` はライブ・追っかけ (流しっぱなしの1本)、そうでなければ録画のファイル。
+     * `attempts` は続けて失敗した回数、`few` はそのうち `RetryFew` か `Busy` だった回数 (どちらも次のフレームが出たら 0 に戻す)
+     */
+    fun shouldRetry(verdict: Verdict, stream: Boolean, attempts: Int, few: Int): Boolean = when (verdict) {
+        Verdict.Unauthorized, Verdict.GiveUp -> false
+        Verdict.Retry -> stream || attempts < FEW
+        Verdict.RetryFew -> stream && few < FEW
+        // 流しっぱなしのものも録画も同じ (録画も、変換して流すエンドポイントは断られうる)
+        Verdict.Busy -> few < FEW
+    }
+}
+
+/**
+ * **最初のフレームが来ない形式の見張り** (`rememberPlayer` の `unplayable`)。端末の側で再生できないのか、回線が遅いだけなのかを読み分けるため、
+ * **データが届いて溜まりはじめてから** (`bufferedAheadMs` が `arrivedMs` 以上になってから) 数える。回線が遅くて溜まらない間は数えない。
+ * 溜まっているのに `limitMs` たっても最初のフレームが出なければ、デコードできないとみなして true を返す (リクエストごとに1度だけ)。
+ *
+ * - `request` … いまのリクエストの印 (`Recovery.requestedAt`)。替わったら数え直す
+ * - `watching` … 見張るか (動かしている・まだ映していない・繋ぎ直しを待っていない・前に出ている)。見張らない間は数えない
+ *
+ * 時刻は呼ぶ側が渡す (`SystemClock.uptimeMillis`。テストでは好きに進める)
+ */
+class FirstFrameWatch(private val limitMs: Long = FIRST_FRAME_MS, private val arrivedMs: Long = FIRST_DATA_MS) {
+    private var request: Long? = null
+    private var since: Long? = null
+    private var blamed = false
+
+    fun check(now: Long, request: Long, watching: Boolean, bufferedAheadMs: Long): Boolean {
+        if (request != this.request) {
+            this.request = request
+            since = null
+            blamed = false
+        }
+        if (!watching || blamed) {
+            since = null
+            return false
+        }
+        if (bufferedAheadMs < arrivedMs) return false
+        val start = since ?: now.also { since = it }
+        if (now - start < limitMs) return false
+        blamed = true
+        return true
+    }
+
+    companion object {
+        /**
+         * データが溜まりはじめてから最初のフレームが出るまで待つ上限 (ミリ秒)。過ぎたら、その形式は端末の側で再生できないとみなす。
+         * denpa がエンコーダを温める間 (8 秒) より長く
+         */
+        const val FIRST_FRAME_MS = 15_000L
+
+        /** 届いたとみなす溜まりの長さ (ミリ秒)。どの溜め方でも動き出すのに足りる量 (MPEG-2 は 0.25 秒、ほかは 1 秒で動き出す) */
+        const val FIRST_DATA_MS = 1_000L
+    }
+}
+
+/**
+ * **止まったかの見張り。** 映していて (`watching`) 位置も溜まりも `limitMs` 動かなければ、止まっていた長さを返す
+ * (返したら数え直す)。動いていれば、見張っていなければ (止めている・まだ映していない・繋ぎ直しの最中) 数え直す。
+ * 時刻は呼ぶ側が渡す (`SystemClock.uptimeMillis`。テストでは好きに進める)
+ */
+class StallWatch(private val limitMs: Long = Reconnect.STALL_MS) {
+    private var since = 0L
+    private var position = Long.MIN_VALUE
+    private var buffered = Long.MIN_VALUE
+
+    fun check(now: Long, watching: Boolean, positionMs: Long, bufferedMs: Long): Long? {
+        if (!watching || positionMs != position || bufferedMs != buffered) {
+            since = now
+            position = positionMs
+            buffered = bufferedMs
+            return null
+        }
+        val stalled = now - since
+        if (stalled < limitMs) return null
+        since = now
+        return stalled
+    }
+}
+
+/** 追っかけのストリームが終わったとき、録り終えて最後まで観たのか、途中で切れたのか */
+enum class ChaseEnd { Finished, Lost }
+
+/**
+ * 追っかけのストリームが終わった (`STATE_ENDED`)。denpa は**録り終えて尻まで読んだときだけ**閉じるので、それ以外は切れたとみなして
+ * いまの位置から繋ぎ直す (denpa の入れ替え・再エンコード)。
+ *
+ * - `stillRecording` … 終わったあとに denpa に聞いた、まだ録っているか。聞けなければ null (denpa が入れ替わっている最中なので、切れた)
+ * - `durationMs` … 録り終えた長さ。分からなければ最後まで観たことにする
+ * - `pictured` … このリクエストでフレームを出したか。録り終えた録画をリクエストし直して何も映らずに終わったなら、もう続きは無い (繰り返さない)
+ */
+fun chaseEnd(stillRecording: Boolean?, positionMs: Long, durationMs: Long?, pictured: Boolean): ChaseEnd = when {
+    stillRecording == null || stillRecording -> ChaseEnd.Lost
+    durationMs == null || !pictured -> ChaseEnd.Finished
+    positionMs >= durationMs - CHASE_END_MARGIN_MS -> ChaseEnd.Finished
+    else -> ChaseEnd.Lost
+}
+
+/** 録り終えた録画で、尻からこれより手前で終わったら切れたとみなす (ミリ秒)。リクエストする位置は秒に丸めるので、そのずれより十分大きく */
+private const val CHASE_END_MARGIN_MS = 30_000L

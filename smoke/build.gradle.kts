@@ -11,7 +11,7 @@ plugins {
 }
 
 android {
-    namespace = "io.github.danything.denpatv.smoke"
+    namespace = "io.doany.denpatv.smoke"
     compileSdk = 37
 
     defaultConfig {

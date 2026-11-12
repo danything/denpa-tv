@@ -1,0 +1,45 @@
+package io.doany.denpatv
+
+import io.doany.denpatv.data.Recording
+import io.doany.denpatv.data.RecordingFile
+import io.doany.denpatv.data.TwoPress
+import io.doany.denpatv.data.codecLabels
+import io.doany.denpatv.data.durationLabel
+import io.doany.denpatv.data.watched
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TwoPressTest {
+    /** 1回目は「削除を確定」などに変わり、間を空けずにもう1回で実行。間が空いたら数え直し */
+    @Test
+    fun 二回押しで実行し_間が空いたら数え直す() {
+        val press = TwoPress(windowMs = 4_000)
+        assertFalse(press.press(0))
+        assertTrue(press.press(3_000))
+
+        assertFalse(press.press(10_000))
+        assertFalse(press.press(15_000))
+        press.reset()
+        assertFalse(press.press(15_500))
+    }
+}
+
+class RecordingCardTest {
+    private fun rec(durationMs: Long? = 1_800_000, resumeMs: Long? = null, codecs: List<String> = emptyList()) =
+        Recording(id = 1, title = "", startAt = 0, durationMs = durationMs, resumeMs = resumeMs,
+            files = codecs.map { RecordingFile(it, it) })
+
+    @Test
+    fun 観た割合と長さと形式のラベル() {
+        assertEquals(0.5f, rec(resumeMs = 900_000).watched)
+        assertNull(rec(resumeMs = null).watched)
+        assertNull(rec(durationMs = null, resumeMs = 900_000).watched)
+        assertEquals("30分", durationLabel(1_800_000))
+        assertEquals("1時間", durationLabel(3_600_000))
+        assertEquals("1時間24分", durationLabel(84 * 60_000 + 10_000))
+        assertEquals(listOf("AV1", "H.264", "元のTS"), rec(codecs = listOf("mpeg2", "h264", "av1")).codecLabels)
+    }
+}

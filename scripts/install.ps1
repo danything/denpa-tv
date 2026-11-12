@@ -18,7 +18,11 @@ function Install-DenpaTv([string]$Target, [string]$Pair, [string]$Code, [string]
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
     $repo = 'danything/denpa-tv'
-    $package = 'io.github.danything.denpatv'
+    $package = 'io.doany.denpatv'
+    # 古いアプリ (v1.0.0 より前のパッケージ名) と、そのパッケージ名で出した最後のバージョン。
+    # 古いアプリが入っていれば先にこのバージョンへ上げ、新しいアプリが初めて開いたときに設定を受け取れるようにする (docs/install.md)
+    $oldPackage = 'io.github.danything.denpatv'
+    $oldLast = 'v0.30.0'
     $cache = Join-Path $env:LOCALAPPDATA 'denpa-tv'
     function Say([string]$Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
 
@@ -41,31 +45,36 @@ function Install-DenpaTv([string]$Target, [string]$Pair, [string]$Code, [string]
     }
 
     # --- APK (GitHub のリリース。ハッシュを確かめる) ---
-    $release = if ($Version) {
-        Invoke-RestMethod "https://api.github.com/repos/$repo/releases/tags/$Version"
-    } else {
-        # 試し版 (prerelease) も含めて、いちばん新しいもの
-        @(Invoke-RestMethod "https://api.github.com/repos/$repo/releases?per_page=1")[0]
-    }
-    $asset = $release.assets | Where-Object { $_.name -like '*.apk' } | Select-Object -First 1
-    if (-not $asset) { throw "リリース $($release.tag_name) に APK が見つかりません" }
     $work = Join-Path ([IO.Path]::GetTempPath()) "denpa-tv-$([Guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Force -Path $work | Out-Null
-    try {
-        $apk = Join-Path $work $asset.name
+    # リリースの APK を $work に落としてハッシュを確かめ、パスを返す
+    function Get-ReleaseApk($Release) {
+        $asset = $Release.assets | Where-Object { $_.name -like '*.apk' } | Select-Object -First 1
+        if (-not $asset) { throw "リリース $($Release.tag_name) に APK が見つかりません" }
+        $file = Join-Path $work $asset.name
         Say "$($asset.name) をダウンロード中"
-        Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $apk
+        Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $file
         # ハッシュの無いリリースは入れない (壊れた APK を黙って入れない)
-        $sums = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
+        $sums = $Release.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
         if (-not $sums) { throw 'リリースに SHA256SUMS がありません' }
         # 5.1 の Invoke-WebRequest は octet-stream を byte[] で返すので、ファイルに落としてから読む
         $sumsFile = Join-Path $work 'SHA256SUMS'
         Invoke-WebRequest -UseBasicParsing -Uri $sums.browser_download_url -OutFile $sumsFile
         $line = Get-Content -LiteralPath $sumsFile | Where-Object { ($_ -split '\s+')[1] -in $asset.name, "*$($asset.name)" }
         $expected = ($line -split '\s+')[0]
-        if (-not $expected -or (Get-FileHash -Algorithm SHA256 -LiteralPath $apk).Hash -ne $expected.ToUpperInvariant()) {
+        if (-not $expected -or (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash -ne $expected.ToUpperInvariant()) {
             throw 'APK のハッシュが一致しません。もう一度実行してください'
         }
+        $file
+    }
+    try {
+        $release = if ($Version) {
+            Invoke-RestMethod "https://api.github.com/repos/$repo/releases/tags/$Version"
+        } else {
+            # 試し版 (prerelease) も含めて、いちばん新しいもの
+            @(Invoke-RestMethod "https://api.github.com/repos/$repo/releases?per_page=1")[0]
+        }
+        $apk = Get-ReleaseApk $release
 
         # --- テレビに繋ぐ ---
         $ErrorActionPreference = 'Continue'
@@ -100,6 +109,27 @@ function Install-DenpaTv([string]$Target, [string]$Pair, [string]$Code, [string]
             throw "$Target に接続できません。テレビのデバッグが有効か、同じネットワークかを確認してください (docs/install.md)"
         }
 
+        # --- 古いアプリが入っていれば、先に最後のバージョンへ上げる ---
+        # 新しいアプリは別のアプリなので、古いアプリの上には入らない。古いアプリを最後のバージョンにしておけば、
+        # 新しいアプリが初めて開いたときに、そこから接続先と設定を受け取る。上げられなくても新しいアプリは入れる (繋ぎ直せばよい)
+        & $adb -s $Target shell pm path $oldPackage 2>&1 | Out-Null
+        $hadOld = $LASTEXITCODE -eq 0
+        if ($hadOld) {
+            $found = & $adb -s $Target shell dumpsys package $oldPackage 2>$null |
+                Select-String -Pattern '^\s*versionName=(\S+)' | Select-Object -First 1
+            $oldVersion = if ($found) { $found.Matches[0].Groups[1].Value } else { '' }
+            if ($oldVersion -ne $oldLast.TrimStart('v')) {
+                Say "古いアプリ (v$oldVersion) を $oldLast に上げます (設定を新しいアプリに渡すため)"
+                try {
+                    $oldApk = Get-ReleaseApk (Invoke-RestMethod -ErrorAction Stop "https://api.github.com/repos/$repo/releases/tags/$oldLast")
+                    $out = & $adb -s $Target install -r $oldApk 2>&1 | Out-String
+                    if ($LASTEXITCODE -ne 0) { throw $out }
+                } catch {
+                    Say "古いアプリを $oldLast に上げられませんでした。新しいアプリでは繋ぎ直してください: $_"
+                }
+            }
+        }
+
         # --- 入れて起こす ---
         Say 'インストール中'
         $out = & $adb -s $Target install -r $apk 2>&1 | Out-String
@@ -110,6 +140,7 @@ function Install-DenpaTv([string]$Target, [string]$Pair, [string]$Code, [string]
             throw "インストールに失敗しました: $out"
         }
         & $adb -s $Target shell am start -n "$package/.MainActivity" | Out-Null
+        if ($hadOld) { Say '古いアプリは、新しいアプリの録画の一覧の上に出る「古いアプリを削除」で削除できます' }
         Say 'インストールしました。使い終わったら、テレビのデバッグをオフに戻してください (docs/install.md)'
     } finally {
         Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue

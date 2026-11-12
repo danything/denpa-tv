@@ -5,14 +5,16 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- アプリの中から新しい版に上げる (Updater。PackageInstaller のセッション) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 古いアプリ (io.github.danything.denpatv) の削除の確認画面を開く (data/OldApp.kt) -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <!-- テレビ向け。タッチ画面は要らず、リーンバックで起動する -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="true" />
 
-    <!-- 新しいアプリ (io.doany.denpatv) へ移る (data/NewApp.kt)。入っているかを見て、開き、設定を渡す相手の署名を比べる -->
+    <!-- 古いアプリが入っているかを見て、設定を受け取る (data/OldApp.kt) -->
     <queries>
-        <package android:name="io.doany.denpatv" />
+        <package android:name="io.github.danything.denpatv" />
     </queries>
 
     <application
@@ -47,12 +49,6 @@
         <provider
             android:name=".data.WatchNextPosters"
             android:authorities="${applicationId}.watchnext"
-            android:exported="true"
-            tools:ignore="ExportedContentProvider" />
-        <!-- 新しいアプリに設定を渡す (data/NewApp.kt)。同じ鍵で署名した新しいアプリにだけ返す -->
-        <provider
-            android:name=".data.SettingsExport"
-            android:authorities="${applicationId}.settings"
             android:exported="true"
             tools:ignore="ExportedContentProvider" />
     </application>

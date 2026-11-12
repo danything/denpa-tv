@@ -17,7 +17,11 @@
 set -euo pipefail
 
 REPO=danything/denpa-tv
-PACKAGE=io.github.danything.denpatv
+PACKAGE=io.doany.denpatv
+# 古いアプリ (v1.0.0 より前のパッケージ名) と、そのパッケージ名で出した最後のバージョン。
+# 古いアプリが入っていれば先にこのバージョンへ上げ、新しいアプリが初めて開いたときに設定を受け取れるようにする (docs/install.md)
+OLD_PACKAGE=io.github.danything.denpatv
+OLD_LAST=v0.30.0
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/denpa-tv"
 
 say() { printf '==> %s\n' "$*" >&2; }
@@ -67,37 +71,39 @@ else
 fi
 
 # --- APK (GitHub のリリース。ハッシュを確かめる) ---
-if [ -n "$version" ]; then
-    api="https://api.github.com/repos/$REPO/releases/tags/$version"
-else
-    # 試し版 (prerelease) も含めて、いちばん新しいもの
-    api="https://api.github.com/repos/$REPO/releases?per_page=1"
-fi
-release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api") ||
-    die "リリースが見つかりません ($api)"
-urls=$(printf '%s\n' "$release" |
-    grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)"/\1/' || true)
-# 一致しない grep は pipefail で止まるので、無いことは下で言う
-apk_url=$(printf '%s\n' "$urls" | grep '\.apk$' | head -n1 || true)
-sums_url=$(printf '%s\n' "$urls" | grep '/SHA256SUMS$' | head -n1 || true)
-[ -n "$apk_url" ] || die "リリースに APK が見つかりません ($api)"
-
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-apk="$work/$(basename "$apk_url")"
-say "$(basename "$apk_url") をダウンロード中"
-curl -fsSL --retry 3 -o "$apk" "$apk_url"
-# ハッシュの無いリリースは入れない (壊れた APK を黙って入れない)
-[ -n "$sums_url" ] || die 'リリースに SHA256SUMS がありません'
-{
-    expected=$(curl -fsSL --retry 3 "$sums_url" | grep " \*\{0,1\}$(basename "$apk")\$" | cut -d' ' -f1 || true)
+# リリースの API ($1) の APK を $work に落としてハッシュを確かめ、パスを $fetched に入れる
+fetch_apk() {
+    local api=$1 release urls apk_url sums_url expected actual
+    release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api") ||
+        die "リリースが見つかりません ($api)"
+    urls=$(printf '%s\n' "$release" |
+        grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)"/\1/' || true)
+    # 一致しない grep は pipefail で止まるので、無いことは下で言う
+    apk_url=$(printf '%s\n' "$urls" | grep '\.apk$' | head -n1 || true)
+    sums_url=$(printf '%s\n' "$urls" | grep '/SHA256SUMS$' | head -n1 || true)
+    [ -n "$apk_url" ] || die "リリースに APK が見つかりません ($api)"
+    fetched="$work/$(basename "$apk_url")"
+    say "$(basename "$apk_url") をダウンロード中"
+    curl -fsSL --retry 3 -o "$fetched" "$apk_url"
+    # ハッシュの無いリリースは入れない (壊れた APK を黙って入れない)
+    [ -n "$sums_url" ] || die 'リリースに SHA256SUMS がありません'
+    expected=$(curl -fsSL --retry 3 "$sums_url" | grep " \*\{0,1\}$(basename "$fetched")\$" | cut -d' ' -f1 || true)
     if command -v sha256sum >/dev/null 2>&1; then
-        actual=$(sha256sum "$apk" | cut -d' ' -f1)
+        actual=$(sha256sum "$fetched" | cut -d' ' -f1)
     else
-        actual=$(shasum -a 256 "$apk" | cut -d' ' -f1)
+        actual=$(shasum -a 256 "$fetched" | cut -d' ' -f1)
     fi
     [ -n "$expected" ] && [ "$expected" = "$actual" ] || die 'APK のハッシュが一致しません。もう一度実行してください'
 }
+if [ -n "$version" ]; then
+    fetch_apk "https://api.github.com/repos/$REPO/releases/tags/$version"
+else
+    # 試し版 (prerelease) も含めて、いちばん新しいもの
+    fetch_apk "https://api.github.com/repos/$REPO/releases?per_page=1"
+fi
+apk=$fetched
 
 # --- テレビに繋ぐ ---
 # adb には標準入力を渡さない。curl | bash で流すと、標準入力はこのスクリプトの続きで、
@@ -133,6 +139,23 @@ done
 [ "$(state)" = device ] ||
     die "$target に接続できません。テレビのデバッグが有効か、同じネットワークかを確認してください (docs/install.md)"
 
+# --- 古いアプリが入っていれば、先に最後のバージョンへ上げる ---
+# 新しいアプリは別のアプリなので、古いアプリの上には入らない。古いアプリを最後のバージョンにしておけば、
+# 新しいアプリが初めて開いたときに、そこから接続先と設定を受け取る。上げられなくても新しいアプリは入れる (繋ぎ直せばよい)
+had_old=
+if "$adb" -s "$target" shell pm path "$OLD_PACKAGE" </dev/null >/dev/null 2>&1; then
+    had_old=1
+    old_version=$("$adb" -s "$target" shell dumpsys package "$OLD_PACKAGE" </dev/null 2>/dev/null |
+        sed -n 's/^ *versionName=\([^[:space:]]*\).*/\1/p' | head -n1 | tr -d '\r' || true)
+    if [ "$old_version" != "${OLD_LAST#v}" ]; then
+        say "古いアプリ (v$old_version) を $OLD_LAST に上げます (設定を新しいアプリに渡すため)"
+        fetch_apk "https://api.github.com/repos/$REPO/releases/tags/$OLD_LAST"
+        if ! out=$("$adb" -s "$target" install -r "$fetched" </dev/null 2>&1); then
+            say "古いアプリを $OLD_LAST に上げられませんでした。新しいアプリでは繋ぎ直してください: $out"
+        fi
+    fi
+fi
+
 # --- 入れて起こす ---
 say 'インストール中'
 if ! out=$("$adb" -s "$target" install -r "$apk" </dev/null 2>&1); then
@@ -143,4 +166,5 @@ if ! out=$("$adb" -s "$target" install -r "$apk" </dev/null 2>&1); then
     esac
 fi
 "$adb" -s "$target" shell am start -n "$PACKAGE/.MainActivity" </dev/null >/dev/null
+[ -z "$had_old" ] || say '古いアプリは、新しいアプリの録画の一覧の上に出る「古いアプリを削除」で削除できます'
 say 'インストールしました。使い終わったら、テレビのデバッグをオフに戻してください (docs/install.md)'

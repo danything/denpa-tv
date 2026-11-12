@@ -121,8 +121,8 @@ adb devices
 
 ```sh
 adb install -r denpa-tv-0.2.0.apk     # インストール (-r は設定を残して上書き)
-adb shell am start -n io.github.danything.denpatv/.MainActivity   # 起動
-adb uninstall io.github.danything.denpatv                          # アンインストール
+adb shell am start -n io.doany.denpatv/.MainActivity   # 起動
+adb uninstall io.doany.denpatv                          # アンインストール
 ```
 
 2回目からはアプリの中でアップデートできます ([updates.md](updates.md))。
@@ -130,14 +130,34 @@ adb uninstall io.github.danything.denpatv                          # アンイ�
 インストールすると、テレビのアプリの一覧 (Google TV なら「アプリ」の列、Fire TV なら「アプリ」の一覧) に
 **denpa** が出ます。ホームの列に出ないときはアプリの一覧の中を探してください。
 
+## 古いアプリから移る
+
+v1.0.0 から、パッケージ名が `io.github.danything.denpatv` から `io.doany.denpatv` に変わりました。
+Android からは別のアプリなので、古いアプリの上に上書きでは入りません。古いパッケージ名で出した最後のバージョンは v0.30.0 です。
+
+移り方は 2 つあります。
+
+- アプリの中から移る。v0.30.0 の古いアプリは、録画の一覧の上と設定の「バージョン」に「新しいアプリに移る (v1.0.0)」を出します。
+  押すと新しいアプリのインストールの確認画面が開き、入れ終わると新しいアプリが開きます
+- 1 行のスクリプト ([まとめて1行で](#まとめて1行で)) で入れる。古いアプリが入っていれば、スクリプトが先に古いアプリを v0.30.0 に上げてから、新しいアプリを入れます
+
+新しいアプリは初めて開いたとき、v0.30.0 の古いアプリから接続先・アクセストークン・字幕や画質などの設定を受け取ります。
+古いアプリは、同じ鍵で署名した新しいアプリにだけ設定を渡します。
+受け取ったら、録画の一覧の上か設定に出る「古いアプリを削除」を押して、古いアプリを削除してください。
+
+- v0.30.0 より前の古いアプリは設定を渡せません。アプリの中のアップデートも、新しいアプリを古いアプリの上に入れようとして失敗します。
+  1 行のスクリプトで入れてください。手作業で入れるときは、先に v0.30.0 の APK を `adb install -r` で入れてから、新しいアプリを入れます
+- 古いアプリが debug の署名 (CI の APK、`-debug` のリリース) のときは、署名が違うので設定を受け取れません。新しいアプリで繋ぎ直してください
+- 設定を受け取るのは、新しいアプリでまだ denpa に繋いでいないときだけです
+
 ## 6. 不具合を知らせるとき
 
 ```sh
 adb exec-out screencap -p > denpa-tv.png
-adb logcat -d --pid=$(adb shell pidof -s io.github.danything.denpatv) > denpa-tv.log
+adb logcat -d --pid=$(adb shell pidof -s io.doany.denpatv) > denpa-tv.log
 ```
 
-(Windows の PowerShell では `--pid=$(...)` の代わりに、先に `adb shell pidof -s io.github.danything.denpatv` で
+(Windows の PowerShell では `--pid=$(...)` の代わりに、先に `adb shell pidof -s io.doany.denpatv` で
 番号を出してから `adb logcat -d --pid=<番号>` と打つ)
 
 ## 困ったとき
@@ -146,7 +166,7 @@ adb logcat -d --pid=$(adb shell pidof -s io.github.danything.denpatv) > denpa-tv
 | --- | --- |
 | `adb devices` で `unauthorized` | テレビの許可の確認に答えていない。テレビの画面で許可する。出ていなければ `adb kill-server` してから繋ぎ直す |
 | `failed to connect` / `Connection refused` | テレビの ADB デバッグ (ネットワーク デバッグ) がオフ、IP の打ち間違い、パソコンとテレビが別のネットワーク (ゲスト Wi-Fi など) |
-| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | 入っているものと署名が違う (debug とリリースを行き来した)。`adb uninstall io.github.danything.denpatv` してからインストールし直す |
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | 入っているものと署名が違う (debug とリリースを行き来した)。`adb uninstall io.doany.denpatv` してからインストールし直す |
 | `INSTALL_FAILED_OLDER_SDK` | テレビの Android が古すぎる。Android 7.0 (API 24) 以上が要る |
 | インストールしたのにホームに出ない | アプリの一覧を見る。テレビ向けのアプリなので、普通のスマホ向けのランチャーには出ない |
 

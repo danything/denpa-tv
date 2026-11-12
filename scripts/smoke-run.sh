@@ -51,7 +51,7 @@ logcat=$!
 # **adb shell が戻るのを待たない。** API 28 のエミュレータでは、テストが終わって am が閉じても (logcat に
 # 「run finished」も出る) adb shell が戻らず、そのまま adb ごと応えなくなることがあった (CI で 30 分待って切られた)。
 # 終わりの印 (INSTRUMENTATION_CODE) が出たら adb を待たずに読み終える。出ないまま `SMOKE_TIMEOUT` 秒たったら切る
-adb shell am instrument -w -r io.github.danything.denpatv.smoke/androidx.test.runner.AndroidJUnitRunner > "$out/instrument.txt" 2>&1 &
+adb shell am instrument -w -r io.doany.denpatv.smoke/androidx.test.runner.AndroidJUnitRunner > "$out/instrument.txt" 2>&1 &
 instrument=$!
 deadline=$((SECONDS + ${SMOKE_TIMEOUT:-480}))
 while kill -0 "$instrument" 2>/dev/null && ! grep -q '^INSTRUMENTATION_CODE:' "$out/instrument.txt" && [ "$SECONDS" -lt "$deadline" ]; do

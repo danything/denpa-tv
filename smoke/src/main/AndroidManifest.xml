@@ -4,6 +4,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 確かめるアプリを起動する (Android 11 からのパッケージの見え方) -->
     <queries>
-        <package android:name="io.github.danything.denpatv" />
+        <package android:name="io.doany.denpatv" />
     </queries>
 </manifest>
