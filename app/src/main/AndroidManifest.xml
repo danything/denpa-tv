@@ -10,11 +10,6 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="true" />
 
-    <!-- 新しいアプリ (io.doany.denpatv) へ移る (data/NewApp.kt)。入っているかを見て、開き、設定を渡す相手の署名を比べる -->
-    <queries>
-        <package android:name="io.doany.denpatv" />
-    </queries>
-
     <application
         android:name=".DenpaApp"
         android:banner="@drawable/banner"
@@ -47,12 +42,6 @@
         <provider
             android:name=".data.WatchNextPosters"
             android:authorities="${applicationId}.watchnext"
-            android:exported="true"
-            tools:ignore="ExportedContentProvider" />
-        <!-- 新しいアプリに設定を渡す (data/NewApp.kt)。同じ鍵で署名した新しいアプリにだけ返す -->
-        <provider
-            android:name=".data.SettingsExport"
-            android:authorities="${applicationId}.settings"
             android:exported="true"
             tools:ignore="ExportedContentProvider" />
     </application>
