@@ -25,7 +25,11 @@ import io.github.danything.denpatv.data.Update
 import io.github.danything.denpatv.data.UpdateRejected
 import io.github.danything.denpatv.data.UpdateSource
 import io.github.danything.denpatv.data.Version
+import io.github.danything.denpatv.data.NEW_PACKAGE
 import io.github.danything.denpatv.data.isDevBuild
+import io.github.danything.denpatv.data.movesToNewApp
+import io.github.danything.denpatv.data.newAppInstalled
+import io.github.danything.denpatv.data.newAppLaunchIntent
 import io.github.danything.denpatv.data.offerAfterFailure
 import io.github.danything.denpatv.data.prefetchPlan
 import io.github.danything.denpatv.data.selectUpdate
@@ -75,12 +79,15 @@ sealed interface UpdateState {
     ) : UpdateState
     /** 取れない・合わない・入らない。押すとやり直す (取れた APK があればそれを入れ直す) */
     data class Failed(val update: Update, val message: String, val file: File? = null) : UpdateState
+    /** 新しいアプリ (`NEW_PACKAGE`) が入っている。押すと新しいアプリを開く。もう新しい版は確かめない */
+    data object Moved : UpdateState
 }
 
 /** 押せる1行に出す文。出さないときは null (裏で取ってきている間も出さない) */
 fun UpdateState.notice(): String? = when (this) {
-    is UpdateState.Available -> "アップデート (${update.label})"
-    is UpdateState.Ready -> "アップデート (${update.label})"
+    is UpdateState.Available -> updateLabel(update)
+    is UpdateState.Ready -> updateLabel(update)
+    UpdateState.Moved -> "新しいアプリを開く"
     is UpdateState.Downloading -> "ダウンロード中 $percent%"
     is UpdateState.Installing ->
         if (confirming) "確認画面で「インストール」を選んでください" else "インストール中…"
@@ -88,6 +95,10 @@ fun UpdateState.notice(): String? = when (this) {
     is UpdateState.Failed -> message
     else -> null
 }
+
+/** 新しい版の1行。v1.0.0 からは上書きではなく、新しいアプリを入れる (data/NewApp.kt) */
+private fun updateLabel(update: Update) =
+    if (update.movesToNewApp()) "新しいアプリに移る (${update.label})" else "アップデート (${update.label})"
 
 /** 許可の画面へ送ったあとに開き直したとき、覚えておいたリクエスト (`InstallRequest`) をどうするか */
 enum class Resume {
@@ -175,6 +186,8 @@ class Updater(private val app: DenpaApp) {
      * 許可の画面へ送ったあとに開き直したのなら、続けて入れる (許可が見えなくても入れてみる) (`resumeRequest`)
      */
     fun checkOnStart() {
+        // 新しいアプリへ移ったあと。新しい版はもう確かめず、新しいアプリを開く1行だけ出す (開発版でも、移る流れを手元で確かめられるように)
+        if (moved()) return
         if (dev || !started.compareAndSet(false, true)) return
         app.scope.launch {
             val (at, saved) = app.settings.lastUpdateCheck()
@@ -201,6 +214,7 @@ class Updater(private val app: DenpaApp) {
      * 画面に戻った (MainActivity の onResume)。許可の画面から戻ったら**もう一度押さなくても続けて入れる**。許可が見えなくても入れてみる (`installStep`)
      */
     fun resume() {
+        if (moved()) return
         val state = _state.value as? UpdateState.NeedsPermission ?: return
         // 許可の画面を開けなかった: ほかのアプリ・ホームから戻っただけなので、勝手に始めない
         if (!state.opened) return
@@ -291,9 +305,32 @@ class Updater(private val app: DenpaApp) {
         }
     }
 
+    /**
+     * 新しいアプリが入っていれば「新しいアプリを開く」にして true。入っていないのに「新しいアプリを開く」のまま
+     * (新しいアプリを消した) なら、ふだんに戻す
+     */
+    private fun moved(): Boolean {
+        if (newAppInstalled(app)) {
+            _state.value = UpdateState.Moved
+            return true
+        }
+        _state.compareAndSet(UpdateState.Moved, UpdateState.Idle)
+        return false
+    }
+
+    /** 新しいアプリを開く。開けなければ (消された)、ふだんに戻す */
+    private fun openNewApp() {
+        val intent = newAppLaunchIntent(app)
+        if (intent == null || !open(intent)) {
+            Log.w(TAG, "新しいアプリ ($NEW_PACKAGE) を開けません")
+            _state.compareAndSet(UpdateState.Moved, UpdateState.Idle)
+        }
+    }
+
     /** 1行を押した: 入れる (照らした APK が無ければ取ってきてから)。取ってきている間は何もしない */
     fun act() {
         when (val state = _state.value) {
+            UpdateState.Moved -> openNewApp()
             is UpdateState.Ready -> start(state.update, state.file.takeIf { it.exists() })
             is UpdateState.Available -> start(state.update, null)
             is UpdateState.NeedsPermission -> start(state.update, state.file?.takeIf { it.exists() })
@@ -515,7 +552,8 @@ class Updater(private val app: DenpaApp) {
         try {
             registerReceiver()
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-                setAppPackageName(app.packageName)
+                // v1.0.0 からは新しいアプリ (別のパッケージ) を入れる。同じ鍵で署名してあるが、上書きではなく新しく入る
+                setAppPackageName(if (update.movesToNewApp()) NEW_PACKAGE else app.packageName)
                 setSize(file.length())
                 // 前にここから入れた (= このアプリが入れた元) なら、確認なしで上げられる。そうでなければ OS が確認を出す
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -624,6 +662,12 @@ class Updater(private val app: DenpaApp) {
                 }
             }
             // 入ると、このアプリは OS に閉じられる (ここにはまず来ない)
+            // 新しいアプリが入ったときは、このアプリは閉じられない。続けて新しいアプリを開く (初めて開くと、ここの設定を読む)
+            PackageInstaller.STATUS_SUCCESS if installing.update.movesToNewApp() -> {
+                Log.i(TAG, "新しいアプリ ($NEW_PACKAGE) を入れました")
+                _state.value = UpdateState.Moved
+                openNewApp()
+            }
             PackageInstaller.STATUS_SUCCESS -> _state.value = UpdateState.Idle
             // はっきり拒否になっている: 押し直しても同じなので、許可の画面を開く
             PackageInstaller.STATUS_FAILURE_ABORTED if !allowedToInstall() && denied(appop()) ->
