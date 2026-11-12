@@ -95,7 +95,11 @@ class AdtsFormatReader(private val make: () -> AdtsReader) : ElementaryStreamRea
 
     override fun endOfInputReached() = reader.endOfInputReached()
 
-    /** 新しい `AdtsReader` に、前と同じトラックを渡す (トラックの id は使わないので、`TrackIdGenerator` は何でもよい) */
+    /**
+     * 新しい `AdtsReader` に、前と同じトラックを渡す (トラックの id は使わないので、`TrackIdGenerator` は何でもよい)。
+     * ID3 のトラックは作らない (`exposeId3` が false) ので、渡すのは音声のトラックだけ。
+     * 前の PES の最後のフレームが途中で切れていたら、そのフレームは前の `AdtsReader` ごと捨てる (形式が替わる境目の 1 フレーム)
+     */
     private fun rebuild() {
         val next = make()
         val replay = tracks.iterator()
