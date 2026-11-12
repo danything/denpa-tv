@@ -167,7 +167,4 @@ class Settings(private val context: Context) {
             }
         }
     }
-
-    /** 新しいアプリに渡す設定 (`SettingsExport`) */
-    suspend fun exportRows(): List<SettingRow> = exportRows(context.dataStore.data.first())
 }
