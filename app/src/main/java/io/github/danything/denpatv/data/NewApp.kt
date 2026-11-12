@@ -45,15 +45,18 @@ fun newAppLaunchIntent(context: Context): Intent? {
 /** 渡す設定の1行。`type` は string・boolean・long・float、`value` は文字列にしたもの */
 data class SettingRow(val key: String, val type: String, val value: String)
 
+/** 渡さないキー (`Settings` のアップデートの確認の記録) */
+val UPDATE_KEYS = setOf("update_checked_at", "update", "update_install_requested", "update_install_requested_at")
+
 /** [SettingsExport] が返す列 */
 val SETTING_COLUMNS = arrayOf("key", "type", "value")
 
 /**
  * 新しいアプリに渡す設定。繋ぐ先・アクセストークン・ライブの画質・字幕などを全部渡し、
- * アップデートの確認の記録 (`update` で始まるキー。このアプリの版と取ってきた APK のこと) だけは渡さない
+ * アップデートの確認の記録 ([UPDATE_KEYS]。このアプリのバージョンと取ってきた APK のこと) だけは渡さない
  */
 fun exportRows(prefs: Preferences): List<SettingRow> = prefs.asMap().mapNotNull { (key, value) ->
-    if (key.name.startsWith("update")) return@mapNotNull null
+    if (key.name in UPDATE_KEYS) return@mapNotNull null
     val type = when (value) {
         is String -> "string"
         is Boolean -> "boolean"
