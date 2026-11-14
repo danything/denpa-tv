@@ -125,14 +125,26 @@ val LiveQuality?.buffering: Buffering get() = if (this == LiveQuality.Raw) Buffe
  * 溜め方ごとに `DefaultLoadControl` を作っておき (割り当てる領域 `allocator` は1つを使い回す)、`buffering` に当たるものに溜めるか・動き出すかを聞く。
  * `buffering` は応答ヘッダを読んだときに読み込みのスレッドから替える (`TsClock.onCodec`)。溜めはじめる前なので、新しいストリームは初めから新しい溜め方になる。
  * プレーヤーを作り直さないので、前の映像を残したまま MPEG-2 と fMP4 を行き来できる
+ *
+ * **溜める量の上限 (バイト) は、アプリが使える Java ヒープで決めて、ここで数える** (`bytesFor`・`full`)。溜めた中身は Java ヒープ
+ * (`DefaultAllocator` の byte 配列) に載る。録画は 50 秒まで溜めるので、元の TS (MPEG-2 で 17〜24 Mbps) では 100〜150 MB になり、
+ * ヒープが 192 MB の端末 (BRAVIA の Android TV 12 など) では溜まっていくうちに OutOfMemoryError で落ちる (denpa-tv#142)。
+ * `DefaultLoadControl` はバイトを自分が渡した割り当て口 (`getAllocator` が返すもの) でプレーヤーごとに数えるが、ここは3つで1つの `allocator` を
+ * 使い回すので、`DefaultLoadControl` の数えるバイトはいつも 0 で、バイトの上限が効かない。そのため `allocator` の割り当て済みの量をここで見る。
+ * `DefaultLoadControl` にも同じ上限を渡すのは、`allocator` が手元に残す空きの量 (`DefaultAllocator.trim`) をそろえるため
  */
 @OptIn(UnstableApi::class)
-class BufferingControl(initial: Buffering) : LoadControl {
+class BufferingControl(
+    initial: Buffering,
+    /** 溜める量の上限 (バイト)。既定はこの端末のヒープから決める (`bytesFor`) */
+    private val targetBytes: Int = bytesFor(Runtime.getRuntime().maxMemory()),
+) : LoadControl {
     private val allocator = DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
     private val controls: Map<Buffering, DefaultLoadControl> = Buffering.entries.associateWith { b ->
         DefaultLoadControl.Builder()
             .setAllocator(allocator)
             .setBufferDurationsMs(b.minMs, b.maxMs, b.startMs, b.afterRebufferMs)
+            .setTargetBufferBytes(targetBytes)
             .build()
     }
 
@@ -157,9 +169,31 @@ class BufferingControl(initial: Buffering) : LoadControl {
 
     override fun retainBackBufferFromKeyframe(playerId: PlayerId): Boolean = active.retainBackBufferFromKeyframe(playerId)
 
-    override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean = active.shouldContinueLoading(parameters)
+    /** 上限のバイトまで溜めた。プレーヤーごとに作るので、`allocator` の割り当て済みの量がそのプレーヤーの溜めた量 */
+    private fun full(): Boolean = allocator.totalBytesAllocated >= targetBytes
 
-    override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean = active.shouldStartPlayback(parameters)
+    // 時間の決まりは `active` に聞く (`active` が覚える溜めている途中かも進める)。上限のバイトまで溜めたら、時間に届いていなくても止める (Media3 の既定と同じ)
+    override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean =
+        active.shouldContinueLoading(parameters) && !full()
+
+    // 上限のバイトまで溜めたら、時間に届いていなくても動き出す (止めたまま読みもしないで待ち続けないように。Media3 の既定と同じ)
+    override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean =
+        active.shouldStartPlayback(parameters) || full()
+
+    companion object {
+        /**
+         * 溜める量の上限 (バイト)。**ヒープ (`maxHeapBytes`。`Runtime.maxMemory`) の 1/4 で、Media3 の既定 (映像と音声のトラックぶん) は超えない。**
+         * 残りの 3/4 は画面・実況のコメント・字幕と、デコーダとのやり取りに残す。ヒープが 192 MB なら 48 MB で、MPEG-2 の 24 Mbps でも 16 秒ほど溜まる
+         */
+        fun bytesFor(maxHeapBytes: Long): Int =
+            (maxHeapBytes / HEAP_SHARE).coerceAtMost(MEDIA3_DEFAULT_BYTES.toLong()).toInt()
+
+        /** ヒープのうち溜めるのに使う割合の逆数 */
+        private const val HEAP_SHARE = 4
+
+        /** Media3 の既定で、映像と音声を1本ずつ選んだときの上限 (`DefaultLoadControl` が足し合わせるもの) */
+        const val MEDIA3_DEFAULT_BYTES = DefaultLoadControl.DEFAULT_VIDEO_BUFFER_SIZE + DefaultLoadControl.DEFAULT_AUDIO_BUFFER_SIZE
+    }
 }
 
 /**
