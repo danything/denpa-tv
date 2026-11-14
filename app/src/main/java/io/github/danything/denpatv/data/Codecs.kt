@@ -19,6 +19,14 @@ data class Decoders(
     val mpeg2Hardware: Boolean = mpeg2,
     val hevcHardware: Boolean = false,
 ) {
+    /** 画質のメニューで選んで再生できるか。H.264 はどの端末も、ほかはハードでデコードできるときだけ (`Playable.of` と同じ) */
+    fun plays(quality: LiveQuality): Boolean = when (quality) {
+        LiveQuality.Av1 -> av1Hardware
+        LiveQuality.Hevc -> hevcHardware
+        LiveQuality.H264 -> true
+        LiveQuality.Raw -> mpeg2Hardware
+    }
+
     companion object {
         fun detect(): Decoders {
             val decoders = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filterNot { it.isEncoder }
@@ -56,7 +64,7 @@ data class Decoders(
  * ライブ・追っかけの画質 (コーデック)。`codec` は denpa の `?codec=`・`playable=` と応答ヘッダ `X-Denpa-Codec` の値
  *
  * - **AV1**: 同じ画質で軽い。ハードでデコードできる端末だけ
- * - **H.265**: denpa が GPU でエンコードできるときだけ、denpa が「自動」で選ぶ。ハードでデコードできる端末だけ。メニューには並べない
+ * - **H.265**: denpa が GPU でエンコードできるときだけ。ハードでデコードできる端末だけ。メニューには、denpa の `liveCodecs` の先頭で再生できるものがこれのときだけ並べる (ライブだけ)
  * - **H.264**: どの端末でもデコードできる
  * - **MPEG-2** (`raw`): エンコードせずに1局に絞っただけの TS。denpa がエンコードを待たないぶんいちばん遅れが少なく、
  *   denpa の CPU も使わない。字幕は denpa がデコードした文字の配置を描いて重ねる (`ui/RawCaptions.kt`)。ハードでデコードできる端末だけ
@@ -71,7 +79,7 @@ enum class LiveQuality(val codec: String, val label: String, val mime: String) {
     ;
 
     companion object {
-        /** メニューで選べるもの。H.265 は並べない (選ぶのは denpa の「自動」だけ) */
+        /** `liveCodecs` を返さない古い denpa のときに、メニューで選べるもの。H.265 は並べない (選ぶのは denpa の「自動」だけ) */
         fun available(decoders: Decoders): List<LiveQuality> = buildList {
             if (decoders.av1Hardware) add(Av1)
             add(H264)
@@ -79,18 +87,31 @@ enum class LiveQuality(val codec: String, val label: String, val mime: String) {
         }
 
         /**
-         * 画質のメニューに並べるもの (「自動」の後ろ)。並びはブラウザの denpa のコーデックのメニュー (自動 → AV1 → H.265 → H.264 → MPEG-2) から、
-         * この端末で選べないもの (H.265 はいつも) を外したもの。`hidden` (世帯の設定の「コーデックの選択肢に H.264 と H.265 を出さない」) なら H.264 も外す
+         * 画質のメニューに並べるもの (「自動」の後ろ)。並びはブラウザの denpa のコーデックのメニュー (自動 → AV1 → H.265 → H.264 → MPEG-2) と同じ。
+         *
+         * - **エンコードするものは 1 つだけ並べる。** denpa がその場でエンコードできる並び (`options.liveCodecs`) の先頭から、
+         *   この端末で再生できるもの (`Decoders.plays`)。ブラウザの `shownCodec` と同じ。追っかけ (`chase`) では H.265 を並びから外す (denpa の追っかけは H.265 を出さない)
+         * - MPEG-2 はハードでデコードできる端末だけ
+         * - `liveCodecs` が無い古い denpa では、この端末で選べるもの (`available`) から、`hidden` に H.264 があれば H.264 を外す
          */
-        fun menu(decoders: Decoders, hidden: Boolean): List<LiveQuality> =
-            available(decoders).filterNot { hidden && it == H264 }
+        fun menu(decoders: Decoders, options: PlaybackOptions, chase: Boolean = false): List<LiveQuality> {
+            val live = options.liveCodecs ?: return available(decoders).filterNot { options.hideH264 && it == H264 }
+            val encoded = live.filterNot { chase && it == Hevc }.firstOrNull { decoders.plays(it) }
+            return listOfNotNull(encoded, Raw.takeIf { decoders.plays(it) })
+        }
 
         /**
-         * 覚えている選択 (`Settings.liveQuality`。`name`) を読む。**この端末で選べない・知らない値・メニューから外した H.264 は自動 (null)**
-         * (ブラウザの `readChoice` と同じ)
+         * 覚えている選択 (`Settings.liveQuality`。`name`) を読む。**メニューに並んでいないもの (この端末で選べない・denpa がいまその場でエンコードできない・
+         * 知らない値) は自動 (null)** (ブラウザの `keptChoice` と同じ。覚えた値は書き換えないので、また並べば選んだものに戻る)
          */
-        fun read(saved: String?, decoders: Decoders, hidden: Boolean): LiveQuality? =
-            menu(decoders, hidden).firstOrNull { it.name == saved }
+        fun read(saved: String?, decoders: Decoders, options: PlaybackOptions): LiveQuality? =
+            menu(decoders, options).firstOrNull { it.name == saved }
+
+        /**
+         * 録画に譲ったライブの追っかけ (`YieldPlan.chaseUrl`) でリクエストする選択。denpa の追っかけは H.265 を出さないので、
+         * ライブで H.265 を選んでいれば自動にする
+         */
+        fun forChase(choice: LiveQuality?): LiveQuality? = choice.takeUnless { it == Hevc }
 
         /** 応答ヘッダ `X-Denpa-Codec` の値 (`h264` / `hevc` / `av1` / `raw`)。音声だけ (`audio`)・知らない値・無いときは null */
         fun ofHeader(value: String?): LiveQuality? {
@@ -178,6 +199,7 @@ data class LiveSelection(
     companion object {
         const val AUTO = "自動"
 
-        fun of(choice: LiveQuality?, decoders: Decoders, hideH264: Boolean) = LiveSelection(choice, LiveQuality.menu(decoders, hideH264))
+        fun of(choice: LiveQuality?, decoders: Decoders, options: PlaybackOptions, chase: Boolean = false) =
+            LiveSelection(choice, LiveQuality.menu(decoders, options, chase))
     }
 }

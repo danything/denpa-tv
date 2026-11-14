@@ -131,11 +131,23 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     private var optionsKnown: PlaybackOptions? = null
 
     /**
-     * **観るときの決まり** (画質のメニューから外すもの)。控えが無ければ聞く。届かない・打ち切った (`DenpaApi.playbackOptions` は 2.5 秒で打ち切る) ときは
-     * `PlaybackOptions.FALLBACK` (控えないので、次に聞き直す)。アクセストークンが取り消されていれば `Unauthorized`
+     * **観るときの決まり** (画質のメニューに並べるもの)。控えが無ければ聞く。届かない・打ち切った (`DenpaApi.playbackOptions` は 2.5 秒で打ち切る) ときは
+     * `PlaybackOptions.FALLBACK` (控えないので、次に聞き直す)。アクセストークンが取り消されていれば `Unauthorized`。
+     * 控えがあればそれをすぐ返し、裏で聞き直して控えを替える (`liveCodecs` は denpa の GPU がソフトウェアに降りている間などに変わるので、次に開いた画面から合わせる)
      */
-    suspend fun playbackOptions(): PlaybackOptions =
-        optionsKnown ?: (api.playbackOptions(base)?.also { optionsKnown = it } ?: PlaybackOptions.FALLBACK)
+    suspend fun playbackOptions(): PlaybackOptions {
+        optionsKnown?.let { known ->
+            app.scope.launch {
+                try {
+                    api.playbackOptions(base)?.let { optionsKnown = it }
+                } catch (_: Unauthorized) {
+                    // 取り消されていれば、ストリームのリクエストが 401 で気付く
+                }
+            }
+            return known
+        }
+        return api.playbackOptions(base)?.also { optionsKnown = it } ?: PlaybackOptions.FALLBACK
+    }
 
     /** 局だけ取り直す (いま放送中の番組が変わるので) */
     suspend fun refreshServices() {
