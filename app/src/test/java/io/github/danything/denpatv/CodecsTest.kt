@@ -64,7 +64,11 @@ class CodecsTest {
         assertEquals(LiveQuality.H264, LiveQuality.ofPlayback("h264"))
     }
 
-    /** denpa の `api/playback/options`。`hidden` が読めなければ null (呼ぶ側は控えない)。`hidden` に `h264` があれば H.264 を外す */
+    private val shown = PlaybackOptions(hideH264 = false)
+    private val hidden = PlaybackOptions(hideH264 = true)
+    private fun live(vararg codecs: LiveQuality) = PlaybackOptions(hideH264 = true, liveCodecs = codecs.toList())
+
+    /** denpa の `api/playback/options`。`hidden` も `liveCodecs` も読めなければ null (呼ぶ側は控えない)。`hidden` に `h264` があれば H.264 を外す */
     @Test
     fun 観るときの決まりを読む() {
         assertEquals(PlaybackOptions(hideH264 = true), parsePlaybackOptions("""{"indoor":false,"hidden":["h264","hevc"],"hevc":true}"""))
@@ -73,36 +77,110 @@ class CodecsTest {
         assertNull(parsePlaybackOptions("<html>"))
     }
 
-    /** ブラウザのコーデックのメニューと同じ並び (自動 → AV1 → H.265 → H.264 → MPEG-2) から、選べないもの (H.265 はいつも) と外したものを除く */
+    /** v2.45.0 からの denpa は `liveCodecs` (その場でエンコードできる並び) も返す。知らない値は読み飛ばし、放送のまま (`raw`) は入れない */
+    @Test
+    fun 観るときの決まりの_liveCodecs_を読む() {
+        assertEquals(
+            PlaybackOptions(hideH264 = true, liveCodecs = listOf(LiveQuality.Hevc, LiveQuality.H264)),
+            parsePlaybackOptions("""{"indoor":true,"liveCodecs":["hevc","h264"],"hidden":["av1","h264"],"hevc":true}"""),
+        )
+        assertEquals(
+            PlaybackOptions(hideH264 = false, liveCodecs = listOf(LiveQuality.H264)),
+            parsePlaybackOptions("""{"indoor":true,"liveCodecs":["vvc","raw","h264"],"hidden":["av1","hevc"],"hevc":false}"""),
+        )
+        // hidden が無くても liveCodecs が読めれば決まりとして使う
+        assertEquals(PlaybackOptions(hideH264 = false, liveCodecs = listOf(LiveQuality.Av1)), parsePlaybackOptions("""{"liveCodecs":["av1"]}"""))
+    }
+
+    /** `liveCodecs` の形式が違えば (denpa のバージョンのずれ) `warn` に書き、止めずに `hidden` で決める */
+    @Test
+    fun liveCodecs_の形式が違えば_hidden_で決める() {
+        val warnings = mutableListOf<String>()
+        assertEquals(
+            PlaybackOptions(hideH264 = true),
+            parsePlaybackOptions("""{"liveCodecs":"hevc","hidden":["h264","hevc"]}""") { warnings += it },
+        )
+        assertEquals(1, warnings.size)
+        assertTrue(warnings[0].contains("liveCodecs"))
+        assertEquals(PlaybackOptions(hideH264 = false), parsePlaybackOptions("""{"liveCodecs":[{"id":"h264"}],"hidden":[]}""") { warnings += it })
+        assertEquals(2, warnings.size)
+        // どちらも読めなければ null
+        assertNull(parsePlaybackOptions("""{"liveCodecs":null}""") { warnings += it })
+    }
+
+    /** `liveCodecs` が無い古い denpa: ブラウザのコーデックのメニューと同じ並び (自動 → AV1 → H.265 → H.264 → MPEG-2) から、選べないもの (H.265 はいつも) と外したものを除く */
     @Test
     fun メニューの並び() {
-        assertEquals(listOf("AV1", "H.264", "MPEG-2"), LiveQuality.menu(tv, hidden = false).map { it.label })
-        assertEquals(listOf("AV1", "MPEG-2"), LiveQuality.menu(tv, hidden = true).map { it.label })
-        assertEquals(listOf("H.264"), LiveQuality.menu(stick, hidden = false).map { it.label })
-        assertEquals(emptyList<LiveQuality>(), LiveQuality.menu(stick, hidden = true))
+        assertEquals(listOf("AV1", "H.264", "MPEG-2"), LiveQuality.menu(tv, shown).map { it.label })
+        assertEquals(listOf("AV1", "MPEG-2"), LiveQuality.menu(tv, hidden).map { it.label })
+        assertEquals(listOf("H.264"), LiveQuality.menu(stick, shown).map { it.label })
+        assertEquals(emptyList<LiveQuality>(), LiveQuality.menu(stick, hidden))
+    }
+
+    /**
+     * `liveCodecs` を返す denpa: エンコードするものは、その先頭から端末で再生できるものを 1 つだけ並べる (ブラウザの `shownCodec` と同じ)。
+     * `hidden` (先頭以外を外す) は端末で再生できるかを見ないので、端末が先頭を再生できなくても次のものを並べる
+     */
+    @Test
+    fun メニューは_liveCodecs_から再生できる最初のもの() {
+        // Intel Pentium Gold 8505 (VA-API で H.264・H.265) の denpa
+        val vaapi = live(LiveQuality.Hevc, LiveQuality.H264)
+        assertEquals(listOf("H.265", "MPEG-2"), LiveQuality.menu(tv, vaapi).map { it.label })
+        assertEquals(listOf("H.264"), LiveQuality.menu(stick, vaapi).map { it.label })
+        // 追っかけは H.265 を出さないので、次のもの
+        assertEquals(listOf("H.264", "MPEG-2"), LiveQuality.menu(tv, vaapi, chase = true).map { it.label })
+        // GPU で AV1 も出せる denpa でも、AV1 をハードでデコードできない端末は次の H.264
+        val av1 = live(LiveQuality.Av1, LiveQuality.Hevc, LiveQuality.H264)
+        assertEquals(listOf("AV1", "MPEG-2"), LiveQuality.menu(tv, av1).map { it.label })
+        assertEquals(listOf("H.264"), LiveQuality.menu(stick, av1).map { it.label })
+        // GPU が無い denpa は H.264 だけ。AV1 をデコードできる端末でも AV1 は並べない (その場でエンコードできない)
+        assertEquals(listOf("H.264", "MPEG-2"), LiveQuality.menu(tv, live(LiveQuality.H264)).map { it.label })
+        // 再生できるものが無ければ、エンコードするものは並べない
+        assertEquals(listOf("MPEG-2"), LiveQuality.menu(tv.copy(av1Hardware = false), live(LiveQuality.Av1)).map { it.label })
     }
 
     @Test
     fun 覚えた選択を読む_選べない値と外した_H264_は自動() {
-        assertEquals(LiveQuality.Av1, LiveQuality.read("Av1", tv, hidden = false))
-        assertEquals(LiveQuality.Raw, LiveQuality.read("Raw", tv, hidden = true))
-        assertEquals(LiveQuality.H264, LiveQuality.read("H264", tv, hidden = false))
-        assertNull(LiveQuality.read("H264", tv, hidden = true))
-        assertNull(LiveQuality.read("Hevc", tv, hidden = false))
-        assertNull(LiveQuality.read("Av1", tv.copy(av1Hardware = false), hidden = false))
-        assertNull(LiveQuality.read("壊れた値", tv, hidden = false))
-        assertNull(LiveQuality.read(null, tv, hidden = false))
+        assertEquals(LiveQuality.Av1, LiveQuality.read("Av1", tv, shown))
+        assertEquals(LiveQuality.Raw, LiveQuality.read("Raw", tv, hidden))
+        assertEquals(LiveQuality.H264, LiveQuality.read("H264", tv, shown))
+        assertNull(LiveQuality.read("H264", tv, hidden))
+        assertNull(LiveQuality.read("Hevc", tv, shown))
+        assertNull(LiveQuality.read("Av1", tv.copy(av1Hardware = false), shown))
+        assertNull(LiveQuality.read("壊れた値", tv, shown))
+        assertNull(LiveQuality.read(null, tv, shown))
+    }
+
+    /** 覚えた選択がいまメニューに並んでいなければ (denpa の GPU が変わった・ソフトウェアに降りている) 自動。並んでいれば選んだもの */
+    @Test
+    fun 覚えた選択を読む_liveCodecs_に無いものは自動() {
+        val vaapi = live(LiveQuality.Hevc, LiveQuality.H264)
+        assertEquals(LiveQuality.Hevc, LiveQuality.read("Hevc", tv, vaapi))
+        assertNull(LiveQuality.read("Av1", tv, vaapi))
+        assertNull(LiveQuality.read("H264", tv, vaapi))
+        assertEquals(LiveQuality.H264, LiveQuality.read("H264", tv, live(LiveQuality.H264)))
+        assertNull(LiveQuality.read("Hevc", tv, live(LiveQuality.H264)))
+        assertEquals(LiveQuality.Raw, LiveQuality.read("Raw", tv, vaapi))
+    }
+
+    /** 録画に譲ったライブの追っかけは H.265 を出さないので、ライブで H.265 を選んでいれば自動でリクエストする */
+    @Test
+    fun 譲った追っかけでは_H265_を自動にする() {
+        assertNull(LiveQuality.forChase(LiveQuality.Hevc))
+        assertEquals(LiveQuality.H264, LiveQuality.forChase(LiveQuality.H264))
+        assertEquals(LiveQuality.Raw, LiveQuality.forChase(LiveQuality.Raw))
+        assertNull(LiveQuality.forChase(null))
     }
 
     /** 自動の名前には、応答ヘッダで受け取った形式を添える。選んだものはその名前だけ */
     @Test
     fun 自動の名前に流れている形式を添える() {
-        val auto = LiveSelection.of(null, tv, hideH264 = false)
+        val auto = LiveSelection.of(null, tv, shown)
         assertEquals("自動 (MPEG-2)", auto.autoLabel(LiveQuality.Raw))
         assertEquals("自動 (H.265)", auto.autoLabel(LiveQuality.Hevc))
         assertEquals("自動", auto.autoLabel(null))
-        assertEquals(LiveSelection.AUTO, LiveSelection.of(LiveQuality.Raw, tv, hideH264 = false).autoLabel(LiveQuality.Raw))
-        assertEquals(emptyList<LiveQuality>(), LiveSelection.of(null, stick, hideH264 = true).menu)
+        assertEquals(LiveSelection.AUTO, LiveSelection.of(LiveQuality.Raw, tv, shown).autoLabel(LiveQuality.Raw))
+        assertEquals(emptyList<LiveQuality>(), LiveSelection.of(null, stick, hidden).menu)
         assertEquals("AV1", choiceLabel(LiveQuality.Av1, LiveQuality.H264))
         // 半角で終わる名前だけ、続く文との間に空白を入れる
         assertEquals("AV1 にしました", labelThen("AV1", "にしました"))

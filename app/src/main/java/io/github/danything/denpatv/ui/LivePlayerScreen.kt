@@ -292,10 +292,12 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         if (quality == null && playable.empty) return@LaunchedEffect player.stop()
         // 録画に譲っている間は、その追っかけ (録れているところの少し手前から。音声は denpa が主音声をエンコードする)
         if (chasing != null) {
-            val url = repo.url(YieldPlan.chaseUrl(chasing.recording.id, codecQuery(quality, playable))) ?: return@LaunchedEffect
+            // 追っかけは H.265 を出さないので、H.265 を選んでいれば自動でリクエストする
+            val chaseQuality = LiveQuality.forChase(quality)
+            val url = repo.url(YieldPlan.chaseUrl(chasing.recording.id, codecQuery(chaseQuality, playable))) ?: return@LaunchedEffect
             trying = false
             recovery.requested()
-            player.load(url, quality?.mime)
+            player.load(url, chaseQuality?.mime)
             // 画質はメニューで替えられる (変換の枠が埋まって断られたら MPEG-2 へ)。替えたら、映ったかを見る
             codec.requested(quality)
             return@LaunchedEffect
@@ -753,15 +755,18 @@ private const val MENU_IDLE_MS = 8_000L
 
 /**
  * **ライブの画質の選択** (画質のメニュー)。選んだものは端末に覚え (`Settings.liveQuality`)、家の中でも外でもそのまま。
- * 選んでいない・この端末で選べない・メニューから外した H.264 なら「自動」(`LiveQuality.read`)。自動で denpa が選んだ形式は覚えない (ブラウザと同じ)。
- * 読み終えるまでは null。観るときの決まり (メニューから外すもの) は開いたときに1度だけ見る (開いている間に変わっても、映しているものを替えない)
+ * 選んでいない・メニューに並んでいない (この端末で選べない・denpa がいまその場でエンコードできない) なら「自動」(`LiveQuality.read`)。
+ * 自動で denpa が選んだ形式は覚えない (ブラウザと同じ)。
+ * 読み終えるまでは null。観るときの決まり (メニューに並べるもの) は開いたときに1度だけ見る (開いている間に変わっても、映しているものを替えない)
  */
 @Composable
 fun rememberLiveSelection(repo: Repository): LiveSelection? {
     val saved by repo.app.settings.liveQuality.collectAsState(initial = LOADING_QUALITY)
     val options = rememberPlaybackOptions(repo) ?: return null
     if (saved == LOADING_QUALITY) return null
-    return remember(saved, options) { selectionOf(LiveQuality.read(saved, repo.app.decoders, options.hideH264), repo, options) }
+    return remember(saved, options) {
+        LiveSelection.of(LiveQuality.read(saved, repo.app.decoders, options), repo.app.decoders, options)
+    }
 }
 
 /**
@@ -771,7 +776,9 @@ fun rememberLiveSelection(repo: Repository): LiveSelection? {
 fun rememberChaseSelection(repo: Repository): Pair<LiveSelection, (LiveQuality?) -> Unit>? {
     var choice by remember { mutableStateOf<LiveQuality?>(null) }
     val options = rememberPlaybackOptions(repo) ?: return null
-    return remember(choice, options) { selectionOf(choice, repo, options) } to { next: LiveQuality? -> choice = next }
+    return remember(choice, options) {
+        LiveSelection.of(choice, repo.app.decoders, options, chase = true)
+    } to { next: LiveQuality? -> choice = next }
 }
 
 /** 観るときの決まり。読み終えるまでは null。アクセストークンが取り消されていたら決まりの無いときと同じ (ストリームのリクエストが 401 で気付く) */
@@ -786,9 +793,6 @@ private fun rememberPlaybackOptions(repo: Repository): PlaybackOptions? {
     }
     return options
 }
-
-private fun selectionOf(choice: LiveQuality?, repo: Repository, options: PlaybackOptions) =
-    LiveSelection.of(choice, repo.app.decoders, options.hideH264)
 
 private const val LOADING_QUALITY = "\u0000loading"
 

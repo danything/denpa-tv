@@ -202,7 +202,7 @@ class DenpaApi(
     suspend fun playbackOptions(base: URI): PlaybackOptions? = withContext(Dispatchers.IO) {
         val res = call(base, "api/playback/options", timeoutMs = OPTIONS_TIMEOUT_MS) ?: return@withContext null
         if (!res.ok) return@withContext null
-        parsePlaybackOptions(res.text())
+        parsePlaybackOptions(res.text(), warn)
             ?: null.also { warn("観るときの決まりの形式が違います (denpa の版のずれ?): ${res.text().take(200)}") }
     }
 
@@ -390,19 +390,36 @@ fun parseDenpaHealth(body: String): DenpaHealth? {
 }
 
 /**
- * 観るときの決まり (`api/playback/options`)。`hideH264` は世帯の設定の「コーデックの選択肢に H.264 と H.265 を出さない」
- * (`hidden` に `h264` がある。外すのはメニューだけ。自動では denpa が今までどおり選ぶ)。家の中か (`indoor`) は読まない (自動の順は denpa が決める)
+ * 観るときの決まり (`api/playback/options`)。どちらも画質のメニューに並べるものを決めるのに使う (外すのはメニューだけ。自動では denpa が選ぶ)。
+ * 家の中か (`indoor`) は読まない (自動の順は denpa が決める)
  */
-data class PlaybackOptions(val hideH264: Boolean) {
+data class PlaybackOptions(
+    /** `hidden` に `h264` がある。`liveCodecs` が無い古い denpa のときだけ見る */
+    val hideH264: Boolean,
+    /**
+     * denpa がライブでその場でエンコードできるコーデック (`liveCodecs`。AV1 → H.265 → H.264 の順。知らない値は読み飛ばす)。
+     * メニューにはこの先頭から再生できるものを 1 つだけ並べる (`LiveQuality.menu`)。無い (v2.45.0 より前の denpa・形式が違う) ときは null
+     */
+    val liveCodecs: List<LiveQuality>? = null,
+) {
     companion object {
         /** 聞けない: メニューから何も外さない */
         val FALLBACK = PlaybackOptions(hideH264 = false)
     }
 }
 
-/** `api/playback/options` の返事 (`{"indoor":true,"hidden":["h264","hevc"],…}`) を読む。`hidden` (並び) が読めなければ null */
-fun parsePlaybackOptions(body: String): PlaybackOptions? {
+/**
+ * `api/playback/options` の返事 (`{"indoor":true,"liveCodecs":["hevc","h264"],"hidden":["av1","h264"],…}`) を読む。
+ * `liveCodecs` も `hidden` も並びとして読めなければ null。`liveCodecs` だけ形式が違えば `warn` に書き、`hidden` で決める (`liveCodecs` が無い古い denpa と同じ)
+ */
+fun parsePlaybackOptions(body: String, warn: (String) -> Unit = {}): PlaybackOptions? {
     val json = runCatching { lenientJson.parseToJsonElement(body).jsonObject }.getOrNull() ?: return null
-    val hidden = runCatching { json["hidden"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } }.getOrNull() ?: return null
-    return PlaybackOptions(hideH264 = "h264" in hidden)
+    val hidden = runCatching { json["hidden"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } }.getOrNull()
+    val liveCodecs = json["liveCodecs"]?.let { value ->
+        runCatching { value.jsonArray.mapNotNull { it.jsonPrimitive.contentOrNull } }.getOrNull()
+            ?.mapNotNull { codec -> LiveQuality.ofHeader(codec)?.takeIf { it != LiveQuality.Raw } }
+            ?: null.also { warn("観るときの決まりの liveCodecs の形式が違います (denpa のバージョンのずれ?)。hidden で決めます: ${value.toString().take(200)}") }
+    }
+    if (hidden == null && liveCodecs == null) return null
+    return PlaybackOptions(hideH264 = hidden != null && "h264" in hidden, liveCodecs = liveCodecs)
 }
