@@ -5,7 +5,7 @@ import java.text.Normalizer
 
 /**
  * 外から局や録画を直に開くリンク (`denpa://…`)。Home Assistant の Android TV Remote (`media_player.play_media` の url) や
- * `adb shell am start -a android.intent.action.VIEW -d <uri>` から来る。README の「リンクで開く」の表と同じ
+ * `adb shell am start -a android.intent.action.VIEW -d <uri>` から来る。docs/usage.md の「リンクで開く」の表と同じ
  */
 sealed interface DeepLink {
     /** ライブ。`channel` は局の id・名前・番号 (無ければ最後に観ていた局) */
@@ -17,10 +17,13 @@ sealed interface DeepLink {
     /** 録画を観る。`id` は渡されたまま (数でなければ見つからないだけ) */
     data class Watch(val id: String) : DeepLink
 
+    /** 番組表。`channel` は局の id・名前・番号 (ライブと同じ探し方。無ければ最後に観ていた局) で、その局のいまの番組にフォーカスする */
+    data class Guide(val channel: String?) : DeepLink
+
     companion object {
         /**
-         * `denpa://live`・`denpa://live/<局>`・`denpa://recordings`・`denpa://recording/<id>` を読む。
-         * 局の名前は % で符号化してもしなくてもよい。ほかの形は null
+         * `denpa://live`・`denpa://live/<局>`・`denpa://recordings`・`denpa://recording/<id>`・`denpa://guide`・`denpa://guide/<局>` を読む。
+         * 局の名前は % で符号化してもしなくてもよい。ほかの形式は null
          */
         fun parse(uri: String?): DeepLink? {
             val s = uri?.trim() ?: return null
@@ -33,13 +36,14 @@ sealed interface DeepLink {
                 "live" -> Live(arg)
                 "recordings" -> Recordings
                 "recording" -> arg?.let(::Watch) ?: Recordings
+                "guide" -> Guide(arg)
                 else -> null
             }
         }
 
         private const val SCHEME = "denpa://"
 
-        /** % を解く。`+` はそのまま (局の名前に入りうる)。崩れていれば渡されたまま */
+        /** % をデコードする。`+` はそのまま (局の名前に入りうる)。崩れていれば渡されたまま */
         private fun decode(s: String): String =
             runCatching { URLDecoder.decode(s.replace("+", "%2B"), "UTF-8") }.getOrDefault(s)
     }
@@ -63,6 +67,6 @@ fun findService(services: List<Service>, query: String): Service? {
     return preferred.firstOrNull { normalizeName(it.name).startsWith(n) }
 }
 
-/** 名前を比べる形に: NFKC (全角英数を半角に) ・小文字・空白を抜く */
+/** 名前を比べるために正規化する: NFKC (全角英数を半角に) ・小文字・空白を抜く */
 internal fun normalizeName(name: String): String =
     Normalizer.normalize(name, Normalizer.Form.NFKC).lowercase().filterNot { it.isWhitespace() }

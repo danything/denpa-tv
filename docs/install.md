@@ -1,7 +1,7 @@
 # テレビへのインストール (adb)
 
 Play ストアにはまだ無いので、パソコンから **adb** でインストールします (サイドロード)。
-2回目からは**アプリの中でアップデートできます** (README の「アップデート」)。adb で新しい APK を上書きインストールしてもかまいません。
+2回目からは**アプリの中でアップデートできます** ([updates.md](updates.md))。adb で新しい APK を上書きインストールしてもかまいません。
 
 確かめた日: 2026-10-04。メニューの名前は端末と OS の版で違うことがあります。
 
@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/danything/denpa-tv/main/scripts/ins
 
 - **リリース** — [Releases](https://github.com/danything/denpa-tv/releases) の最新から `denpa-tv-<版>.apk` を落とす。
   名前に `-debug` が付いているものは debug の署名です (下の「署名について」)
-- **CI の焼きたて** — まだリリースが無い・最新の main を試したいときは、
+- **CI のビルド** — まだリリースが無い・最新の main を試したいときは、
   [Actions](https://github.com/danything/denpa-tv/actions/workflows/ci.yml) の成功した実行を開き、
   下の Artifacts から `denpa-tv-debug` を落として展開する (`app-debug.apk`)。GitHub にログインしている必要があります
 
@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/danything/denpa-tv/main/scripts/ins
 
 Android は**同じ鍵で署名された APK でしか上書きインストールできません**。リリースは決まった鍵で署名して出すので、
 上書きで更新できます。debug の署名 (CI の APK、`-debug` のリリース) と行き来するときは、
-一度アンインストールしてからインストールし直してください (`adb uninstall`。設定 — 繋ぐ先 — は消えます)。
+一度アンインストールしてからインストールし直してください (`adb uninstall`。設定 — 接続先 — は消えます)。
 
 ## 2. パソコンに adb をインストールする
 
@@ -69,9 +69,9 @@ adb は Google の **Android SDK Platform-Tools** に入っています。
 ### Android TV (Google TV でないもの)
 
 1. 設定 → **デバイス設定** (端末によっては「デバイス」) → **端末情報** → **ビルド** を何回か押す
-   ([Google Cast の Android TV のデバッグの頁](https://developers.google.com/cast/docs/android_tv_receiver/debugging))
+   ([Google Cast の Android TV のデバッグのページ](https://developers.google.com/cast/docs/android_tv_receiver/debugging))
 2. 設定 → **デバイス設定** → **開発者向けオプション** → **USB デバッグ** をオン
-3. ホーム画面へ戻る (同じ頁によると、戻らないと設定が効かない)
+3. ホーム画面へ戻る (同じページによると、戻らないと設定が効かない)
 
 ### Fire TV
 
@@ -81,7 +81,7 @@ adb は Google の **Android SDK Platform-Tools** に入っています。
 2. 設定 → **My Fire TV** → **開発者オプション** で **ADB デバッグ** をオン
 3. 同じところの **不明ソースからのアプリ** をオン
 4. IP アドレスは 設定 → **My Fire TV** → **バージョン情報** → **ネットワーク** で見る
-   (設定 → ネットワーク の画面には出ない、と Amazon の頁にある)
+   (設定 → ネットワーク の画面には出ない、と Amazon のページにある)
 
 ## 4. パソコンからテレビに繋ぐ
 
@@ -125,7 +125,7 @@ adb shell am start -n io.github.danything.denpatv/.MainActivity   # 起動
 adb uninstall io.github.danything.denpatv                          # アンインストール
 ```
 
-2回目からはアプリの中でアップデートできます (README の「アップデート」)。
+2回目からはアプリの中でアップデートできます ([updates.md](updates.md))。
 
 インストールすると、テレビのアプリの一覧 (Google TV なら「アプリ」の列、Fire TV なら「アプリ」の一覧) に
 **denpa** が出ます。ホームの列に出ないときはアプリの一覧の中を探してください。

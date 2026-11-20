@@ -11,11 +11,11 @@ import androidx.media3.datasource.HttpEngineDataSource
 import java.util.concurrent.Executors
 
 /**
- * OS の HttpEngine で映像を取る口。**`HttpEngine` の型はこの中から外へ出さない。**
+ * OS の HttpEngine で映像を取る部分。**`HttpEngine` の型はこの中から外へ出さない。**
  *
  * `HttpEngine?` 型の値をほかのところで持つと、null でも型の確かめ (check-cast) で
  * ART がクラスを引きにいき、HttpEngine の無い端末で NoClassDefFoundError になる
- * (denpa-tv#24。Android TV 12 の BRAVIA は S 拡張 7 以上と答えるのにクラスが無い)。
+ * (`hasHttpEngine`)。
  * このクラスを作るのは `hasHttpEngine()` が通ったときだけ (DenpaApp.engineHttp)
  */
 @RequiresExtension(extension = Build.VERSION_CODES.S, version = 7)

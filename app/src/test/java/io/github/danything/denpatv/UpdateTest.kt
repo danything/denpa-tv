@@ -58,7 +58,7 @@ class UpdateTest {
     }
 
     @Test
-    fun 手元で焼いた版は上げない() {
+    fun 手元でビルドした版は上げない() {
         assertTrue(isDevBuild("0.0.0-dev"))
         assertTrue(isDevBuild("なにか"))
         assertFalse(isDevBuild("0.3.0"))
@@ -74,14 +74,14 @@ class UpdateTest {
         assertEquals(emptyMap<String, String>(), parseSha256Sums("abc  x.apk"))
     }
 
-    private fun release(tag: String, vararg assets: String, prerelease: Boolean = false, draft: Boolean = false) =
-        GitHubRelease(tag, draft, prerelease, assets.map { GitHubAsset(it, "https://example.invalid/$tag/$it") })
+    private fun release(tag: String, vararg assets: String, draft: Boolean = false) =
+        GitHubRelease(tag, draft, assets.map { GitHubAsset(it, "https://example.invalid/$tag/$it") })
 
     @Test
     fun いちばん新しい版を選ぶ_試し版も含む() {
         val releases = listOf(
             release("v0.5.0", "denpa-tv-0.5.0.apk", "SHA256SUMS", draft = true),
-            release("v0.4.1-rc.1", "denpa-tv-0.4.1-rc.1.apk", "SHA256SUMS", prerelease = true),
+            release("v0.4.1-rc.1", "denpa-tv-0.4.1-rc.1.apk", "SHA256SUMS"),
             release("v0.4.0", "denpa-tv-0.4.0.apk", "SHA256SUMS"),
             release("v0.3.0", "denpa-tv-0.3.0.apk", "SHA256SUMS"),
         )
@@ -110,7 +110,7 @@ class UpdateTest {
         assertNull(update.sumsUrl)
     }
 
-    /** GitHub の答えの形 (知らない鍵は無視する) */
+    /** GitHub の答えの形式 (知らない鍵は無視する) */
     @Test
     fun リリースを引く() {
         github.enqueue(
@@ -180,10 +180,10 @@ class UpdateTest {
         // 手元にあれば (SHA256SUMS の有無や失敗の数にかかわらず) それを使う
         assertEquals(Prefetch.Reuse, prefetchPlan(cached = true, hasSums = true, failures = 0, fresh = false))
         assertEquals(Prefetch.Reuse, prefetchPlan(cached = true, hasSums = false, failures = 9, fresh = true))
-        // 無ければ裏で取る。SHA256SUMS の無いリリースは取らずに知らせだけ (押すと断る)
+        // 無ければ裏で取る。SHA256SUMS の無いリリースは取らずに通知だけ (押すと断る)
         assertEquals(Prefetch.Download, prefetchPlan(cached = false, hasSums = true, failures = 0, fresh = false))
         assertEquals(Prefetch.Offer, prefetchPlan(cached = false, hasSums = false, failures = 0, fresh = true))
-        // 何度も取れなければ、開くたびには取らず知らせだけ。GitHub を引き直したときはもう一度取る
+        // 何度も取れなければ、開くたびには取らず通知だけ。GitHub を引き直したときはもう一度取る
         assertEquals(Prefetch.Download, prefetchPlan(cached = false, hasSums = true, failures = MAX_SILENT_FAILURES - 1, fresh = false))
         assertEquals(Prefetch.Offer, prefetchPlan(cached = false, hasSums = true, failures = MAX_SILENT_FAILURES, fresh = false))
         assertEquals(Prefetch.Download, prefetchPlan(cached = false, hasSums = true, failures = MAX_SILENT_FAILURES, fresh = true))
@@ -205,14 +205,14 @@ class UpdateTest {
         val request = InstallRequest("0.4.0", at)
         val update = Update("0.4.0", "denpa-tv-0.4.0.apk", "", null)
         val file = File("denpa-tv-0.4.0.apk")
-        // 頼まれた版を入れられる
+        // リクエストされた版を入れられる
         assertEquals(Resume.Start, resumePlan(UpdateState.Ready(update, file), request, at))
         assertEquals(Resume.Start, resumePlan(UpdateState.Available(update), request, at + INSTALL_REQUEST_TTL_MS))
-        // 確かめられなかった・裏で取れなかった (Idle に戻る)・取ってきている: 頼みは残す (期限で切れる)
+        // 確かめられなかった・裏で取れなかった (Idle に戻る)・取ってきている: リクエストは残す (期限で切れる)
         for (state in listOf(UpdateState.Idle, UpdateState.Checking, UpdateState.CheckFailed("x"), UpdateState.Preparing(update, 10))) {
             assertEquals(state.toString(), Resume.Wait, resumePlan(state, request, at))
         }
-        // その間にもっと新しい版が出たら、頼まれた版ではないので忘れる
+        // その間にもっと新しい版が出たら、リクエストされた版ではないので忘れる
         assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update.copy(version = "0.4.1"), file), request, at))
         // ずっと後 (許可せずに戻って、何日も後に開いた)・時計が戻った: 勝手に入れ始めない
         assertEquals(Resume.Forget, resumePlan(UpdateState.Ready(update, file), request, at + INSTALL_REQUEST_TTL_MS + 1))
@@ -233,7 +233,7 @@ class UpdateTest {
         // この版で一度送ったあと (戻ってきた・押し直した): 見えなくても入れてみる (本当に無ければ OS が尋ねる)
         assertEquals(InstallStep.Install, installStep(false, unset, asked, "0.8.0", at + 5_000))
         assertEquals(InstallStep.Install, installStep(false, unset, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS))
-        // ほかの版・古い頼み・時計が戻った: もう一度許可の画面を開く
+        // ほかの版・古いリクエスト・時計が戻った: もう一度許可の画面を開く
         assertEquals(InstallStep.AskPermission, installStep(false, unset, asked, "0.8.1", at))
         assertEquals(InstallStep.AskPermission, installStep(false, unset, asked, "0.8.0", at + INSTALL_REQUEST_TTL_MS + 1))
         assertEquals(InstallStep.AskPermission, installStep(false, unset, asked, "0.8.0", at - 1))

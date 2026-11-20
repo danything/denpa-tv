@@ -48,11 +48,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Card
@@ -65,7 +69,6 @@ import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.codecLabels
 import io.github.danything.denpatv.data.durationLabel
-import io.github.danything.denpatv.data.shortServiceName
 import io.github.danything.denpatv.data.unwatched
 import io.github.danything.denpatv.data.watched
 import java.text.SimpleDateFormat
@@ -81,37 +84,43 @@ import kotlinx.coroutines.withContext
 
 /**
  * 録画の一覧。**数が多いので格子にして、放送日ごとに見出しを挟む** (新しい順)。
- * 開くと一番下 (いちばん古い録画) に合わせる。長押しで詳しく (説明・再生・削除)。
- * 観て戻ってきたら、開いた録画に合わせ直す
+ * 開くと一番下 (いちばん古い録画) にフォーカスする。長押しで詳細 (説明・再生・削除)。
+ * 観て戻ってきたら、開いた録画にフォーカスし直す
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RecordingsScreen(
     repo: Repository,
-    /** 観る。true なら続きではなく頭から (詳しくの「最初から」) */
+    /** 観る。true なら続きではなく頭から (詳細の「最初から」) */
     onWatch: (Recording, Boolean) -> Unit,
     onUnauthorized: () -> Unit,
-    modifier: Modifier = Modifier,
-    /** 開いたときにカードに合わせるか (ライブから戻ったときは左のメニューが合いを取るので false) */
+    /** ライブへ (録画が1つも無いときのボタン) */
+    onLive: () -> Unit,
+    /** 開いたときにカードにフォーカスするか (ライブから戻ったときは左のメニューがフォーカスを取るので false) */
     takeFocus: Boolean = true,
 ) {
     var recordings by remember { mutableStateOf(repo.recordings) }
     var error by remember { mutableStateOf<String?>(null) }
     var loaded by remember { mutableStateOf(recordings.isNotEmpty()) }
     var retry by remember { mutableIntStateOf(0) }
-    /** 下に数秒出す知らせ (消せなかったときなど) */
+    /**
+     * denpa の通知で読み直そうとして読めなかった (denpa が止まっている・入れ替わっている最中)。いまの一覧は出したまま、
+     * 上の段の隅に「denpa に繋がっていません」と出しておく (古い一覧を観ていると分かるように)。次に読めたら消す
+     */
+    var offline by remember { mutableStateOf(false) }
+    /** 下に数秒出す通知 (消せなかったときなど) */
     val (notice, notify) = rememberFlash()
     /** 詳しいところを開いている録画 (長押し) */
     var opened by remember { mutableStateOf<Recording?>(null) }
-    /** 最後に合わせていた録画。観て戻ってきたらここに合わせ直す (画面を作り直しても残る) */
+    /** 最後にフォーカスしていた録画。観て戻ってきたらここにフォーカスし直す (画面を作り直しても残る) */
     var lastFocused by rememberSaveable { mutableStateOf<Long?>(null) }
-    /** いまカードに合いがあれば、その録画 (メニューや詳しくに合いがあるときは null) */
+    /** いまカードにフォーカスがあれば、その録画 (メニューや詳細にフォーカスがあるときは null) */
     var focusedCard by remember { mutableStateOf<Long?>(null) }
     val requesters = remember { mutableMapOf<Long, FocusRequester>() }
     val grid = rememberLazyGridState()
     val scope = rememberCoroutineScope()
 
-    /** その録画のカードに合わせる (見えていなければ (一番下・消した隣) そこまで送ってから) */
+    /** その録画のカードにフォーカスする (見えていなければ (一番下・消した隣) そこまで送ってから) */
     suspend fun focus(id: Long) {
         withFrameNanos { }
         if (requesters[id] == null || grid.layoutInfo.visibleItemsInfo.none { it.key == id }) gridIndex(recordings, id)?.let { grid.scrollToItem(it) }
@@ -123,31 +132,32 @@ fun RecordingsScreen(
         try {
             block()
             error = null
+            offline = false
         } catch (_: Unauthorized) {
             onUnauthorized()
         } catch (e: Exception) {
-            error = "denpa から録画を取れません: ${e.message}"
+            error = "denpa から録画の一覧を取得できません: ${e.message}"
         }
         recordings = repo.recordings
         loaded = true
     }
 
     LaunchedEffect(retry) {
-        // 戻ってきたときは読み直さない (並びが変わると合わせ直す先がずれる)。観て戻ったとき (`positionSaved`)・追っかけで観て戻ったときだけ読み直す
-        // (観た位置・未視聴の点が変わった、録り終えた・焼き上がったかもしれない)。合わせ直す先は id で探すので、並びが変わっても戻れる
+        // 戻ってきたときは読み直さない (並びが変わるとフォーカスし直す先がずれる)。観て戻ったとき (`positionSaved`)・追っかけで観て戻ったときだけ読み直す
+        // (観た位置・未視聴の点が変わった、録り終えた・エンコードが終わったかもしれない)。フォーカスし直す先は id で探すので、並びが変わっても戻れる
         if (repo.recordings.isEmpty() || retry > 0 || repo.recordingsStale) {
             repo.recordingsStale = false
             guarded { repo.refreshRecordings() }
         }
     }
-    // denpa の知らせ (録画が増えた・焼き上がった・消えた、繋ぎ直した) で読み直す。続けて来たらまとめて1回 (1 秒待つ)。
-    // 読めなくてもいまの一覧を出したまま (次の知らせか、戻ったときに読み直す)
+    // denpa の通知 (録画が増えた・エンコードが終わった・消えた、繋ぎ直した) で読み直す。続けて来たらまとめて1回 (1 秒待つ)。
+    // 読めなくてもいまの一覧を出したまま (次の通知か、戻ったときに読み直す)
     LaunchedEffect(Unit) {
         repo.events.filter { it == DenpaEvent.Opened || it == DenpaEvent.Changed("recordings") }.collectLatest {
             delay(1_000)
             if (!loaded) return@collectLatest
             val before = recordings
-            // 詳しくを開いていれば、その録画に合っているものと見なす
+            // 詳細を開いていれば、その録画にフォーカスがあるものと見なす
             val had = focusedCard ?: opened?.id
             repo.recordingsStale = false
             try {
@@ -158,13 +168,15 @@ fun RecordingsScreen(
                 throw e
             } catch (_: Exception) {
                 repo.recordingsStale = true
+                offline = true
                 return@collectLatest
             }
             recordings = repo.recordings
             error = null
-            // 詳しくを開いていれば新しい中身に替える (録り終えた・焼き上がったなど)
+            offline = false
+            // 詳細を開いていれば新しい中身に替える (録り終えた・エンコードが終わったなど)
             opened = opened?.let { old -> recordings.firstOrNull { it.id == old.id } ?: old }
-            // 合わせていた録画が消えたら (ブラウザで消したなど)、詳しくを閉じて残っている隣へ
+            // フォーカスしていた録画が消えたら (ブラウザで消したなど)、詳細を閉じて残っている隣へ
             val alive = recordings.map { it.id }.toSet()
             if (had != null && had !in alive) {
                 if (opened?.id == had) opened = null
@@ -176,7 +188,7 @@ fun RecordingsScreen(
         }
     }
     LaunchedEffect(loaded) {
-        // 再生の画面で消して戻ってきたら、その隣に合わせる
+        // 再生の画面で消して戻ってきたら、その隣にフォーカスする
         repo.focusOnReturn?.let { lastFocused = it; repo.focusOnReturn = null }
         // 観て戻ったら開いた録画に。初めては一番下 (いちばん古い録画): 古いものから片付けられるように (ブラウザの denpa と同じ)
         val id = lastFocused?.takeIf { id -> recordings.any { it.id == id } } ?: recordings.lastOrNull()?.id ?: return@LaunchedEffect
@@ -186,18 +198,18 @@ fun RecordingsScreen(
     if (!loaded) return Centered("読み込んでいます…")
     error?.let { message ->
         Column(
-            modifier.fillMaxSize(),
+            Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(message, style = MaterialTheme.typography.titleMedium)
             // 古すぎる denpa なら、取れないのはたぶんそのせい
             repo.denpaWarning?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.Reserved) }
-            DenpaButton(onClick = { retry++ }) { Text("やり直す") }
+            DenpaButton(onClick = { retry++ }) { Text("再試行") }
         }
         return
     }
-    if (recordings.isEmpty()) return Centered(listOfNotNull("観られる録画はまだありません", repo.denpaWarning).joinToString("\n"))
+    if (recordings.isEmpty()) return NoRecordings(repo, onLive, takeFocus)
 
     /** カード1枚の大きさ (px)。隣の録画のポスターを先に読むときの大きさ。組むたびに書くだけで、画面は読まない */
     val cardSize = remember { IntArray(2) }
@@ -205,12 +217,12 @@ fun RecordingsScreen(
     val titleWidth = remember { IntArray(1) }
 
     val groups = recordings.groupBy { DAY.format(Date(it.startAt)) }
-    Box(modifier.fillMaxSize().background(Palette.Background)) {
+    Box(Modifier.fillMaxSize().background(Palette.Background)) {
         /*
-         * 上の段 (背景の絵と見出し) だけが、合わせている録画を読む (`{ focusedCard ?: lastFocused }` を渡して中で読む)。
-         * 合いが動いても組み直すのは上の段だけで、一覧 (この関数と格子) は組み直さない
+         * 上の段 (背景の画像と見出し) だけが、フォーカスしている録画を読む (`{ focusedCard ?: lastFocused }` を渡して中で読む)。
+         * フォーカスが動いても組み直すのは上の段だけで、一覧 (この関数と格子) は組み直さない
          */
-        HeroArea(repo, recordings, { focusedCard ?: lastFocused }, cardSize, onUnauthorized)
+        HeroArea(repo, recordings, { focusedCard ?: lastFocused }, cardSize, offline, onUnauthorized)
         Column(Modifier.fillMaxSize()) {
             Spacer(Modifier.height(HERO_HEIGHT))
             Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -221,7 +233,7 @@ fun RecordingsScreen(
                         columns = GridCells.Fixed(GRID_COLUMNS),
                         state = grid,
                         modifier = Modifier.fillMaxSize(),
-                        // 合わせたカードは膨らんで光るので、上と横に切れないぶん空けておく
+                        // フォーカスしたカードは膨らんで光るので、上と横に切れないぶん空けておく
                         contentPadding = PaddingValues(start = EDGE, end = GRID_END, top = GRID_TOP, bottom = GRID_BOTTOM),
                         horizontalArrangement = Arrangement.spacedBy(GRID_GAP),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -262,7 +274,7 @@ fun RecordingsScreen(
         }
         notice?.let { text ->
             Text(
-                text,
+                text.toString(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Palette.Text,
                 modifier = Modifier
@@ -284,10 +296,10 @@ fun RecordingsScreen(
                 scope.launch {
                     guarded {
                         if (repo.api.deleteRecording(repo.base, recording.id)) {
-                            // 消したものの隣に合わせ直す。読み直さず手元から抜く (続きまで読んだぶんを残す)
+                            // 消したものの隣にフォーカスし直す。読み直さず手元から抜く (続きまで読んだぶんを残す)
                             lastFocused = repo.forgetRecording(recording.id)
                         } else {
-                            // 再生の画面と同じ知らせ
+                            // 再生の画面と同じ通知
                             notify(NOT_DELETED)
                         }
                     }
@@ -304,14 +316,14 @@ fun RecordingsScreen(
 }
 
 /**
- * 上の段: 背景の絵と見出し。`shownId` (合わせている録画、無ければ最後に合わせていた録画) を**ここだけで**読む。
+ * 上の段: 背景の画像と見出し。`shownId` (フォーカスしている録画、無ければ最後にフォーカスしていた録画) を**ここだけで**読む。
  *
- * - **背景の絵と説明は、合いが止まってから替える** (`HERO_SETTLE_MS`)。続けて送っている間に、通り過ぎる録画の絵を読んで
+ * - **背景の画像と説明は、フォーカスが止まってから替える** (`HERO_SETTLE_MS`)。続けて送っている間に、通り過ぎる録画の画像を読んで
  *   敷き直したり説明を取りに行ったりしない。番組名などの文字はすぐ替える
- * - 止まったら、前後の録画 (`PREFETCH` 件) のポスターを先に読んでおく (送った先のカードがすぐ絵になる)
+ * - 止まったら、前後の録画 (`PREFETCH` 件) のポスターを先に読んでおく (送った先のカードにすぐ画像が出る)
  */
 @Composable
-private fun HeroArea(repo: Repository, recordings: List<Recording>, shownId: () -> Long?, cardSize: IntArray, onUnauthorized: () -> Unit) {
+private fun HeroArea(repo: Repository, recordings: List<Recording>, shownId: () -> Long?, cardSize: IntArray, offline: Boolean, onUnauthorized: () -> Unit) {
     val shown = recordings.firstOrNull { it.id == shownId() } ?: recordings.last()
     var settled by remember { mutableLongStateOf(shown.id) }
     LaunchedEffect(shown.id) {
@@ -340,7 +352,7 @@ private fun HeroArea(repo: Repository, recordings: List<Recording>, shownId: () 
     Box(Modifier.fillMaxWidth()) {
         val backdrop = recordings.firstOrNull { it.id == settled }
         Backdrop(repo.url(backdrop?.poster), repo.token, Modifier.align(Alignment.TopEnd).fillMaxWidth(BACKDROP_WIDTH).height(BACKDROP_HEIGHT))
-        Hero(repo, shown, descriptions[shown.id].orEmpty())
+        Hero(repo, shown, descriptions[shown.id].orEmpty(), offline)
     }
 }
 
@@ -360,23 +372,24 @@ private suspend fun prefetch(repo: Repository, recordings: List<Recording>, id: 
 }
 
 /**
- * 一覧の上の見出し (Google TV の「没入型の一覧」の上の段)。**合わせている録画を大きく**: 番組名・局と放送日時と長さ・
- * 札 (録画中・エンコード中・観た位置・形)・説明の頭の1行。
- * いちばん上の1行は画面の名前と手引き、denpa が古すぎるときの1行、新しい版の知らせ (一覧の頭の段から上キーで合う)。
+ * 一覧の上の見出し (Google TV の「没入型の一覧」の上の段)。**フォーカスしている録画を大きく**: 番組名・局と放送日時と長さ・
+ * ラベル (録画中・エンコード中・観た位置・形式)・説明の頭の1行。
+ * いちばん上の1行は画面の名前と手引き、denpa が古すぎるときの1行、新しい版の通知 (一覧の頭の段から上キーでフォーカスが移る)。
  * 高さは決めておく (録画ごとに行の数が違っても、下の一覧が上下に動かないように)
  */
 @Composable
-private fun Hero(repo: Repository, recording: Recording, description: String) {
-    /** 番組名の幅 (合いを動かして題が替わっても、前の幅で切っておく) */
+private fun Hero(repo: Repository, recording: Recording, description: String, offline: Boolean) {
+    /** 番組名の幅 (フォーカスを動かしてタイトルが替わっても、前の幅で切っておく) */
     val titleWidth = remember { IntArray(1) }
     Column(
-        Modifier.fillMaxWidth().height(HERO_HEIGHT).padding(start = EDGE, end = GRID_END, top = 24.dp),
+        Modifier.fillMaxWidth().height(HERO_HEIGHT).padding(start = EDGE, end = GRID_END, top = SAFE_VERTICAL),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("録画", style = MaterialTheme.typography.titleMedium, color = Palette.AccentBright)
-            Text("長押しで詳しく (説明・削除)", style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted)
-            // 繋いだ denpa が古すぎる (Repository.checkVersion)。新しい版の知らせを押し出さないよう、余りの幅で切る
+            Text(HERO_HINT, style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted)
+            if (offline) Badge("denpa に繋がっていません", Palette.Reserved, Palette.Background)
+            // 繋いだ denpa が古すぎる (Repository.checkVersion)。新しい版の通知を押し出さないよう、余りの幅で切る
             repo.denpaWarning?.let {
                 Text(
                     it,
@@ -387,7 +400,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
                     modifier = Modifier.weight(1f, fill = false),
                 )
             }
-            // 新しい版があれば (上キーで合う)
+            // 新しい版があれば (上キーでフォーカスが移る)
             UpdateNotice(repo.app.updater)
         }
         Spacer(Modifier.height(4.dp))
@@ -402,7 +415,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
             unwatched = recording.unwatched,
         )
         Text(
-            listOfNotNull(recording.serviceName?.let(::shortServiceName), WHEN.format(Date(recording.startAt)), recording.durationMs?.let(::durationLabel)).joinToString("  ・  "),
+            heroMeta(recording).withBroadcastFont(),
             style = MaterialTheme.typography.titleSmall,
             color = Palette.TextMuted,
             maxLines = 1,
@@ -426,7 +439,7 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
         if (description.isNotEmpty()) {
             Text(
                 description,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.broadcast(),
                 color = Palette.TextMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -436,8 +449,34 @@ private fun Hero(repo: Repository, recording: Recording, description: String) {
     }
 }
 
+/** 上の段の手引き。カードの番組名の頭の水色の点 (`EpisodeTitle` の `unwatched`) が何かも一言 */
+private val HERO_HINT = buildAnnotatedString {
+    append("長押しで詳細 (説明・削除)   ")
+    withStyle(SpanStyle(color = Palette.AccentBright)) { append("●") }
+    append(" まだ観ていない")
+}
+
 /**
- * 上の段の後ろに敷く、合わせている録画の絵。**ぼかして暗くし、左と下を地の色へ溶かす** (上の文字が読めるように)。
+ * 録画が1つも無いとき。**ライブへのボタンを置く** (何も押せない画面にしない。左キーでメニューにも行ける)。
+ * ライブから戻ったときは左のメニューがフォーカスを取るので、ボタンにはフォーカスしない (`takeFocus`)
+ */
+@Composable
+private fun NoRecordings(repo: Repository, onLive: () -> Unit, takeFocus: Boolean) {
+    val live = remember { FocusRequester() }
+    LaunchedEffect(Unit) { if (takeFocus) runCatching { live.requestFocus() } }
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("観られる録画はまだありません", style = MaterialTheme.typography.titleLarge)
+        repo.denpaWarning?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.Reserved) }
+        DenpaButton(onClick = onLive, modifier = Modifier.focusRequester(live)) { Text("ライブへ") }
+    }
+}
+
+/**
+ * 上の段の後ろに敷く、フォーカスしている録画の画像。**ぼかして暗くし、左と下を地の色へ溶かす** (上の文字が読めるように)。
  * ぼかしは読むときに済ませておく (`BlurredImage`。ごく小さく読んで引き伸ばす)。描くたびにぼかさないので軽く、どの版でも同じ見た目。
  * 替えるときは2枚を透かし具合だけで入れ替える (Crossfade)
  */
@@ -453,8 +492,8 @@ private fun Backdrop(url: String?, token: String?, modifier: Modifier) {
 }
 
 /**
- * その録画の焼いている進み。**その録画の値が変わったときだけ組み直す** (`derivedStateOf`)。進みの表 (`Repository.encoding`)
- * をそのまま読むと、どれか1件の知らせ (数秒ごと) で、見えているカードが全部組み直しになる
+ * その録画のエンコードの進み。**その録画の値が変わったときだけ組み直す** (`derivedStateOf`)。進みの表 (`Repository.encoding`)
+ * をそのまま読むと、どれか1件の通知 (数秒ごと) で、見えているカードが全部組み直しになる
  */
 @Composable
 private fun encodingOf(repo: Repository, id: Long): Float? {
@@ -462,7 +501,7 @@ private fun encodingOf(repo: Repository, id: Long): Float? {
     return encoding
 }
 
-/** 角の丸い小さな札 (録画中・エンコード中・形) */
+/** 角の丸い小さなラベル (録画中・エンコード中・形式) */
 @Composable
 private fun Badge(label: String, background: Color, color: Color) {
     Text(
@@ -475,21 +514,21 @@ private fun Badge(label: String, background: Color, color: Color) {
 }
 
 /**
- * 録画のカード。**絵を大きく** (16:9。Google TV の横長のカード。角 12dp) し、**番組名を絵の下の縁に重ねて2行まで、大きく太く**
- * (暗い帯の上に白い字)。絵の下には局と放送の時刻を1行。長さ・形・説明は上の段に出す。
+ * 録画のカード。**画像を大きく** (16:9。Google TV の横長のカード。角 12dp) し、**番組名を画像の下の縁に重ねて2行まで、大きく太く**
+ * (暗いグラデーションの上に白い字)。画像の下には局と放送の時刻を1行。長さ・形式・説明は上の段に出す。
  *
- * 絵は放送から切り出したもの (暗転・CM・字幕の無い場面のこともある) で、絵だけでは何の番組か分からないことがあるので、
- * **合わせていないカードも題で見分けられるように**する。題を絵の下に置くと1段が高くなり、下の段は絵だけ見えて題が切れる
- * (いちばん見たいものが見えない) ので、絵に重ねて段の高さを前と同じにしている。収まらない題は話数を残して途中を切る (`EpisodeTitle`)。
+ * 画像は放送から切り出したもの (暗転・CM・字幕の無い場面のこともある) で、画像だけでは何の番組か分からないことがあるので、
+ * **フォーカスしていないカードもタイトルで見分けられるように**する。タイトルを画像の下に置くと1段が高くなり、下の段は画像だけ見えてタイトルが切れる
+ * (いちばん見たいものが見えない) ので、画像に重ねる。収まらないタイトルは話数を残して途中を切る (`EpisodeTitle`)。
  *
- * 絵の上に、録っている最中なら「● 録画中」、焼いている最中なら進み、下の縁に観た割合の帯。まだ観ていないものは番組名の頭に点 (`unwatched`)。
- * 合わせると膨らみ、azure の縁と光 (`Focus`)
+ * 画像の上に、録っている最中なら「● 録画中」、エンコード中なら進み、下の縁に観た割合のバー。まだ観ていないものは番組名の頭に点 (`unwatched`)。
+ * フォーカスすると膨らみ、azure の縁と光 (`Focus`)
  */
 @Composable
 private fun RecordingCard(
     repo: Repository,
     recording: Recording,
-    /** 絵の大きさ (px) を書いておく所 (先読みを、絵と同じ大きさ = 同じ覚えの鍵で読むため) */
+    /** 画像の大きさ (px) を書いておく所 (先読みを、画像と同じ大きさ = 同じキャッシュのキーで読むため) */
     cardSize: IntArray,
     /** 番組名の幅を分け合う所 (`EpisodeTitle`) */
     titleWidth: IntArray,
@@ -519,10 +558,10 @@ private fun RecordingCard(
                 RemoteImage(repo.url(recording.poster), ContentScale.Crop, Modifier.fillMaxSize(), repo.token, opaque = true)
                 Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (recording.recording) Badge(RECORDING_BADGE, Palette.Recording, Color.White)
-                    // 焼いている間は進み (denpa の知らせで動く)
+                    // エンコードしている間は進み (denpa の通知で動く)
                     encodingOf(repo, recording.id)?.let { Badge("エンコード中 ${(it * 100).toInt()}%", Palette.Background.copy(alpha = 0.85f), Palette.Text) }
                 }
-                // 番組名は下の縁に。上は暗い帯へ溶かす (明るい絵・字の入った絵でも読めるように)
+                // 番組名は下の縁に。上は暗いグラデーションへ溶かす (明るい画像・字の入った画像でも読めるように)
                 Box(
                     Modifier
                         .align(Alignment.BottomStart)
@@ -532,7 +571,7 @@ private fun RecordingCard(
                 ) {
                     EpisodeTitle(recording.title, CARD_TITLE, Color.White, maxLines = 2, width = titleWidth, unwatched = recording.unwatched)
                 }
-                // 観た割合 (続きの位置があるときだけ)。絵の下の縁に
+                // 観た割合 (続きの位置があるときだけ)。画像の下の縁に
                 recording.watched?.let { part ->
                     Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(5.dp).background(Color(0x99000000))) {
                         Box(Modifier.fillMaxWidth(part).height(5.dp).background(Palette.AccentBright))
@@ -541,7 +580,7 @@ private fun RecordingCard(
             }
         }
         Text(
-            cardMeta(recording),
+            cardMeta(recording).withBroadcastFont(),
             style = MaterialTheme.typography.labelLarge,
             color = Palette.TextMuted,
             maxLines = 1,
@@ -561,11 +600,11 @@ private val TITLE_TEXT = TextStyle(
 
 /**
  * 格子の列の数。**3 列にしてカードを大きく** (幅 260dp ほど)。4 列 (180dp ほど) では番組名が2行に 9 字ほどしか入らず、
- * 長い題はほとんど切れていた。左のメニューを細くした幅もカードに回す
+ * 長いタイトルはほとんど切れていた。左のメニューを細くした幅もカードに回す
  */
 private const val GRID_COLUMNS = 3
 
-/** カードの番組名 (カードの幅に合わせた大きさ。2行に 12 字ほど入り、離れても読める大きさと太さ) と、帯の中の余白 */
+/** カードの番組名 (カードの幅に合わせた大きさ。2行に 12 字ほど入り、離れても読める大きさと太さ) と、グラデーションの中の余白 */
 private val CARD_TITLE = TITLE_TEXT.copy(
     fontSize = 20.sp,
     lineHeight = 27.sp,
@@ -573,12 +612,24 @@ private val CARD_TITLE = TITLE_TEXT.copy(
 )
 private val CARD_TITLE_PADDING = 12.dp
 
-/** 番組名の下に敷く帯 (上は透かし、字のあたりは濃く) */
+/** 番組名の下に敷くグラデーション (上は透かし、字のあたりは濃く) */
 private val TITLE_SCRIM = Brush.verticalGradient(0f to Color.Transparent, 0.3f to Color(0xC0000000), 1f to Color(0xF0000000))
 
-/** カードの2行目: 局と放送の時刻 (日は見出しにある) */
-private fun cardMeta(recording: Recording): String =
-    listOfNotNull(recording.serviceName?.let(::shortServiceName), TIME.format(Date(recording.startAt))).joinToString("  ・  ")
+/** カードの2行目: 局と放送の時刻 (日は見出しにある)。局名は放送の字 */
+private fun cardMeta(recording: Recording): AnnotatedString = metaLine(recording, TIME.format(Date(recording.startAt)))
+
+/** 上の段の局と放送日時と長さ。局名は放送の字 */
+private fun heroMeta(recording: Recording): AnnotatedString =
+    metaLine(recording, WHEN.format(Date(recording.startAt)), recording.durationMs?.let(::durationLabel))
+
+/**
+ * 局と、後ろに続くものを「・」で繋ぐ。局名に印を付ける (`broadcastPrefix`)。**局名は放送のまま** (全角の英数字も半角に寄せない。
+ * 放送の字 (Denpa Font) が詰めて組む。全角の空白は詰める字に入らないので広めに空くが、放送の字なので変えない)
+ */
+private fun metaLine(recording: Recording, vararg rest: String?): AnnotatedString {
+    val service = recording.serviceName
+    return broadcastPrefix((listOf(service) + rest).filterNotNull().joinToString("  ・  "), service)
+}
 
 private val TIME = SimpleDateFormat("HH:mm", Locale.JAPAN)
 
@@ -594,7 +645,7 @@ private fun gridIndex(recordings: List<Recording>, id: Long): Int? {
     return null
 }
 
-private const val RECORDING_BADGE = "● 録画中"
+internal const val RECORDING_BADGE = "● 録画中"
 
 private val DAY = SimpleDateFormat("M月d日(E)", Locale.JAPAN)
 /** 上の段の放送日時 */
@@ -607,7 +658,7 @@ private val EDGE = 32.dp
 private val HERO_HEIGHT = 196.dp
 private val HERO_TEXT_WIDTH = 640.dp
 
-/** 背景の絵を替えるまで合いが止まっている間 (ミリ秒) と、入れ替えの長さ */
+/** 背景の画像を替えるまでフォーカスが止まっている間 (ミリ秒) と、入れ替えの長さ */
 private const val HERO_SETTLE_MS = 450L
 private const val BACKDROP_FADE_MS = 250
 
@@ -627,11 +678,11 @@ internal fun nearFirst(at: Int, count: Int, size: Int): List<Int> = buildList {
     }
 }
 
-/** 背景の絵の大きさ (画面の幅・高さに対して) */
+/** 背景の画像の大きさ (画面の幅・高さに対して) */
 private const val BACKDROP_WIDTH = 0.72f
 private val BACKDROP_HEIGHT = HERO_HEIGHT + 32.dp
 
-/** 背景の絵を、左は地の色へ溶かし、右も暗くする */
+/** 背景の画像を、左は地の色へ溶かし、右も暗くする */
 private val BACKDROP_LEFT = Brush.horizontalGradient(
     0f to Palette.Background,
     0.4f to Palette.Background.copy(alpha = 0.78f),
@@ -639,9 +690,9 @@ private val BACKDROP_LEFT = Brush.horizontalGradient(
 )
 private val BACKDROP_BOTTOM = Brush.verticalGradient(0.35f to Color.Transparent, 0.85f to Palette.Background)
 
-/** 格子の上の余白 (合わせた段のカードが膨らんで光るぶん)、右の余白、カードの間 */
+/** 格子の上の余白 (フォーカスした段のカードが膨らんで光るぶん)、右の余白、カードの間 */
 private val GRID_TOP = 14.dp
-private val GRID_END = 40.dp
+private val GRID_END = SAFE_HORIZONTAL
 private val GRID_GAP = 24.dp
 
 /**
@@ -658,9 +709,9 @@ private val GRID_BOTTOM_FADE_HEIGHT = 40.dp
 private val GRID_BOTTOM_FADE = Brush.verticalGradient(0f to Color.Transparent, 1f to Palette.Background)
 
 /**
- * **合わせたカードの段を、格子の上の端に揃える** (Google TV の一覧と同じく、目の置き場を変えない)。
- * テレビの既定 (合わせたものを枠の 3 割の高さへ) では、上の段の番組名だけが絵から切れて覗いていた。
- * 一覧の終わりはそれ以上送らない (下に余白を足さない) ので、一番下 (開いたときに合う、いちばん古い録画) では
+ * **フォーカスしたカードの段を、格子の上の端に揃える** (Google TV の一覧と同じく、目の置き場を変えない)。
+ * テレビの既定 (フォーカスしたものを枠の 3 割の高さへ) では、上の段の番組名だけが画像から切れて覗いていた。
+ * 一覧の終わりはそれ以上送らない (下に余白を足さない) ので、一番下 (開いたときにフォーカスする、いちばん古い録画) では
  * その上の段も見えている
  */
 @OptIn(ExperimentalFoundationApi::class)

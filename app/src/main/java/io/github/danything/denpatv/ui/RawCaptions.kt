@@ -1,10 +1,7 @@
 package io.github.danything.denpatv.ui
 
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.annotation.OptIn
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -12,12 +9,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.media3.common.C
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.TimestampAdjuster
@@ -28,7 +19,7 @@ import androidx.media3.extractor.Extractor
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
-import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
+import androidx.media3.extractor.mp4.FragmentedMp4Extractor
 import androidx.media3.extractor.ts.TsExtractor
 import io.github.danything.denpatv.data.CaptionCue
 import io.github.danything.denpatv.data.CaptionFeed
@@ -36,11 +27,14 @@ import io.github.danything.denpatv.data.CaptionFrame
 import io.github.danything.denpatv.data.CaptionPage
 import io.github.danything.denpatv.data.CaptionPages
 import io.github.danything.denpatv.data.CaptionPaths
+import io.github.danything.denpatv.data.ClockNotice
 import io.github.danything.denpatv.data.CueTimeline
 import io.github.danything.denpatv.data.Http
+import io.github.danything.denpatv.data.CODEC_HEADER
+import io.github.danything.denpatv.data.LiveQuality
+import io.github.danything.denpatv.data.ORIGIN_HEADER
 import io.github.danything.denpatv.data.Pts
 import io.github.danything.denpatv.data.Unauthorized
-import io.github.danything.denpatv.data.inkRows
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
@@ -51,29 +45,65 @@ import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.io.IOException
 import java.net.URI
-import kotlin.math.roundToInt
 
 /**
- * **TS の読み手が 0 に寄せた幅を覚えておく** (生の TS の字幕を放送の PTS で突き合わせるため。`Pts.broadcast`)。
+ * **TsExtractor が 0 に寄せた幅を覚えておく** (元の TS の字幕を放送の PTS で突き合わせるため。`Pts.broadcast`)。
  *
  * Media3 の TsExtractor は、最初の PTS を 0 に寄せた時刻でサンプルを出す。寄せ幅は渡した `TimestampAdjuster` が持って
- * いるので、**読み手を作るところで自分の `TimestampAdjuster` を渡して控えておく**。中身は `DefaultExtractorsFactory` と
- * 同じ作り方の TsExtractor (ほかの形はそのまま)。映像を頼み直すたびに読み手も作り直されるので、最後に作ったものを見る
+ * いるので、**Extractor を作るところで自分の `TimestampAdjuster` を渡して控えておく**。中身は `DefaultExtractorsFactory` と
+ * 同じ作り方の TsExtractor (ほかの形式はそのまま)。AAC だけは、形式が途中で替わったら `Format` を出し直す (`RawTsPayloadReaderFactory`)。
+ * 映像をリクエストし直すたびに Extractor も作り直されるので、最後に作ったものを見る。
+ *
+ * `mp4` なら、fragmented MP4 の Extractor にも同じように渡す (録画を denpa に流してもらうとき。denpa は塊の時刻を録画の時刻のまま書くので、
+ * 寄せた幅から録画の時刻に戻せる。`StreamClock`)。応答の `X-Denpa-Origin` (元の TS のストリームで、録画の時刻の 0 にあたる PTS) も控える。
+ *
+ * **応答の `X-Denpa-Codec` (denpa が選んだ形式) も読んで `onCodec` に渡す** (`rememberPlayer` が溜め方を替える)。読むのは Extractor を作るとき、
+ * つまり応答が届いて中身を読みはじめる前なので、溜めはじめる前に溜め方を替えられる
  */
 @OptIn(UnstableApi::class, ExperimentalApi::class)
-class TsClock(private val inner: DefaultExtractorsFactory = DefaultExtractorsFactory()) : ExtractorsFactory {
+class TsClock(
+    private val mp4: Boolean = false,
+    private val inner: DefaultExtractorsFactory = DefaultExtractorsFactory(),
+) : ExtractorsFactory {
     @Volatile
     private var adjuster: TimestampAdjuster? = null
+
+    /** 最後の応答の `X-Denpa-Origin` (90kHz)。無ければ null */
+    @Volatile
+    var origin: Long? = null
+        private set
     private var subtitleParserFactory: SubtitleParser.Factory = DefaultSubtitleParserFactory()
     private var transcoding = true
+    /** `DefaultExtractorsFactory` の既定と同じ (H.264・H.265 は GOP の中の参照を読む)。fragmented MP4 の Extractor に渡す */
+    private var gopCodecs = C.VIDEO_CODEC_FLAG_H264 or C.VIDEO_CODEC_FLAG_H265
+    private var parseHagc = true
+
+    /**
+     * 応答ヘッダの `X-Denpa-Codec` を受け取る (読み込みのスレッドから呼ぶ)。音声だけ・知らない値・無ければ null。
+     * 応答ごとに呼ぶので、リクエストし直したときも呼ぶ
+     */
+    @Volatile
+    var onCodec: ((LiveQuality?) -> Unit)? = null
 
     /** いまの寄せ幅 (マイクロ秒)。まだ PTS を1つも読んでいなければ null */
     fun offsetUs(): Long? = adjuster?.timestampOffsetUs?.takeIf { it != C.TIME_UNSET }
 
     override fun createExtractors(): Array<Extractor> = swap(inner.createExtractors())
 
-    override fun createExtractors(uri: Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> =
-        swap(inner.createExtractors(uri, responseHeaders))
+    override fun createExtractors(uri: Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> {
+        origin = header(responseHeaders, ORIGIN_HEADER)?.trim()?.toLongOrNull()
+        onCodec?.invoke(LiveQuality.ofHeader(header(responseHeaders, CODEC_HEADER)))
+        return swap(inner.createExtractors(uri, responseHeaders))
+    }
+
+    private fun header(headers: Map<String, List<String>>, name: String): String? =
+        headers.entries.firstOrNull { (key, _) -> key.equals(name, ignoreCase = true) }?.value?.firstOrNull()
+
+    /** リクエストし直す前に、前のストリームの寄せ幅と origin を捨てる (新しいストリームを読みはじめるまで、前のもので数えないように) */
+    fun reset() {
+        adjuster = null
+        origin = null
+    }
 
     override fun setSubtitleParserFactory(subtitleParserFactory: SubtitleParser.Factory): ExtractorsFactory {
         this.subtitleParserFactory = subtitleParserFactory
@@ -90,83 +120,97 @@ class TsClock(private val inner: DefaultExtractorsFactory = DefaultExtractorsFac
     }
 
     override fun experimentalSetCodecsToParseWithinGopSampleDependencies(codecsToParseWithinGopSampleDependencies: Int): ExtractorsFactory {
+        gopCodecs = codecsToParseWithinGopSampleDependencies
         inner.experimentalSetCodecsToParseWithinGopSampleDependencies(codecsToParseWithinGopSampleDependencies)
         return this
     }
 
     override fun setParseHagcMetadata(parseHagcMetadata: Boolean): ExtractorsFactory {
+        parseHagc = parseHagcMetadata
         inner.setParseHagcMetadata(parseHagcMetadata)
         return this
     }
 
-    private fun swap(extractors: Array<Extractor>): Array<Extractor> =
-        extractors.map { if (it is TsExtractor) ts() else it }.toTypedArray()
-
-    /** `DefaultExtractorsFactory` の TS と同じ作り。違うのは `TimestampAdjuster` を控えることだけ */
-    private fun ts(): TsExtractor {
+    /**
+     * Extractor の候補は形式ごとに1つずつ並んで来て、中身を嗅いだ1つだけが使われる。**どれに渡す `TimestampAdjuster` も同じ1つにする**
+     * (使われたものの幅が控えに残るように)
+     */
+    private fun swap(extractors: Array<Extractor>): Array<Extractor> {
         val made = TimestampAdjuster(0)
         adjuster = made
+        return extractors.map {
+            when {
+                it is TsExtractor -> ts(made)
+                mp4 && it is FragmentedMp4Extractor -> fragmentedMp4(made)
+                else -> it
+            }
+        }.toTypedArray()
+    }
+
+    /**
+     * `DefaultExtractorsFactory` の fragmented MP4 と同じ作り。違うのは `TimestampAdjuster` を渡すことと、MFRA (シークの索引) を読まないこと
+     * (流しっぱなしのストリームには無い)
+     */
+    private fun fragmentedMp4(made: TimestampAdjuster) = FragmentedMp4Extractor(
+        subtitleParserFactory,
+        FragmentedMp4Extractor.codecsToParseWithinGopSampleDependenciesAsFlags(gopCodecs) or
+            (if (transcoding) 0 else FragmentedMp4Extractor.FLAG_EMIT_RAW_SUBTITLE_DATA) or
+            (if (parseHagc) 0 else FragmentedMp4Extractor.FLAG_DISABLE_HAGC_METADATA),
+        made,
+        null,
+        emptyList(),
+        null,
+    )
+
+    /**
+     * `DefaultExtractorsFactory` の TS と同じ作り。違うのは `TimestampAdjuster` を控えることと、AAC の形式が途中で替わったら
+     * 出し直すこと (`RawTsPayloadReaderFactory`)
+     */
+    private fun ts(made: TimestampAdjuster): TsExtractor {
         return TsExtractor(
             TsExtractor.MODE_SINGLE_PMT,
             if (transcoding) 0 else TsExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
             subtitleParserFactory,
             made,
-            DefaultTsPayloadReaderFactory(0, emptyList()),
+            RawTsPayloadReaderFactory(),
             TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES,
         )
     }
 }
 
-/** 字幕の口の canvas の大きさ (denpa の `CANVAS`)。映像の枠いっぱいに引き伸ばす */
-private const val CANVAS_WIDTH = 1920f
-private const val CANVAS_HEIGHT = 1080f
-
 /**
- * 解いた字幕の絵と置き場所。`ink` は何か描いてある行の上の端と下の端 (絵の中の行。画面まるごとの絵で届くので、
- * 帯の上へ逃がすときに字の在りかを見る。`inkRows`)。何も描いていなければ null
- */
-class CaptionPicture(val bitmap: ImageBitmap, val cue: CaptionCue.Picture, val ink: Pair<Int, Int>?)
-
-/**
- * denpa から別に受け取る字幕 (Media3 のトラックには出てこないもの) の、画面に出すぶん。生の TS の字幕の口
- * (`rememberRawCaptions`) と、焼いた録画の `captions.json` (`rememberCaptionPages`)。描くのは `CaptionLayer`
+ * denpa から受け取る字幕 (Media3 は ARIB の字幕を読まない) の、画面に出すぶん。元の TS の字幕のエンドポイント
+ * (`rememberRawCaptions`) と、エンコード済みの録画の `captions.json` (`rememberCaptionPages`)。描くのは `CaptionLayer`
  */
 class CaptionState(
-    /** 文字の配置を描く字 (`DenpaApp.captionFont`) */
-    val font: CaptionFont,
+    /** 文字の配置を描く字 (`DenpaApp.denpaFont`。アプリを開いたときに読む) */
+    val font: DenpaFont,
 ) {
-    /** 選べる字幕があるか。操作の列の「字幕」の札を出すかに使う */
+    /** 選べる字幕があるか。操作の列の「字幕」のボタンを出すかに使う */
     var available by mutableStateOf(false)
-    /** いま重ねている絵 (古い denpa の字幕の口) */
-    var picture by mutableStateOf<CaptionPicture?>(null)
     /** いま重ねている文字の配置 */
     var page by mutableStateOf<CaptionPage?>(null)
+    /** 元の TS のライブの時計 (`clock` の通知)。実況の放送時刻に使う。まだ届いていなければ null */
+    @Volatile
+    var clock: ClockNotice? = null
+        internal set
     internal val timeline = CueTimeline()
     internal var key: Any? = null
 }
 
-/** 文字の配置が出たら、字を読む (APK の assets から1度だけ。`CaptionFont`) */
-@Composable
-private fun LoadCaptionFont(state: CaptionState) {
-    val showing = state.page != null
-    LaunchedEffect(showing) {
-        if (showing) state.font.load()
-    }
-}
-
 /**
- * **生の TS の字幕を受け取って、出す番のものを選ぶ。** 描くのは `CaptionLayer`。
+ * **元の TS の字幕を受け取って、出す番のものを選ぶ。** 描くのは `CaptionLayer`。
  *
- * - **文字の配置で頼む** (`?format=text`、0x22)。古い denpa (v1.49.0 まで) は知らずに絵 (0x20) を返すので、届いたほうを出す
- * - 字幕の入れ切りは焼いた映像の字幕と同じ設定 (端末ごと)。切ってある間も、選べる字幕があるかだけは訊く
- *   (札を出すため。分かったら切る)
- * - **映像が流れはじめてから頼む** — TS の読み手が最初の PTS を読むまで時計が無く、ライブは映像の口が
- *   開いていないと字幕の口が 404 を返す (denpa は字幕のためにチューナーを掴まない)
- * - `generation` が変わったら (局を替えた・頼み直した・シークした) 頼み直す。録画は頼むときの位置 (`fromMs`) から読ませる
+ * - 字幕のオン・オフはエンコード済みの録画の字幕と同じ設定 (端末ごと)。オフにしてある間も、選べる字幕があるかだけは訊く
+ *   (ボタンを出すため。分かったら切る)
+ * - **映像が流れはじめてからリクエストする** — TsExtractor が最初の PTS を読むまで時計が無く、ライブは映像のエンドポイントが
+ *   開いていないと字幕のエンドポイントが 404 を返す (denpa は字幕のためにチューナーを使わない)
+ * - `generation` が変わったら (局を替えた・リクエストし直した・シークした) リクエストし直す。録画はリクエストするときの位置 (`fromMs`) から読ませる
  * - ライブは切れたら繋ぎ直す。録画は読み切ったら終わり
  *
- * @param path 字幕の口 (denpa の根からの相対、`?from=` は付けない)。null なら生ではないので何もしない
+ * @param path 字幕のエンドポイント (denpa のルートからの相対、`?from=` は付けない)。null なら元の TS ではないので何もしない
  * @param fromMs 録画で読ませる位置 (ミリ秒、頭から)。ライブは null
+ * @param keepOpen 字幕をオフにしていても読み続ける (実況がオンのライブ。時計の通知 (`clock`) で放送時刻を出すため)
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -177,55 +221,59 @@ fun rememberRawCaptions(
     path: String?,
     generation: Any?,
     fromMs: (() -> Long)? = null,
+    keepOpen: Boolean = false,
     onUnauthorized: () -> Unit = {},
 ): CaptionState {
-    val state = remember { CaptionState(repo.app.captionFont) }
+    val state = remember { CaptionState(repo.app.denpaFont) }
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
-    LoadCaptionFont(state)
+    /** 読み続けるか (字幕か実況) */
+    val reading = enabled || keepOpen
 
-    LaunchedEffect(path, generation, enabled) {
-        // 選べる字幕は局 (録画) ごと。頼み直し・シークでは消さない (札がちらつく)
+    LaunchedEffect(path, generation, reading) {
+        // 選べる字幕は局 (録画) ごと。再リクエスト・シークでは消さない (ボタンがちらつく)
         if (state.key != path) {
             state.key = path
             state.available = false
+            state.clock = null
         }
         state.timeline.clear()
-        state.picture = null
         state.page = null
         if (path == null) return@LaunchedEffect
-        // 切ってあって、選べる字幕があるかはもう分かっている
-        if (!enabled && state.available) return@LaunchedEffect
-        /** 続けて断られた回数。生TSが無い・映像が開かないままのときに頼み続けない */
+        // オフにしてあって、選べる字幕があるかはもう分かっている
+        if (!reading && state.available) return@LaunchedEffect
+        /** 続けて断られた回数。元のTSが無い・映像が開かないままのときにリクエストし続けない */
         var refused = 0
         while (true) {
-            // 映像が流れはじめる (頼み直した映像を TS の読み手が読みはじめる) まで待つ。
-            // 局を替えた直後は前の読み手の時計が残っているので、流れているかも見る
+            // 映像が流れはじめる (リクエストし直した映像を TsExtractor が読みはじめる) まで待つ。
+            // 局を替えた直後は前の Extractor の時計が残っているので、流れているかも見る
             delay(WAIT_MS)
             while (clock.offsetUs() == null || !player.isPlaying) delay(WAIT_MS)
             val query = CaptionPaths.query(fromMs?.invoke()?.let { it.coerceAtLeast(0) / 1000 })
             val url = repo.url(path + query)?.let { URI(it) } ?: return@LaunchedEffect
             state.timeline.clear()
+            // 繋ぎ直したストリームは時刻の起点が替わりうる (変換したライブは映像をリクエストし直すと fMP4 の時刻が替わる)。新しい時計が届くまで前のもので数えない
+            state.clock = null
             val finished = try {
-                follow(url, repo.token, state, keepGoing = { enabled }).also { refused = 0 }
+                follow(url, repo.token, state, keepGoing = { reading }, keepCues = { enabled }).also { refused = 0 }
             } catch (_: Unauthorized) {
                 return@LaunchedEffect onUnauthorized()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: CaptionFeed.Refused) {
-                // 404 (映像の口がまだ開いていない・繋ぎ直しの間)。少し待って頼み直す。
-                // 続くなら、録画はやめる (生TSが無い)。ライブは間を空けて頼み続ける (チューナーの立ち上がりが遅いこともある)
+                // 404 (映像のエンドポイントがまだ開いていない・繋ぎ直しの間)。少し待ってリクエストし直す。
+                // 続くなら、録画はやめる (元のTSが無い)。ライブは間を空けてリクエストし続ける (チューナーの立ち上がりが遅いこともある)
                 if (++refused >= MAX_REFUSED) {
                     if (fromMs != null) return@LaunchedEffect
                     delay(SLOW_RETRY_MS)
                 }
                 false
             } catch (_: Exception) {
-                // 読みの途切れ。少し待って頼み直す
+                // 読みの途切れ。少し待ってリクエストし直す
                 refused = 0
                 false
             }
-            // 切ってある間に選べる字幕が分かった・録画を読み切った
-            if (!enabled && state.available) return@LaunchedEffect
+            // オフにしてある間に選べる字幕が分かった・録画を読み切った
+            if (!reading && state.available) return@LaunchedEffect
             if (finished && fromMs != null) return@LaunchedEffect
             delay(RETRY_MS)
         }
@@ -234,7 +282,6 @@ fun rememberRawCaptions(
     // 出す番のものを選ぶ。**時計は再生位置を放送の PTS に戻したもの**
     LaunchedEffect(state, enabled) {
         if (!enabled) {
-            state.picture = null
             state.page = null
             return@LaunchedEffect
         }
@@ -246,7 +293,7 @@ fun rememberRawCaptions(
             val cue = state.timeline.at(Pts.broadcast(player.currentPosition, offset))
             if (cue === shown) continue
             /*
-             * **1こま続いてから出す。** 頼み直した直後は頼んだ位置の手前のぶんがまとめて届き、そのままだと
+             * **2回 (`TICK_MS` ごと) 続けて同じなら出す。** リクエストし直した直後はリクエストした位置の手前のぶんがまとめて届き、そのままだと
              * 過ぎた字幕が1つずつ一瞬ずつ映る (届いた順に「いまの1枚」が入れ替わる)
              */
             if (cue !== candidate) {
@@ -254,38 +301,28 @@ fun rememberRawCaptions(
                 continue
             }
             shown = cue
-            when (cue) {
-                is CaptionCue.Text -> {
-                    state.picture = null
-                    state.page = cue.page?.takeIf { it.runs.isNotEmpty() }
-                }
-                is CaptionCue.Picture -> {
-                    state.page = null
-                    state.picture = decode(cue)
-                }
-                null -> {
-                    state.picture = null
-                    state.page = null
-                }
-            }
+            state.page = cue?.page?.takeIf { it.runs.isNotEmpty() }
         }
     }
     return state
 }
 
 /**
- * **焼いた録画の字幕を、文字の配置で丸ごと受け取る** (`GET api/recordings/<id>/captions.json`)。再生位置を追い越していない
- * 中の最後の1枚を出す (シークしても頼み直さない)。
- *
- * 字幕が絵 (PGS) で入っている前の録画と、この口の無い古い denpa は 404 — そのときは何もしない (PGS は Media3 が動画から
- * 読んで `SubtitleView` に出す)。新しく焼いた録画の字幕 (S_ARIBSUB) は Media3 が読まないので、こちらだけが出す
+ * **エンコード済みの録画の字幕を、文字の配置で丸ごと受け取る** (`GET api/recordings/<id>/captions.json`)。再生位置を追い越していない
+ * 中の最後の1枚を出す (シークしてもリクエストし直さない)。字幕を持たない録画は 404 で、そのときは何もしない。
+ * `positionMs` は録画の時刻 (`playback` の物差し)。ファイルはプレーヤーの位置そのもの、denpa に流してもらうときは物差しに戻したもの
  */
 @Composable
-fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUnauthorized: () -> Unit = {}): CaptionState {
-    val state = remember { CaptionState(repo.app.captionFont) }
+fun rememberCaptionPages(
+    repo: Repository,
+    player: ExoPlayer,
+    path: String,
+    onUnauthorized: () -> Unit = {},
+    positionMs: () -> Long = { player.currentPosition },
+): CaptionState {
+    val state = remember { CaptionState(repo.app.denpaFont) }
     val enabled by repo.app.settings.subtitles.collectAsState(initial = true)
     var pages by remember { mutableStateOf<CaptionPages?>(null) }
-    LoadCaptionFont(state)
 
     LaunchedEffect(path) {
         val url = repo.url(path)?.let { URI(it) } ?: return@LaunchedEffect
@@ -298,7 +335,7 @@ fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUn
             when {
                 response == null -> delay(RETRY_MS)
                 response.code == 401 -> return@LaunchedEffect onUnauthorized()
-                // 前の録画・古い denpa。読み直しても同じ
+                // 字幕を持たない録画。読み直しても同じ
                 !response.ok -> return@LaunchedEffect
                 else -> {
                     val read = withContext(Dispatchers.Default) { CaptionPages.parse(response.text()) }
@@ -318,7 +355,7 @@ fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUn
         }
         // 同じ1枚なら置き直しても描き直さない (State は同じものの代入では知らせない)
         while (true) {
-            state.page = all.at(player.currentPosition)
+            state.page = all.at(positionMs())
             delay(TICK_MS)
         }
     }
@@ -326,10 +363,10 @@ fun rememberCaptionPages(repo: Repository, player: ExoPlayer, path: String, onUn
 }
 
 /**
- * 字幕の口を読み続ける。きれいに閉じたら true。`keepGoing` が false を返す間 (字幕を切ってある) は、
+ * 字幕のエンドポイントを読み続ける。きれいに閉じたら true。`keepGoing` が false を返す間 (字幕をオフにしてある) は、
  * 選べる字幕が分かったところでやめる
  */
-private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGoing: () -> Boolean): Boolean = coroutineScope {
+private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGoing: () -> Boolean, keepCues: () -> Boolean): Boolean = coroutineScope {
     val connection = withContext(Dispatchers.IO) { CaptionFeed.connect(url, token) }
     // 読むのは止まったままになる (ブロックする) ので、取り消されたら繋がりごと切って抜けさせる
     val watcher = launch {
@@ -348,6 +385,8 @@ private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGo
                     when (val frame = CaptionFeed.read(input)) {
                         null -> finished = true
                         is CaptionFrame.Cue -> {
+                            // 字幕をオフにして実況のために読んでいる間は溜めない (出す側が捨てないので、溜まって読むのが止まる)
+                            if (!keepCues()) continue
                             state.timeline.add(frame.cue)
                             // 先読みしすぎない (録画は denpa が倍速で先へ読む)。読まずに待てば denpa も録画を読むのを止める
                             while (state.timeline.size() > MAX_AHEAD) {
@@ -359,6 +398,7 @@ private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGo
                             state.available = frame.count > 0
                             if (!keepGoing()) finished = false
                         }
+                        is CaptionFrame.Clock -> state.clock = frame.notice
                         CaptionFrame.Other -> Unit
                     }
                 }
@@ -371,43 +411,10 @@ private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGo
     }
 }
 
-/** 絵を解く。PNG は RGBA で、1920x1080 まるごと。字のある行もここで探す (上と下から見て、字に当たったら止める) */
-private suspend fun decode(cue: CaptionCue.Picture): CaptionPicture? = withContext(Dispatchers.Default) {
-    BitmapFactory.decodeByteArray(cue.png, 0, cue.png.size)?.let { bitmap ->
-        val ink = inkRows(bitmap.width, bitmap.height) { y, rows, into -> bitmap.getPixels(into, 0, bitmap.width, 0, y, bitmap.width, rows) }
-        CaptionPicture(bitmap.asImageBitmap(), cue, ink)
-    }
-}
-
-/**
- * 字幕を映像の枠に重ねる。文字の配置なら描き (`TextCaptionLayer`)、絵なら伸ばして貼る。
- * 映像は枠いっぱいに伸ばして出している (`PlayerFrame`) ので、どちらも枠いっぱいに伸ばす
- */
+/** 字幕を映像の枠に重ねる (`TextCaptionLayer`)。映像は枠いっぱいに伸ばして出している (`PlayerFrame`) ので、字幕も枠いっぱいに伸ばす */
 @Composable
 fun CaptionLayer(state: CaptionState, inset: () -> Float) {
-    state.page?.let { return TextCaptionLayer(it, state.font, inset) }
-    val picture = state.picture ?: return
-    // 下に重ねたもの (帯・メニュー) があれば、字のある行がその上に来るまで持ち上げる
-    val lifted = Modifier.fillMaxSize().liftCaptions(inset) { _, height ->
-        picture.ink?.let { (top, bottom) ->
-            val scale = picture.cue.height.toFloat() / picture.bitmap.height * height / CANVAS_HEIGHT
-            val y = picture.cue.y * height / CANVAS_HEIGHT
-            y + top * scale to y + bottom * scale
-        }
-    }
-    Canvas(lifted) {
-        val sx = size.width / CANVAS_WIDTH
-        val sy = size.height / CANVAS_HEIGHT
-        val cue = picture.cue
-        drawImage(
-            picture.bitmap,
-            srcOffset = IntOffset.Zero,
-            srcSize = IntSize(picture.bitmap.width, picture.bitmap.height),
-            dstOffset = IntOffset((cue.x * sx).roundToInt(), (cue.y * sy).roundToInt()),
-            dstSize = IntSize((cue.width * sx).roundToInt(), (cue.height * sy).roundToInt()),
-            filterQuality = FilterQuality.Medium,
-        )
-    }
+    state.page?.let { TextCaptionLayer(it, state.font, inset) }
 }
 
 /** 出す番を見直す間 (ミリ秒)。字幕の時刻の細かさ (1 コマ 33ms) くらい */
@@ -416,17 +423,17 @@ private const val TICK_MS = 33L
 /** 映像が流れはじめるのを待つ刻み (ミリ秒) */
 private const val WAIT_MS = 200L
 
-/** 続けて断られたらやめる (ライブは間を空ける) 回数 (頼み直しの間と掛けて 15 秒ほど) */
+/** 続けて断られたらやめる (ライブは間を空ける) 回数 (再リクエストの間と掛けて 15 秒ほど) */
 private const val MAX_REFUSED = 5
 
-/** ライブで断られ続けたときの頼み直しの間 (ミリ秒) */
+/** ライブで断られ続けたときの再リクエストの間 (ミリ秒) */
 private const val SLOW_RETRY_MS = 30_000L
 
-/** 先読みして持っておく字幕の枚数の上限。1枚 数十 KB (PNG のまま持つ) */
+/** 先読みして持っておく字幕の枚数の上限 */
 private const val MAX_AHEAD = 200
 
-/** 頼み直すまでの間 (ミリ秒) */
+/** リクエストし直すまでの間 (ミリ秒) */
 private const val RETRY_MS = 3_000L
 
-/** `captions.json` を頼む回数 (繋がらなかったときだけ頼み直す) */
+/** `captions.json` をリクエストする回数 (繋がらなかったときだけリクエストし直す) */
 private const val PAGES_TRIES = 3

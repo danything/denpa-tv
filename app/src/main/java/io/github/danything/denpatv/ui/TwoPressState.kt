@@ -9,7 +9,7 @@ import androidx.compose.runtime.setValue
 import io.github.danything.denpatv.data.TwoPress
 import kotlinx.coroutines.delay
 
-/** 2回押しの状態を画面に持つ (`TwoPress`)。「もう一度押すと…」は時間が経つと元に戻る */
+/** 2回押しの状態を画面に持つ (`TwoPress`)。「削除を確定」などは時間が経つと元に戻る */
 class TwoPressState internal constructor(private val logic: TwoPress) {
     var armed by mutableStateOf(false)
         private set
@@ -39,4 +39,4 @@ fun rememberTwoPress(windowMs: Long = 4_000): TwoPressState {
 }
 
 /** 消すボタンの文字 */
-fun deleteLabel(armed: Boolean) = if (armed) "もう一度押すと削除" else "削除"
+fun deleteLabel(armed: Boolean) = if (armed) "削除を確定" else "削除"

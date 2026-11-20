@@ -20,7 +20,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 import java.util.TimeZone
 
-/** 番組の中身 (`GET api/programs/<id>`、ライブの詳しく)。denpa の `ProgramDetail` そのままの snake_case */
+/** 番組の中身 (`GET api/programs/<id>`、ライブの詳細)。denpa の `ProgramDetail` そのままの snake_case */
 class ProgramInfoTest {
     private val denpa = FakeDenpa()
     private val warnings = mutableListOf<String>()
@@ -41,7 +41,7 @@ class ProgramInfoTest {
         val info = (api.program(base, 32740010640) as ProgramLookup.Found).info
         assertEquals("/denpa/api/programs/32740010640", denpa.requests.take().target)
         assertEquals(listOf("番組内容" to "内容", "出演者" to "誰か"), info.extended)
-        // ブラウザの denpa の札と同じ並び。同じジャンルは1つに
+        // ブラウザの denpa のラベルと同じ並び。同じジャンルは1つに
         assertEquals(
             listOf("ドラマ > 国内ドラマ", "拡張", "1080i MPEG-2", "ステレオ (日本語)", "解説ステレオ (日本語)", "有料"),
             info.chips,
@@ -49,7 +49,7 @@ class ProgramInfoTest {
         assertTrue(warnings.isEmpty())
     }
 
-    /** 番組表から消えた (404) は出さないだけ。トークンが効かなければ繋ぐ画面へ */
+    /** 番組表から消えた (404) は出さないだけ。アクセストークンが効かなければ繋ぐ画面へ */
     @Test
     fun 無い番組と断られたとき() = runTest {
         val base = BaseUrl.normalize(denpa.url("/"))!!
@@ -65,9 +65,9 @@ class ProgramInfoTest {
         }
     }
 
-    /** 形がずれていても (denpa の版のずれ) 読めるところは読み、ずれた鍵だけ捨てて言う */
+    /** 形式がずれていても (denpa の版のずれ) 読めるところは読み、ずれた鍵だけ捨てて言う */
     @Test
-    fun 形のずれは言って続ける() {
+    fun 形式のずれは言って続ける() {
         val info = parseProgramInfo(
             """{"name":"番組","description":42,"extended":{"出演者":"誰か","数":3},"genre_detail":[{"lv1":"3"},{"lv1":7,"lv2":0}],
                "audios":[{"componentType":2,"langs":["jpn","eng"]},"ステレオ"],"video_type":null,"video_resolution":1080,"is_free":1}""",
@@ -86,7 +86,7 @@ class ProgramInfoTest {
     }
 
     @Test
-    fun 札の名前() {
+    fun ラベルの名前() {
         assertEquals("アニメ／特撮 > 国内アニメ", genreLabel(Genre(7, 0)))
         assertEquals("アニメ／特撮", genreLabel(Genre(7, 9)))
         assertEquals("", genreLabel(Genre(12, 0)))

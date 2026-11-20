@@ -9,13 +9,16 @@ import io.github.danything.denpatv.DenpaApp
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.DenpaEvent
+import io.github.danything.denpatv.data.PlaybackOptions
 import io.github.danything.denpatv.data.Recording
 import io.github.danything.denpatv.data.RecordingList
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.denpaTooOld
 import io.github.danything.denpatv.data.followEvents
+import io.github.danything.denpatv.data.staleServices
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
@@ -26,8 +29,8 @@ import kotlinx.coroutines.launch
 import java.net.URI
 
 /**
- * 画面が使う denpa の窓口。一覧は画面をまたいで使うので (ライブの局送り・録画を開く) ここに控える。
- * トークンがあれば API・絵・映像のどれにも付ける
+ * 画面が使う denpa の窓口。一覧は画面をまたいで使うので (ライブの局の切り替え・録画を開く) ここに控える。
+ * アクセストークンがあれば API・画像・映像のどれにも付ける
  */
 class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     val api = DenpaApi { token }
@@ -38,7 +41,7 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     val recordings: List<Recording> get() = list.items
 
-    /** 録画を読み直す (全部)。読めたら「続きを視聴」も合わせる (消えた・観終えた録画を消し、ほかの端末で観た位置に直す) */
+    /** 録画を読み直す (全部)。読めたら「続きを視聴」もそろえる (消えた・観終えた録画を消し、ほかの端末で観た位置に直す) */
     suspend fun refreshRecordings() {
         val fetchedAt = System.currentTimeMillis()
         list.refresh()
@@ -55,32 +58,42 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
     }
 
     /**
-     * 一覧が古くなった (追っかけで観た録画が録り終えた・焼き上がったかもしれない、denpa から `recordings` が来た)。
+     * 一覧が古くなった (追っかけで観た録画が録り終えた・エンコードが終わったかもしれない、denpa から `recordings` が来た)。
      * 一覧に戻ったら読み直す
      */
     @Volatile
     var recordingsStale = false
 
     /**
-     * 観た位置を預けた (閉じた・裏に回った・観終えた)。一覧の観た割合の帯と未視聴の点を直すため、読み直してもらう。
+     * 観た位置を預けた (閉じた・裏に回った・観終えた)。一覧の観た割合のバーと未視聴の点を直すため、読み直してもらう。
      * denpa は観終えたときしか知らせない (途中で止めた位置では来ない) ので、手元から知らせる。
-     * 一覧が出ていればすぐ (知らせ)、まだなら戻ったときに (`recordingsStale`)
+     * 一覧が出ていればすぐ (通知)、まだなら戻ったときに (`recordingsStale`)
      */
     fun positionSaved() {
         recordingsStale = true
         incoming.tryEmit(DenpaEvent.Changed("recordings"))
     }
 
-    /** 局が古くなった (denpa から `services` / `programs` が来た)。ライブを開いたら読み直す */
+    /** 局が古くなった (denpa から `services` / `programs` / `reservations` / `recordings` が来た。`staleServices`)。ライブを開いたら読み直す */
     var servicesStale = false
 
     /**
-     * メニューの画面に戻ったら、左のメニュー (「ライブ」) に合わせる。ライブから戻ったとき — 戻るでいちばん上のメニューへ
-     * (録画の一覧のカードに合わせると、ライブに戻るにも左へ行き直すことになる)
+     * メニューの画面に戻ったら、左のメニュー (「ライブ」) にフォーカスする。ライブから戻ったとき — 戻るでいちばん上のメニューへ
+     * (録画の一覧のカードにフォーカスすると、ライブに戻るにも左へ行き直すことになる)
      */
     var menuOnReturn = false
 
-    /** 録画の一覧に戻ったとき合わせる先 (再生の画面で消したときの隣) */
+    /** 手元に置く番組表 (番組表の画面から観に行って戻っても残す) */
+    val guide = GuideStore(api, base)
+
+    /**
+     * 番組表から観に行った (「視聴」「再生」) ときの、番組表のフォーカスの位置。戻ったら番組表がここにフォーカスし直す
+     * (左のメニューにはフォーカスしない)。番組表が読んだら消す。
+     * ライブの「番組表」と番組表のリンク (`denpa://guide`) も、ここに局と時刻を置いてメニューの画面へ戻る (番組表が出る)
+     */
+    var guideReturn: GuidePlace? = null
+
+    /** 録画の一覧に戻ったときフォーカスする先 (再生の画面で消したときの隣) */
     var focusOnReturn: Long? = null
 
     /** 消した録画を手元の一覧から抜く。隣の id を返す */
@@ -98,13 +111,42 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
         private set
 
     /**
-     * 繋いだ denpa の版を確かめる。知らせ (`api/events`) に繋がるたび (denpa を上げて立ち上げ直したときも) に1度。
+     * 繋いだ denpa の版を確かめる。通知 (`api/events`) に繋がるたび (denpa を上げて立ち上げ直したときも) に1度。
      * 届かなければ前のまま
      */
     private suspend fun checkVersion() {
         val health = api.health(base) ?: return
         denpaVersion = health.version
         denpaWarning = denpaTooOld(health.version)?.also { Log.w(TAG, it) }
+        // 観るときの決まりも聞き直す (メニューから外すものを変えたかもしれない)。届かなければ前のまま
+        try {
+            api.playbackOptions(base)?.let { optionsKnown = it }
+        } catch (_: Unauthorized) {
+            // 取り消されていれば、ほかの API が 401 で気付く
+        }
+    }
+
+    /** 観るときの決まり (`DenpaApi.playbackOptions`)。聞けたものを控える */
+    @Volatile
+    private var optionsKnown: PlaybackOptions? = null
+
+    /**
+     * **観るときの決まり** (画質のメニューに並べるもの)。控えが無ければ聞く。届かない・打ち切った (`DenpaApi.playbackOptions` は 2.5 秒で打ち切る) ときは
+     * `PlaybackOptions.FALLBACK` (控えないので、次に聞き直す)。アクセストークンが取り消されていれば `Unauthorized`。
+     * 控えがあればそれをすぐ返し、裏で聞き直して控えを替える (`liveCodecs` は denpa の GPU がソフトウェアに降りている間などに変わるので、次に開いた画面から合わせる)
+     */
+    suspend fun playbackOptions(): PlaybackOptions {
+        optionsKnown?.let { known ->
+            app.scope.launch {
+                try {
+                    api.playbackOptions(base)?.let { optionsKnown = it }
+                } catch (_: Unauthorized) {
+                    // 取り消されていれば、ストリームのリクエストが 401 で気付く
+                }
+            }
+            return known
+        }
+        return api.playbackOptions(base)?.also { optionsKnown = it } ?: PlaybackOptions.FALLBACK
     }
 
     /** 局だけ取り直す (いま放送中の番組が変わるので) */
@@ -117,22 +159,24 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     private val incoming = MutableSharedFlow<DenpaEvent>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-    /** denpa の変化の知らせ。開いている画面が受けて読み直す (`listen` が繋いでいる間だけ流れる) */
+    /** denpa の変化の通知。開いている画面が受けて読み直す (`listen` が繋いでいる間だけ流れる) */
     val events: SharedFlow<DenpaEvent> get() = incoming
 
-    /** 焼いている録画の進み (録画の id → 0..1)。カードに出す。しばらく届かなければ消す (失敗・取り消し) */
+    /** エンコード中の録画の進み (録画の id → 0..1)。カードに出す。しばらく届かなければ消す (失敗・取り消し) */
     val encoding = mutableStateMapOf<Long, Float>()
     private val encodingExpiry = mutableMapOf<Long, Job>()
 
     /**
-     * denpa の知らせ (`api/events`) に繋ぎっぱなしにする。**アプリが前に出ている間だけ** 呼ぶ (DenpaTv.kt)。
-     * トークンが効かなければ `onUnauthorized` (繋ぐ画面へ) を呼んで戻る。止めるまで戻らない
+     * denpa の通知 (`api/events`) に繋ぎっぱなしにする。**アプリが前に出ている間だけ** 呼ぶ (DenpaTv.kt)。
+     * アクセストークンが効かなければ `onUnauthorized` (繋ぐ画面へ) を呼んで戻る。止めるまで戻らない
      */
     suspend fun listen(onUnauthorized: () -> Unit) {
         val url = BaseUrl.resolve(base, "api/events") ?: return
         coroutineScope {
-            // 受けた知らせはここ (呼ぶ側のスレッド = メイン) で仕分ける
-            val sorter = launch { incoming.collect { sort(it) } }
+            // 受けた通知はここ (呼ぶ側のスレッド = メイン) で仕分ける。繋ぐより先に受け始める (UNDISPATCHED)。
+            // 後から受け始めると、すぐ繋がったときの `Opened` を `incoming` が受け手の無いまま捨て、denpa のバージョンを確かめないままになる
+            // (バージョンが分からないと「実況」のボタンを出さない)
+            val sorter = launch(start = CoroutineStart.UNDISPATCHED) { incoming.collect { sort(it) } }
             try {
                 followEvents(url, token, onEvent = { incoming.tryEmit(it) }, warn = { Log.w(TAG, it) })
             } catch (_: Unauthorized) {
@@ -148,20 +192,20 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
 
     private fun CoroutineScope.sort(event: DenpaEvent) {
         when (event) {
-            // 切れていた間の知らせは来ないので、どちらも古いかもしれない。denpa が上がったかもしれない
+            // 切れていた間の通知は来ないので、どちらも古いかもしれない。denpa が上がったかもしれない
             DenpaEvent.Opened -> {
                 recordingsStale = true
                 servicesStale = true
                 launch { checkVersion() }
             }
-            is DenpaEvent.Changed -> when (event.name) {
-                "recordings" -> recordingsStale = true
-                "services", "programs" -> servicesStale = true
+            is DenpaEvent.Changed -> {
+                if (event.name == "recordings") recordingsStale = true
+                if (staleServices(event.name)) servicesStale = true
             }
             is DenpaEvent.Encode -> {
                 encodingExpiry.remove(event.recordingId)?.cancel()
                 if (event.percent >= 1f) {
-                    // 焼き上がった。続く `recordings` で一覧が読み直される
+                    // エンコードが終わった。続く `recordings` で一覧が読み直される
                     encoding.remove(event.recordingId)
                 } else {
                     encoding[event.recordingId] = event.percent
@@ -172,11 +216,13 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
                     }
                 }
             }
+            // ライブの画面が受ける (その局を映していれば)
+            is DenpaEvent.Yielded -> {}
         }
     }
 }
 
-/** 焼いている間、denpa は 2 秒おきに進みを送る。これだけ来なければ止まったと見なす */
+/** エンコードしている間、denpa は 2 秒おきに進みを送る。これだけ来なければ止まったと見なす */
 private const val ENCODING_EXPIRY_MS = 15_000L
 
 private const val TAG = "DenpaEvents"

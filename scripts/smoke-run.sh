@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
 # 縮めた APK (:app の minified) と SmokeTest の APK (:smoke) を、繋いだ端末 (エミュレータ) に入れて走らせる。
-# CI の emulator の列はこれだけを走らせる (Gradle も JDK も要らない。APK は apks の列が1度だけ焼き、ここで待って取ってくる)。
+# CI の emulator の列はこれだけを走らせる (Gradle も JDK も要らない。APK は apks の列が1度だけビルドし、ここで待って取ってくる)。
 #
 #   scripts/smoke-run.sh <app-minified.apk> <smoke-minified.apk> [結果を置くディレクトリ]
 #
@@ -17,7 +17,7 @@ mkdir -p "$out"
 
 # CI (`SMOKE_STOP_EMULATOR=1`) では、終わったらエミュレータもここで止める。API 28 の像では、エミュレータが閉じても
 # その子の crashpad_handler が出力を握ったまま残り、android-emulator-runner がその終わりを待ったまま手順の上限まで固まった
-# (ほかの API では一緒に閉じる)。頼んで 30 秒待ち、閉じなければ qemu を殺し、残った crashpad_handler も殺す
+# (ほかの API では一緒に閉じる)。リクエストして 30 秒待ち、閉じなければ qemu を殺し、残った crashpad_handler も殺す
 # (スナップショットは保存しない手順なので、殺しても困らない)
 stop_emulator() {
     [ "${SMOKE_STOP_EMULATOR:-}" = 1 ] || return 0
@@ -34,7 +34,7 @@ stop_emulator() {
 }
 logcat=""
 trap '{ [ -z "$logcat" ] || kill "$logcat" 2>/dev/null || true; }; stop_emulator' EXIT
-# CI (`SMOKE_WAIT_APKS=<置く先>`) では、エミュレータを起こしてから apks の列が焼き終わるのを待って APK を取ってくる
+# CI (`SMOKE_WAIT_APKS=<置く先>`) では、エミュレータを起こしてから apks の列がビルドし終わるのを待って APK を取ってくる
 # (scripts/wait-apks.sh)。取れなくてもエミュレータは上で止める
 if [ -n "${SMOKE_WAIT_APKS:-}" ]; then
     bash "$(dirname "$0")/wait-apks.sh" "$SMOKE_WAIT_APKS"
@@ -64,7 +64,7 @@ if grep -q '^OK ([1-9]' "$out/instrument.txt"; then
     exit 0
 fi
 [ "$finished" -eq 0 ] && echo "am instrument が ${SMOKE_TIMEOUT:-480} 秒で終わりませんでした" | tee -a "$out/instrument.txt"
-# 止まったところの画面と、画面の部品の木 (どこで待っているかの手掛かり)。adb が応えないこともあるので、どれも待ちすぎない
+# 止まったところの画面と、画面の部品のツリー (どこで待っているかの手掛かり)。adb が応えないこともあるので、どれも待ちすぎない
 timeout 30 adb exec-out screencap -p > "$out/screen.png" || true
 timeout 30 adb exec-out uiautomator dump /dev/tty > "$out/window.xml" 2>/dev/null || true
 timeout 30 adb shell dumpsys activity activities > "$out/activities.txt" 2>&1 || true

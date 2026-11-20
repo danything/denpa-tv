@@ -8,6 +8,7 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketException
 import java.net.URLDecoder
 import java.security.SecureRandom
 import kotlin.concurrent.thread
@@ -17,8 +18,8 @@ import kotlin.concurrent.thread
  * (テレビのリモコンで URL を打つのはつらい)。繋ぐ画面を開いている間だけ待ち受ける。
  *
  * - 依存は足さない (ServerSocket で HTTP/1.0 程度を話す)。扱うのは1枚のフォームの GET と POST だけ
- * - URL に**推測できない道** (`/<16 バイトの乱数>/`) を入れる。同じ LAN の誰かが当てずっぽうで叩いても 404。
- *   道は QR にしか出ない
+ * - URL に**推測できないパス** (`/<16 バイトの乱数>/`) を入れる。同じ LAN の誰かが当てずっぽうでアクセスしても 404。
+ *   パスは QR にしか出ない
  */
 class SetupServer(
     /** フォームが送られたら呼ぶ。スマホに返す HTML を返す (テレビ側の確かめが済むまで待つ) */
@@ -80,16 +81,35 @@ class SetupServer(
         }
 
         /** テレビの LAN の IPv4 (192.168.x.x など)。Wi-Fi か有線の、上がっているもの */
-        fun lanAddress(): String? = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
-            .filter { it.isUp && !it.isLoopback }
-            .flatMap { it.inetAddresses.toList() }
-            .filterIsInstance<Inet4Address>()
-            .firstOrNull { it.isSiteLocalAddress }
-            ?.hostAddress
+        private fun lanAddress(): String? {
+            val interfaces = try {
+                NetworkInterface.getNetworkInterfaces()
+                    ?.toList()
+                    .orEmpty()
+            } catch (_: SocketException) {
+                return null
+            }
+        
+            return interfaces.asSequence()
+                .filter { ni ->
+                    try {
+                        ni.isUp && !ni.isLoopback
+                    } catch (_: SocketException) {
+                        // 状態を取得できないインターフェースはスキップ
+                        false
+                    }
+                }
+                .flatMap { ni ->
+                    ni.inetAddresses.toList().asSequence()
+                }
+                .filterIsInstance<Inet4Address>()
+                .firstOrNull { it.isSiteLocalAddress }
+                ?.hostAddress
+        }
     }
 }
 
-data class HttpRequest(val method: String, val path: String, val headers: Map<String, String>, val body: String)
+data class HttpRequest(val method: String, val path: String, val body: String)
 
 /**
  * HTTP の要求を1つ読む。**大きすぎるもの (64 KB 超) は読まない** — フォームに入るのは URL 1つだけ
@@ -116,7 +136,7 @@ fun parseRequest(input: InputStream): HttpRequest? {
         if (n < 0) break
         read += n
     }
-    return HttpRequest(parts[0], parts[1], headers, body.copyOf(read).toString(Charsets.UTF_8))
+    return HttpRequest(parts[0], parts[1], body.copyOf(read).toString(Charsets.UTF_8))
 }
 
 /** `application/x-www-form-urlencoded` を読む */

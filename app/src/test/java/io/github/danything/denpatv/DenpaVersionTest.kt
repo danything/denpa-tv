@@ -2,7 +2,10 @@ package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.DenpaVersion
 import io.github.danything.denpatv.data.MIN_DENPA
+import io.github.danything.denpatv.data.MIN_GUIDE
 import io.github.danything.denpatv.data.denpaTooOld
+import io.github.danything.denpatv.data.guideTooOld
+import io.github.danything.denpatv.data.guideTooOldMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -25,20 +28,32 @@ class DenpaVersionTest {
         assertTrue(DenpaVersion(1, 10, 0) > DenpaVersion(1, 9, 9))
         assertTrue(DenpaVersion(2, 0, 0) > DenpaVersion(1, 99, 99))
         assertTrue(DenpaVersion(1, 40, 1) > DenpaVersion(1, 40, 0))
-        assertEquals("v1.40.0", MIN_DENPA.toString())
+        assertEquals("v2.29.0", MIN_DENPA.toString())
     }
 
     @Test
     fun 古すぎれば要る版と今の版を言う() {
-        assertEquals("denpa v1.40.0 以上が要ります (いまは v1.39.0)", denpaTooOld("v1.39.0"))
-        assertEquals("denpa v1.40.0 以上が要ります (いまは v1.23.1)", denpaTooOld("1.23.1"))
-        // 版を返さない denpa (1.8.0 より前)
-        assertEquals("denpa v1.40.0 以上が要ります (いまは v1.8.0 より前)", denpaTooOld(null))
-        assertNull(denpaTooOld("v1.40.0"))
-        assertNull(denpaTooOld("v1.44.0"))
-        assertNull(denpaTooOld("v2.0.0"))
-        // 手元・develop の dev や読めない札は分からないので言わない
+        assertEquals("denpa v2.29.0 以上が必要です (いまは v2.28.0)", denpaTooOld("v2.28.0"))
+        assertEquals("denpa v2.29.0 以上が必要です (いまは v1.23.1)", denpaTooOld("1.23.1"))
+        // バージョンを返さないとても古い denpa
+        assertEquals("denpa v2.29.0 以上が必要です", denpaTooOld(null))
+        assertNull(denpaTooOld("v2.29.0"))
+        assertNull(denpaTooOld("v2.30.2"))
+        assertNull(denpaTooOld("v3.0.0"))
+        // 手元・develop の dev や読めないタグは分からないので言わない
         assertNull(denpaTooOld("dev"))
         assertNull(denpaTooOld("something"))
+    }
+
+    /** 番組表だけは v2.33.0 から。dev と読めないバージョンは確かめない (API を呼んで 404 なら同じ文) */
+    @Test
+    fun 番組表に要るバージョン() {
+        assertEquals("v2.33.0", MIN_GUIDE.toString())
+        assertEquals("番組表には denpa v2.33.0 以上が必要です (いまは v2.32.1)", guideTooOld("v2.32.1"))
+        assertNull(guideTooOld("v2.33.0"))
+        assertNull(guideTooOld("dev"))
+        assertNull(guideTooOld(null))
+        assertEquals("番組表には denpa v2.33.0 以上が必要です (いまは dev)", guideTooOldMessage("dev"))
+        assertEquals("番組表には denpa v2.33.0 以上が必要です", guideTooOldMessage(null))
     }
 }

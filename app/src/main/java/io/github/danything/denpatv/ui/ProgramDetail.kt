@@ -50,6 +50,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -61,15 +62,19 @@ import io.github.danything.denpatv.data.DetailText
 import io.github.danything.denpatv.data.arrangeDetail
 import kotlinx.coroutines.launch
 
-/** 詳しくに出す中身。録画 (一覧・再生中) とライブで同じ形 (`ProgramDetailDialog`) */
+/** 詳細に出す中身。録画 (一覧・再生中) とライブで同じ作り (`ProgramDetailDialog`) */
 data class DetailFacts(
     val title: String,
-    /** 「局 ・ 10/6(火) 21:00〜21:54 (54分)」(`programMeta`) */
+    /** 「局 ・ 10/6(火) 21:00〜21:54 (54分)」(`programMeta`)。頭の局名 (`service`) は放送の字 */
     val meta: String,
-    /** 札 (ジャンル・映像・音声・形) */
+    /** 局名 (`meta` の頭)。無ければ null */
+    val service: String? = null,
+    /** ラベル (ジャンル・映像・音声・形式) */
     val chips: List<String> = emptyList(),
-    /** 札の頭に赤で出す印 (「● 録画中」「録画予約済み」) */
+    /** ラベルの頭に出す印。「● 録画中」は赤、「予約済み」は琥珀 (`badgeColor`) */
     val badge: String? = null,
+    /** 印の地と字の色。null なら `badge` の名前で決める (`badgeColor`。番組表は予約の状態で決めて渡す) */
+    val badgeColors: Pair<Color, Color>? = null,
     /** 進み (位置, 長さ。ミリ秒) と、その横の1言 (「あと 32 分」「0:14:22 まで観た」)。null なら出さない */
     val progress: Pair<Long, Long>? = null,
     val progressLabel: String? = null,
@@ -80,41 +85,49 @@ data class DetailFacts(
     val logo: String? = null,
 )
 
-/** 詳しくの札。並べた順に左から。**先頭が主な操作で、開いたときにそこに合う** */
-class DetailAction(val label: String, val onClick: () -> Unit)
+/**
+ * 詳細のボタン。並べた順に左から。**「閉じる」はどの詳細でも右の端** (開き方で並びを変えない)。
+ * `primary` は主な操作 (azure で塗る。「続きから再生」「録画」)。開いたときは `initial` のボタン、無ければ先頭にフォーカスする
+ */
+class DetailAction(val label: String, val primary: Boolean = false, val initial: Boolean = false, val onClick: () -> Unit)
+
+/** 詳細を閉じるボタン */
+internal const val CLOSE = "閉じる"
 
 /**
- * 番組の詳しく。**録画の一覧 (カードの長押し)・録画と追っかけの再生中・ライブ (決定の長押し・情報キー) で同じもの**。
- * ブラウザの denpa の詳細 (観る画面の右の欄、`ProgramFacts`) と同じ並びで、テレビの詳しくの画面 (Android TV の
+ * 番組の詳細。**録画の一覧 (カードの長押し)・録画と追っかけの再生中・ライブ (決定の長押し・情報キー) で同じもの**。
+ * ブラウザの denpa の詳細 (観る画面の右の欄、`ProgramFacts`) と同じ並びで、テレビの詳細の画面 (Android TV の
  * 詳細ページ) の作りに合わせる:
  *
- * - 左に寄せた1列。**番組名を大きく、その下に1行の「局 ・ 日時 (長さ)」**、ライブなら番組の進みと残り、札の列
+ * - 左に寄せた1列。**番組名を大きく、その下に1行の「局 ・ 日時 (長さ)」**、ライブなら番組の進みと残り、ボタンの列
  *   (録画中の印・ジャンル・映像・音声)
- * - **その下に操作の札を横1列**。先頭が主な操作で、開いたときにそこに合う (録画は「続きから再生」、ライブは「録画」、
- *   再生中は「閉じる」— 映像に戻るだけ)
+ * - **その下に操作のボタンを横1列**。主な操作が先頭で、「閉じる」が右の端。開いたときは主な操作にフォーカスする (録画は「続きから再生」、
+ *   ライブは「録画」)。再生中と、ライブで録っている・録る予定のときは「閉じる」にフォーカスする (映像に戻るだけ)
  * - 下の残りに説明と放送の詳細を**1列で、大事な順に** (`arrangeDetail`): 説明と番組内容・あらすじをまとめた読みもの →
  *   出演者 → 制作・音楽など (小さく詰めて) → おしらせ。ホームページは出さない。1行は画面の6割ほどまで (長すぎると読みにくい)。
- *   収まらなければ札の列から下キーで本文に入り、**上下で読み進める** (いちばん上でもう一度上を押すと札に戻る)
- * - 絵 (ポスター) は出さない (文字を読むための画面。映像は一覧のカードと再生の画面で見える)
+ *   収まらなければボタンの列から下キーで本文に入り、**上下で読み進める** (いちばん上でもう一度上を押すとボタンに戻る)
+ * - 画像 (ポスター) は画像として出さない (文字を読むための画面)。一覧の上で開いたときだけ、後ろにほとんど見えないくらい薄く敷く (`FaintBackdrop`)
  *
- * 長押しで開くので、離すまでの決定はこの窓では受けない (`ignoreHeldCenter`。先頭の札が押されないように)。戻るで閉じる
+ * 長押しで開くので、離すまでの決定はこの窓では受けない (`ignoreHeldCenter`。先頭のボタンが押されないように)。戻るで閉じる
  */
 @Composable
 fun ProgramDetailDialog(
     facts: DetailFacts,
     actions: List<DetailAction>,
     onDismiss: () -> Unit,
-    /** 札の下に出す1行 (ライブの「録画を始めます」など) */
+    /** ボタンの下に出す1行 (ライブの「録画を始めます」など) */
     note: String? = null,
     /** 映像の上に開く (再生中・ライブ)。右へ行くほど少し透かして映像を覗かせる。一覧の上では透かさない */
     overVideo: Boolean = false,
-    /** 後ろにうすく敷く絵 (録画のポスター)。null なら地の色だけ */
+    /** 後ろにうすく敷く画像 (録画のポスター)。null なら地の色だけ */
     backdrop: String? = null,
-    /** 絵を取るときの鍵 */
+    /** 画像を取るときのキー */
     token: String? = null,
 ) {
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    val start = actions.indexOfFirst { it.initial }.coerceAtLeast(0)
+    // ボタンの数が変わったら (ライブで録画して「録画」のボタンが消えた) フォーカスし直す。フォーカスのあったボタンが消えると、どこにもフォーカスが無くなる
+    LaunchedEffect(actions.size) { runCatching { first.requestFocus() } }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val surface = MaterialTheme.colorScheme.surface
         Box(
@@ -131,14 +144,14 @@ fun ProgramDetailDialog(
                 ),
         ) {
             if (!overVideo && backdrop != null) FaintBackdrop(backdrop, token)
-            Column(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 40.dp, bottom = 24.dp)) {
+            Column(Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 40.dp, bottom = SAFE_VERTICAL + 6.dp)) {
                 Header(facts, token)
                 Spacer(Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     actions.forEachIndexed { index, action ->
-                        val modifier = if (index == 0) Modifier.focusRequester(first) else Modifier
-                        // 札の文字は1行のまま伸ばす (「もう一度押すと削除」になっても切れないように)
-                        DenpaButton(onClick = action.onClick, modifier = modifier, primary = index == 0) {
+                        val modifier = if (index == start) Modifier.focusRequester(first) else Modifier
+                        // ボタンの文字は1行のまま伸ばす (「削除を確定」になっても切れないように)
+                        DenpaButton(onClick = action.onClick, modifier = modifier, primary = action.primary) {
                             Text(action.label, maxLines = 1, softWrap = false)
                         }
                     }
@@ -158,7 +171,7 @@ fun ProgramDetailDialog(
 private fun Header(facts: DetailFacts, token: String?) {
     Text(
         facts.title,
-        style = MaterialTheme.typography.headlineMedium,
+        style = MaterialTheme.typography.headlineMedium.broadcast(),
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.widthIn(max = 760.dp),
@@ -166,7 +179,7 @@ private fun Header(facts: DetailFacts, token: String?) {
     Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         facts.logo?.let { RemoteImage(it, ContentScale.Fit, Modifier.width(48.dp).height(27.dp), token, placeholder = Color.Transparent) }
-        Text(facts.meta, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(broadcastPrefix(facts.meta, facts.service).withBroadcastFont(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     facts.progress?.let { (at, length) ->
         Spacer(Modifier.height(8.dp))
@@ -181,18 +194,18 @@ private fun Header(facts: DetailFacts, token: String?) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             chips.forEach { label ->
                 val badge = label == facts.badge
-                // 高さを揃える (英数字だけの札 (「1080i MPEG-2」) は字の高さが低い)
+                // 高さを揃える (英数字だけのラベル (「1080i MPEG-2」) は字の高さが低い)
                 Box(
                     Modifier
                         .height(CHIP_HEIGHT)
-                        .background(if (badge) BADGE_COLOR else MaterialTheme.colorScheme.surfaceVariant, TagShape)
+                        .background(if (badge) facts.badgeColors?.first ?: badgeColor(label) else MaterialTheme.colorScheme.surfaceVariant, TagShape)
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         label,
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (badge) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (badge) facts.badgeColors?.second ?: badgeTextColor(label) else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                     )
                 }
@@ -202,8 +215,8 @@ private fun Header(facts: DetailFacts, token: String?) {
 }
 
 /**
- * 説明と放送の詳細を1列で (`arrangeDetail` の並び)。**収まらなければ合わせられて、上下で読み進める**
- * (合っている間は縁を出す。続きがあれば下の端に「▼」)。いちばん上で上を押すと、合いが先頭の札へ戻る
+ * 説明と放送の詳細を1列で (`arrangeDetail` の並び)。**収まらなければフォーカスできて、上下で読み進める**
+ * (フォーカスがある間は縁を出す。続きがあれば本文の下の1行に「▼ 下キーで続き」)。いちばん上で上を押すと、フォーカスが先頭のボタンへ戻る
  */
 @Composable
 private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
@@ -215,7 +228,7 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
     var viewport by remember { mutableIntStateOf(0) }
     val scrollable = scroll.maxValue > 0
     val frame = if (focused) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else Color.Transparent
-    // 本文に合っている間に中身が縮んで収まった (ライブで番組が替わった) ら、先頭の札へ戻す (合いの行き場が無くならないように)
+    // 本文にフォーカスがある間に中身が縮んで収まった (ライブで番組が替わった) ら、先頭のボタンへ戻す (フォーカスの行き場が無くならないように)
     LaunchedEffect(scrollable) {
         if (!scrollable && focused) runCatching { up.requestFocus() }
     }
@@ -231,9 +244,9 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
             .border(2.dp, frame, RoundedCornerShape(12.dp))
             .onFocusChanged { focused = it.isFocused }
             .focusProperties {
-                // 収まっていれば合わせない (下キーで止まるだけになる)
+                // 収まっていればフォーカスしない (下キーで止まるだけになる)
                 canFocus = scrollable
-                // 上で抜けるときは先頭の札へ (近いもの = 真上の札に合うと、右の端の「閉じる」に飛ぶ)
+                // 上で抜けるときは先頭のボタンへ (近いもの = 真上のボタンにフォーカスすると、右の端の「閉じる」に飛ぶ)
                 this.up = up
             }
             .then(
@@ -245,12 +258,12 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
                             if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                             val step = viewport * 0.6f
                             when (event.key) {
-                                // 下: 読み進める。いちばん下でも受ける (下に合わせる先は無い)
+                                // 下: 読み進める。いちばん下でも受ける (下にフォーカスする先は無い)
                                 Key.DirectionDown -> {
                                     if (scroll.canScrollForward) scope.launch { scroll.animateScrollBy(step) }
                                     true
                                 }
-                                // 上: 戻る。いちばん上なら受けない (上の札へ合いが移る)
+                                // 上: 戻る。いちばん上なら受けない (上のボタンへフォーカスが移る)
                                 Key.DirectionUp -> if (scroll.canScrollBackward) {
                                     scope.launch { scroll.animateScrollBy(-step) }
                                     true
@@ -274,31 +287,42 @@ private fun ColumnScope.Body(facts: DetailFacts, up: FocusRequester) {
                     .height(48.dp)
                     .background(Brush.verticalGradient(listOf(Color.Transparent, surface.copy(alpha = 0.95f)))),
             )
-            // 本文の上に重ねるので、下地を敷いて字が重ならないように
-            Text(
-                if (focused) "▼" else "▼ 下キーで続き",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp, bottom = 4.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 10.dp, vertical = 2.dp),
-            )
         }
+    }
+    /*
+     * 続きの手引きは本文の下の決まった1行に (本文に重ねると、その下の字を隠す)。収まらない本文のあいだはずっと行を取っておき
+     * (読み進めて終わりまで来ても本文の高さが変わらないように)、続きがあるときだけ字を出す
+     */
+    if (scrollable) {
+        Text(
+            when {
+                !scroll.canScrollForward -> ""
+                focused -> "▼ 下キーで続き・上キーで戻る"
+                else -> "▼ 下キーで続き"
+            },
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            modifier = Modifier.widthIn(max = TEXT_WIDTH + BODY_PADDING * 2).fillMaxWidth().offset(x = -BODY_PADDING).padding(top = 4.dp, end = 8.dp),
+        )
     }
 }
 
-/** 読みもの (大きく) → 出演者 → 制作・音楽・おしらせ (小さく、薄く、「見出し 本文」を詰めて) */
+/**
+ * 読みもの (大きく) → 出演者 → 制作・音楽・おしらせ (小さく、薄く、「見出し 本文」を詰めて)。
+ * 見出しも本文も放送から来た字 (番組の詳細の項目名) なので、どれも放送の字 (`broadcast`)
+ */
 @Composable
 private fun DetailColumn(text: DetailText, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
+    val type = MaterialTheme.typography
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        text.story.forEach { Text(it, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface) }
+        text.story.forEach { Text(it, style = type.bodyLarge.broadcast(), color = colors.onSurface) }
         text.cast.forEach { (heading, body) ->
             Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(heading, style = MaterialTheme.typography.titleSmall, color = colors.primary)
-                Text(body, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface)
+                Text(heading, style = type.titleSmall.broadcast(), color = colors.primary)
+                Text(body, style = type.bodyLarge.broadcast(), color = colors.onSurface)
             }
         }
         if (text.notes.isNotEmpty()) {
@@ -312,7 +336,7 @@ private fun DetailColumn(text: DetailText, modifier: Modifier) {
                             }
                             append(body)
                         },
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = type.bodyMedium.broadcast(),
                         color = colors.onSurfaceVariant,
                     )
                 }
@@ -327,15 +351,17 @@ private val TEXT_WIDTH = 600.dp
 /** 本文の縁の内側の余白 */
 private val BODY_PADDING = 16.dp
 
-/** 札の高さ */
+/** ボタンの高さ */
 private val CHIP_HEIGHT = 30.dp
 
-/** 録画中の印の赤 (一覧のカードの「● 録画中」と同じ) */
-private val BADGE_COLOR = Palette.Recording
+/** ラベルの頭の印の色。録画中は赤 (一覧のカードの「● 録画中」と同じ)、予約済みは琥珀 (局の列のカードの印と同じ) */
+private fun badgeColor(label: String): Color = if (label == RESERVED) Palette.Reserved else Palette.Recording
+
+private fun badgeTextColor(label: String): Color = if (label == RESERVED) Palette.Background else Color.White
 
 /**
- * 詳しくの後ろにうすく敷く録画の絵。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (`BlurredImage`)、
- * 地の色で大きく覆い、左と下へ溶かす。絵の要素としては出さない (縁も札も付けない)
+ * 詳細の後ろにうすく敷く録画の画像。**文字を読む画面なので、ほとんど見えないくらいに**: 右上に置いてぼかし (`BlurredImage`)、
+ * 地の色で大きく覆い、左と下へ溶かす。画像の要素としては出さない (縁もボタンも付けない)
  */
 @Composable
 private fun BoxScope.FaintBackdrop(url: String, token: String?) {

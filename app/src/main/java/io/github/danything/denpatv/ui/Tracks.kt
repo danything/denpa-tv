@@ -28,10 +28,10 @@ import io.github.danything.denpatv.data.selectedChoice
 import kotlinx.coroutines.launch
 
 /**
- * 字幕と音声の切り替え。**ブラウザの denpa の再生の字幕・音声のボタンにあたる。** Media3 のトラックの選び方で切り替える。
+ * 字幕と音声の切り替え。**ブラウザの denpa の再生の字幕・音声のボタンにあたる。**
  *
- * - 字幕: 入れ切り (端末ごとに覚える)。字幕のトラックがあるときだけ札を出す
- * - 音声: 押すたびに次の音声へ。選べるものが2つ以上あるときだけ札を出す。名前の付いた音声 (「解説ステレオ」など) は覚えて、
+ * - 字幕: オン・オフ (端末ごとに覚える)。denpa が選べる字幕があると言ったときだけボタンを出す
+ * - 音声: Media3 のトラックの選び方で、押すたびに次の音声へ。選べるものが2つ以上あるときだけボタンを出す。名前の付いた音声 (「解説ステレオ」など) は覚えて、
  *   次に同じ名前があればそれで始める
  * - **1本の中の二か国語 (デュアルモノ)** は、denpa がそう言っていれば (`DenpaAudio`) ブラウザと同じく「主音声」「副音声」「主+副」の
  *   3つに分けて並べ、選んだ側を両耳へ配り直す (`DualMonoProcessor`)。どちら側かは端末ごとに覚える (既定は主音声)
@@ -44,9 +44,10 @@ class TrackControls(
     val toggleSubtitles: () -> Unit,
     val nextAudio: () -> Unit,
 ) {
-    /** 操作の列に足す札 (出すものが無ければ空) */
-    fun controls(): List<Control> = buildList {
-        if (hasText) add(Control(if (subtitles) "字幕 入" else "字幕 切", on = subtitles, icon = R.drawable.ic_subtitles) { toggleSubtitles() })
+    /** 操作の列に足すボタン (出すものが無ければ空)。`jikkyo` (実況と、コメントの一覧のボタン) は「字幕」の隣に置く */
+    fun controls(vararg jikkyo: Control?): List<Control> = buildList {
+        if (hasText) add(Control(if (subtitles) "字幕 オン" else "字幕 オフ", on = subtitles, icon = R.drawable.ic_subtitles) { toggleSubtitles() })
+        jikkyo.filterNotNull().forEach(::add)
         if (audio.size >= 2) {
             add(Control(audio.getOrNull(selectedAudio)?.label ?: "音声", icon = R.drawable.ic_audio) { nextAudio() })
         }
@@ -54,18 +55,17 @@ class TrackControls(
 }
 
 /**
- * @param rawCaptions denpa から別に受け取る字幕 (Media3 のトラックには出てこない。`rememberRawCaptions`・`rememberCaptionPages`)。選べる字幕があると
- *   言われたら、焼いた映像の字幕と同じ札を出す (入れ切りの設定も同じもの)
+ * @param captions denpa から受け取る字幕 (`rememberRawCaptions`・`rememberCaptionPages`)。選べる字幕があると言われたらボタンを出す
  * @param dualMono デュアルモノの配り直し (`rememberPlayer` の `dualMono`)
- * @param denpaAudios denpa が言う選べる音声 (`DenpaAudio`)。**生の TS のときだけ渡す** — 焼いたものは denpa が先に分けている
- *   (録画は主・副の2本に割って名前を付ける。ライブ・追っかけは選んだ1つだけを焼く。`rememberBakedAudio`) ので、配り直すものが無い
+ * @param denpaAudios denpa が言う選べる音声 (`DenpaAudio`)。**元の TS のときだけ渡す** — エンコードしたものは denpa が先に分けている
+ *   (録画は主・副の2本に割って名前を付ける。ライブ・追っかけは選んだ1つだけをエンコードする。`rememberBakedAudio`) ので、配り直すものが無い
  */
 @Composable
 fun rememberTracks(
     repo: Repository,
     player: ExoPlayer,
     onChange: (String) -> Unit,
-    rawCaptions: CaptionState,
+    captions: CaptionState,
     dualMono: DualMonoProcessor,
     denpaAudios: List<DenpaAudio>,
 ): TrackControls {
@@ -94,7 +94,6 @@ fun rememberTracks(
     // 選んでいる音声がデュアルモノなら覚えている側を両耳へ、そうでなければそのまま
     val mix = choices.getOrNull(selectedAudio)?.side ?: AudioSide.Both
     SideEffect { dualMono.side = mix }
-    val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
 
     fun selectAudio(index: Int) {
         val group = audioGroups.getOrNull(index) ?: return
@@ -103,14 +102,6 @@ fun rememberTracks(
             .build()
     }
 
-    // 字幕の入れ切り。入れるときは、どれも選ばれていなければ最初の字幕を選ぶ (既定の印が無い字幕は選ばれないので)
-    LaunchedEffect(subtitles, textGroups.size) {
-        val builder = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitles)
-        if (subtitles && textGroups.isNotEmpty() && textGroups.none { it.isSelected }) {
-            builder.setOverrideForType(TrackSelectionOverride(textGroups.first().mediaTrackGroup, 0))
-        }
-        player.trackSelectionParameters = builder.build()
-    }
     // 覚えている名前の音声があれば、それにする (並びが変わるたび。選んだものと同じなら何もしない)
     LaunchedEffect(groupTracks, remembered) {
         val index = rememberedAudio(groupTracks, remembered) ?: return@LaunchedEffect
@@ -119,12 +110,12 @@ fun rememberTracks(
 
     return TrackControls(
         subtitles = subtitles,
-        hasText = textGroups.isNotEmpty() || rawCaptions.available,
+        hasText = captions.available,
         audio = choices.map { it.track },
         selectedAudio = selectedAudio,
         toggleSubtitles = {
             scope.launch { repo.app.settings.setSubtitles(!subtitles) }
-            onChange(if (subtitles) "字幕 切" else "字幕 入")
+            onChange(if (subtitles) "字幕 オフ" else "字幕 オン")
         },
         nextAudio = {
             val next = choices[(selectedAudio + 1) % choices.size]
@@ -134,8 +125,8 @@ fun rememberTracks(
             scope.launch {
                 // デュアルモノはどちら側かを覚える (名前は番組で変わるので覚えない)
                 if (next.side != null) repo.app.settings.setDualMonoSide(next.side)
-                // 名前の付いたものだけ覚える。番号だけのもの・デュアルモノの本へ移ったら忘れる (次に別の番組で副音声にならないように)。
-                // 同じデュアルモノの本の中で側を替えただけなら、覚えている名前はそのまま
+                // 名前の付いたものだけ覚える。番号だけのもの・デュアルモノの音声へ移ったら忘れる (次に別の番組で副音声にならないように)。
+                // 同じデュアルモノの音声の中で側を替えただけなら、覚えている名前はそのまま
                 if (next.group != selectedGroup || next.side == null) repo.app.settings.setAudioLabel(track.label.takeIf { track.named })
             }
             onChange("音声 ${track.label}")
@@ -144,20 +135,20 @@ fun rememberTracks(
 }
 
 /**
- * 焼いて流すライブ・追っかけの音声の切り替え。`audio` を denpa に頼む URL に足し (`audioQuery`)、変わったら頼み直す。
- * `ready` になるまで (覚えている側を読み終えるまで) は頼まない — 読む前に頼むと、すぐ頼み直しになる
+ * 変換して流すライブ・追っかけの音声の切り替え。`audio` を denpa にリクエストする URL に足し (`audioQuery`)、変わったらリクエストし直す。
+ * `ready` になるまで (覚えている側を読み終えるまで) はリクエストしない — 読む前にリクエストすると、すぐリクエストし直しになる
  */
 class BakedAudio(val ready: Boolean, val audio: DenpaAudio?, private val choices: List<DenpaAudio>, private val next: () -> Unit) {
-    /** 操作の列に足す札 (選べるものが2つ以上あるときだけ) */
+    /** 操作の列に足すボタン (選べるものが2つ以上あるときだけ) */
     fun controls(): List<Control> =
         if (choices.size < 2) emptyList() else listOf(Control(audio?.label?.takeIf { it.isNotBlank() } ?: "音声", icon = R.drawable.ic_audio) { next() })
 }
 
 /**
- * **焼いたライブ・追っかけで音声を選ぶ** (denpa の `?audio=<id>`)。並びは denpa の `audios` そのまま (ブラウザと同じく
- * デュアルモノは主・副・主+副の3つ)。押すたびに次へ。デュアルモノのどちら側かは生の TS と同じ設定に覚える。
+ * **変換したライブ・追っかけで音声を選ぶ** (denpa の `?audio=<id>`)。並びは denpa の `audios` そのまま (ブラウザと同じく
+ * デュアルモノは主・副・主+副の3つ)。押すたびに次へ。デュアルモノのどちら側かは元の TS と同じ設定に覚える。
  *
- * @param audios denpa が言う選べる音声。**焼くときだけ渡す** (生の TS はアプリが選ぶ。`rememberTracks`)
+ * @param audios denpa が言う選べる音声。**エンコードするときだけ渡す** (元の TS はアプリが選ぶ。`rememberTracks`)
  * @param key 観ているもの (局・録画)。替わったら、この画面で選んだものを忘れる
  */
 @Composable

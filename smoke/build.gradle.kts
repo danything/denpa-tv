@@ -4,7 +4,7 @@
  * **アプリとは別の APK・別のプロセスで動かす** (`com.android.test` の self-instrumenting。Macrobenchmark と同じ作り)。
  * アプリの中で動かす androidTest だと、テストが使うクラス (Kotlin の標準ライブラリ・androidx.tracing) を R8 が消すので
  * アプリに keep を足すことになり、縮め方が release とずれる。外から触れば release と同じ縮め方のまま確かめられ、
- * アプリが落ちてもテストは生き残って落ちた跡 (logcat の crash) を拾える
+ * アプリが落ちてもテストは生き残って落ちた跡 (logcat の crash) を取得できる
  */
 plugins {
     alias(libs.plugins.android.test)

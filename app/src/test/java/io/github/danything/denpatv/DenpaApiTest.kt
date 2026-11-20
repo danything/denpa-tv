@@ -3,6 +3,7 @@ package io.github.danything.denpatv
 import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.DenpaApi
 import io.github.danything.denpatv.data.RecordResult
+import io.github.danything.denpatv.data.parseRecordingState
 import io.github.danything.denpatv.data.unwatched
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -51,7 +52,6 @@ class DenpaApiTest {
         val withNow = api.services(base)
         assertEquals("アニメ", withNow[0].now?.title)
         assertEquals(3L, withNow[0].now?.remainingMinutes(1000))
-        assertEquals(0.5f, withNow[0].now!!.progress(91_000))
         assertNull(withNow[1].now)
         assertEquals(754_000L, api.recordings(base).single().resumeMs)
     }
@@ -78,7 +78,7 @@ class DenpaApiTest {
         assertEquals(RecordResult.Failed("この番組は放送が終わっています"), api.recordNow(base, 1))
         // 通ったのに答えが読めない (版のずれ)。予約できたとは言わない
         denpa.enqueue("<html></html>")
-        assertEquals(RecordResult.Failed("denpa の答えを読めません (200)"), api.recordNow(base, 1))
+        assertEquals(RecordResult.Failed("denpa の応答を読めません (200)"), api.recordNow(base, 1))
     }
 
     /** 局の now に録画の印。無ければ false */
@@ -96,8 +96,7 @@ class DenpaApiTest {
     }
 
     /**
-     * 未視聴は `watchedAt` も `resumeMs` も null のもの。`watchedAt` を送らない古い denpa (v1.45.0 より前) では分からないので、
-     * 印を付けない。形が違っても一覧は読む
+     * 未視聴は `watchedAt` も `resumeMs` も null のもの。形式が違っても一覧は読む
      */
     @Test
     fun 未視聴を見分ける() = runTest {
@@ -105,22 +104,21 @@ class DenpaApiTest {
             """[{"id":1,"title":"a","startAt":1,"watchedAt":null,"resumeMs":null},
                {"id":2,"title":"b","startAt":1,"watchedAt":null,"resumeMs":754000},
                {"id":3,"title":"c","startAt":1,"watchedAt":1790000000000,"resumeMs":null},
-               {"id":4,"title":"d","startAt":1,"resumeMs":null},
                {"id":5,"title":"e","startAt":1,"watchedAt":"2026-10-07"}]""",
         )
         val recordings = api.recordings(BaseUrl.normalize(denpa.url())!!)
-        assertEquals(listOf(true, false, false, false, false), recordings.map { it.unwatched })
+        assertEquals(listOf(true, false, false, false), recordings.map { it.unwatched })
     }
 
-    /** 観た位置は秒で預ける (denpa の POST api/recordings/<id>/resume は {at, length} を秒で受ける) */
+    /** 観た位置は秒で預ける (denpa の POST api/recordings/<id>/resume は {at, length} を秒で受ける)。観ているファイル (`source`) も添える */
     @Test
     fun 観た位置を秒で預ける() = runTest {
         denpa.enqueue("{}")
-        api.saveResume(BaseUrl.normalize(denpa.url())!!, 12, 754.5, 1800.0)
+        api.saveResume(BaseUrl.normalize(denpa.url())!!, 12, 754.5, 1800.0, "ts")
         val request = denpa.requests.take()
         assertEquals("POST", request.method)
         assertEquals("/api/recordings/12/resume", request.target)
-        assertEquals("""{"at":754.5,"length":1800.0}""", request.body)
+        assertEquals("""{"at":754.5,"length":1800.0,"source":"ts"}""", request.body)
     }
 
     /**
@@ -152,7 +150,7 @@ class DenpaApiTest {
         assertNull(api.health(BaseUrl.normalize("http://127.0.0.1:1")!!))
     }
 
-    /** 番組の中身は別の口。無い (404) なら null で、画面は出さないだけ */
+    /** 番組の中身は別のエンドポイント。無い (404) なら null で、画面は出さないだけ */
     @Test
     fun 番組の中身を読み_無ければ_null() = runTest {
         val base = BaseUrl.normalize(denpa.url())!!
@@ -163,5 +161,35 @@ class DenpaApiTest {
         assertEquals("/api/recordings/12/detail", denpa.requests.take().target)
         denpa.enqueue("", code = 404)
         assertEquals(null, api.recordingDetail(base, 13))
+    }
+
+    /** 録画の状態 (`GET api/recordings/<id>`)。録り終えたら finished。録画中は finished でなく、無い (404) は null */
+    @Test
+    fun 録り終えたかを聞く() = runTest {
+        val base = BaseUrl.normalize(denpa.url())!!
+        denpa.enqueue("""{"id":12,"encoded":true,"state":"available"}""")
+        assertTrue(api.recordingState(base, 12)!!.finished)
+        assertEquals("/api/recordings/12", denpa.requests.take().target)
+        denpa.enqueue("""{"id":12,"encoded":false,"state":"recording"}""")
+        assertFalse(api.recordingState(base, 12)!!.finished)
+        denpa.enqueue("", code = 404)
+        assertNull(api.recordingState(base, 12))
+    }
+
+    @Test
+    fun 録画の状態を読む() {
+        val warnings = mutableListOf<String>()
+        assertTrue(parseRecordingState("""{"id":12,"encoded":true,"state":"available"}""", warnings::add)?.finished == true)
+        // 録り終えてエンコードを待っている
+        assertTrue(parseRecordingState("""{"id":12,"encoded":false,"state":"recorded"}""", warnings::add)?.finished == true)
+        assertFalse(parseRecordingState("""{"id":12,"encoded":false,"state":"recording"}""", warnings::add)?.finished == true)
+        assertFalse(parseRecordingState("""{"id":12,"encoded":false,"state":"failed"}""", warnings::add)?.finished == true)
+        // encoded は見ない (録り終えたかは state だけで決める)
+        assertFalse(parseRecordingState("""{"id":12,"encoded":true,"state":"recording"}""", warnings::add)?.finished == true)
+        assertTrue(warnings.isEmpty())
+        // 形式が違う (版のずれ): 言うだけで、終わっていないとみなす
+        assertFalse(parseRecordingState("""{"encoded":true}""", warnings::add)?.finished == true)
+        assertFalse(parseRecordingState("<html></html>", warnings::add)?.finished == true)
+        assertEquals(2, warnings.size)
     }
 }

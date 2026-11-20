@@ -11,7 +11,7 @@ import java.io.IOException
 
 /** 登録を待つ手順 (RFC 8628 §3.5)。時計は止めて、待った時間だけ進める */
 class DeviceFlowTest {
-    private val code = DeviceCode("dc", "ABCD-EFGH", "device", "device?code=ABCD-EFGH", expiresIn = 600, interval = 5)
+    private val code = DeviceCode("dc", "device?code=ABCD-EFGH", expiresIn = 600, interval = 5)
 
     private suspend fun run(vararg answers: Any): Pair<PairingOutcome, List<Long>> {
         var clock = 0L
@@ -46,8 +46,7 @@ class DeviceFlowTest {
     }
 
     @Test
-    fun 断られた_期限切れ_そのほかの誤り() = runTest {
-        assertEquals(PairingOutcome.Denied, run("access_denied").first)
+    fun 期限切れ_そのほかの誤り() = runTest {
         assertEquals(PairingOutcome.Expired, run("expired_token").first)
         assertEquals(PairingOutcome.Failed("invalid_grant"), run("invalid_grant").first)
     }

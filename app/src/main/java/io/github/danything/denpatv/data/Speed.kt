@@ -26,6 +26,13 @@ fun resyncAfterSpeedChange(from: Float, to: Float, playing: Boolean): Boolean = 
 /** 覚えていた値を段にそろえる。段に無ければ等速 */
 fun knownSpeed(saved: Float?): Float = saved?.takeIf { it in SPEEDS } ?: 1f
 
-/** 画面に出す形 (1.25×) */
-fun speedLabel(speed: Float): String =
-    (if (speed == speed.toInt().toFloat()) speed.toInt().toString() else speed.toString()) + "×"
+/** 数字だけの書き方 (1.25、2)。速さのボタンは、速めている間これだけを出す (`speedControl`。等速は数字を出さずメーターの印だけ) */
+fun speedNumber(speed: Float): String =
+    if (speed == speed.toInt().toFloat()) speed.toInt().toString() else speed.toString()
+
+/** 通知・タイトルに出す書き方 (×1.25)。ボタンの外では何の数か分からないので × を付ける (等速も「×1」) */
+fun speedLabel(speed: Float): String = "×" + speedNumber(speed)
+
+/** 速さのボタンの読み上げの名前。等速は名前だけ (ボタンは印だけ)、速めているときは速さも読む (「再生の速さ 1.25倍」) */
+fun speedDescription(speed: Float): String =
+    if (speed == 1f) "再生の速さ" else "再生の速さ ${speedNumber(speed)}倍"

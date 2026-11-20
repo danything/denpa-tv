@@ -55,16 +55,18 @@ private enum class Destination(val label: String, val icon: Int) {
     // いちばん使う録画を上に (開いたときもここ)
     Recordings("録画", R.drawable.ic_recordings),
     Live("ライブ", R.drawable.ic_live),
+    Guide("番組表", R.drawable.ic_guide),
     Settings("設定", R.drawable.ic_settings),
 }
 
 /**
- * いちばん上の画面。**左に Compose for TV のナビゲーション ドロワー** (畳むとアイコンだけの帯、
- * 左キーで開く) を置き、録画・ライブ・設定へ行く。
+ * いちばん上の画面。**左に Compose for TV のナビゲーション ドロワー** (畳むとアイコンだけの細い列、
+ * 左キーで開く) を置き、録画・ライブ・番組表・設定へ行く。
  *
  * Android TV のデザインの指針は、行き先を 5〜6 までのドロワーにまとめるよう勧めている。
  * 局も録画も数が多いので、1つの画面に列で並べるより、それぞれの画面に分ける。
- * ライブは押すとすぐ全画面で映す (最後に観ていた局)。録画と設定はドロワーの右に出す
+ * ライブは押すとすぐ全画面で映す (最後に観ていた局)。録画・番組表・設定はドロワーの右に出す。
+ * 番組表から観に行って戻ったとき・ライブの「番組表」・番組表のリンク (どれも `Repository.guideReturn`) は、番組表を出して番組表がフォーカスを取る
  */
 @Composable
 fun MainScreen(
@@ -72,29 +74,36 @@ fun MainScreen(
     onLive: () -> Unit,
     onWatch: (Recording, Boolean) -> Unit,
     onUnauthorized: () -> Unit,
+    onLicenses: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf(Destination.Recordings) }
+    // 番組表から観に行って戻った・ライブの「番組表」・番組表のリンクなら、番組表を出す (この画面を作ったときに1回だけ見る)
+    val toGuide = remember { BooleanArray(1).also { it[0] = repo.guideReturn != null } }
+    if (toGuide[0]) {
+        toGuide[0] = false
+        selected = Destination.Guide
+    }
     val items = remember { Destination.entries.associateWith { FocusRequester() } }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val focusManager = LocalFocusManager.current
-    /** 「ライブ」に合っているか (ライブから戻ったときに合わせ直す) */
+    /** 「ライブ」にフォーカスがあるか (ライブから戻ったときにフォーカスし直す) */
     var liveFocused by remember { mutableStateOf(false) }
 
-    /** 最後に左キーを押したとき (左キーで開いたのか、戻ってきて合いが仮にメニューへ落ちたのかを分ける) */
+    /** 最後に左キーを押したとき (左キーで開いたのか、戻ってきてフォーカスが仮にメニューへ落ちたのかを分ける) */
     var leftAt by remember { mutableLongStateOf(0L) }
-    // 左キーで開いたら、いま出している行き先に合わせる (近いものに合うので、録画の2列目から開くとライブに合ってしまう)。
-    // 観て戻ってきたときは、右の画面 (録画の一覧なら開いた録画) が合いを取るので、ここでは取らない。
+    // 左キーで開いたら、いま出している行き先にフォーカスする (近いものにフォーカスが移るので、録画の2列目から開くとライブに移ってしまう)。
+    // 観て戻ってきたときは、右の画面 (録画の一覧なら開いた録画) がフォーカスを取るので、ここでは取らない。
     // 取るとメニューが開いたままになる
     LaunchedEffect(drawer.currentValue) {
         val byKey = System.nanoTime() - leftAt < 1_000_000_000L
         if (drawer.currentValue == DrawerValue.Open && byKey) runCatching { items.getValue(selected).requestFocus() }
     }
     /*
-     * **ライブから戻ったら、左のメニューの「ライブ」に合わせる** (戻るでいちばん上のメニューへ)。右の画面 (録画の一覧) も
-     * 戻ってきたときに合いを取りにいくので、そちらには取らせない (`takeFocus`)。合うまで何こまか試す —
-     * 合わせ損ねると、どこにも合わずにリモコンが効かなくなる
+     * **ライブから戻ったら、左のメニューの「ライブ」にフォーカスする** (戻るでいちばん上のメニューへ)。右の画面 (録画の一覧) も
+     * 戻ってきたときにフォーカスを取りにいくので、そちらには取らせない (`takeFocus`)。フォーカスが移るまで何フレームか試す —
+     * フォーカスし損ねると、どこにもフォーカスが無くなってリモコンが効かなくなる
      */
-    var toMenu by remember { mutableStateOf(repo.menuOnReturn.also { repo.menuOnReturn = false }) }
+    var toMenu by remember { mutableStateOf((repo.menuOnReturn && repo.guideReturn == null).also { repo.menuOnReturn = false }) }
     LaunchedEffect(Unit) {
         if (!toMenu) return@LaunchedEffect
         val live = items.getValue(Destination.Live)
@@ -103,7 +112,7 @@ fun MainScreen(
             if (runCatching { live.requestFocus() }.getOrDefault(false) && liveFocused) break
             delay(MENU_FOCUS_WAIT_MS)
         }
-        // 合わせ終えたら (合わせ損ねても) 元どおり。このあと録画の一覧を開き直したときは、一覧がカードに合わせる
+        // フォーカスし終えたら (し損ねても) 元どおり。このあと録画の一覧を開き直したときは、一覧がカードにフォーカスする
         toMenu = false
     }
     // メニューが開いているときの戻るは、右の画面へ戻す (右キーと同じ)。何もしないと戻るが効かないように見える
@@ -122,7 +131,8 @@ fun MainScreen(
                     .fillMaxHeight()
                     // 開いたら右の画面の上に重なるので、左から地の色で覆って字を読めるように
                     .then(if (open) Modifier.background(DRAWER_SCRIM) else Modifier)
-                    .padding(horizontal = RAIL_PADDING, vertical = 12.dp),
+                    // 左はテレビの縁で切れない所 (オーバースキャンの安全域) まで空ける
+                    .padding(start = SAFE_HORIZONTAL, end = RAIL_PADDING, top = SAFE_VERTICAL, bottom = SAFE_VERTICAL),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Brand(open)
@@ -144,21 +154,27 @@ fun MainScreen(
             }
         },
     ) {
-        // 観て戻ったら右の画面が合いを取る (録画の一覧なら開いた録画、設定なら頭のボタン)
+        // 観て戻ったら右の画面がフォーカスを取る (録画の一覧なら開いた録画、設定なら頭のボタン)
         when (selected) {
-            Destination.Settings -> SettingsScreen(repo)
-            else -> RecordingsScreen(repo, onWatch, onUnauthorized, takeFocus = !toMenu)
+            Destination.Settings -> SettingsScreen(repo, onLicenses)
+            Destination.Guide -> GuideScreen(
+                repo,
+                onLive = onLive,
+                onWatch = { id -> repo.recordings.firstOrNull { it.id == id }?.let { onWatch(it, false) } },
+                onUnauthorized = onUnauthorized,
+            )
+            else -> RecordingsScreen(repo, onWatch, onUnauthorized, onLive = onLive, takeFocus = !toMenu)
         }
     }
 }
 
-/** ライブから戻ったとき「ライブ」に合わせるのを試す回数と間 (ミリ秒)。画面の入れ替えが終わるまで */
+/** ライブから戻ったとき「ライブ」にフォーカスするのを試す回数と間 (ミリ秒)。画面の入れ替えが終わるまで */
 private const val MENU_FOCUS_TRIES = 20
 private const val MENU_FOCUS_WAIT_MS = 50L
 
 /**
  * メニューの頭の印。**denpa の電波塔を azure で**、開いているときは名前も (アプリのアイコン・バナーと同じ)。
- * 合わせるものではない (左のメニューの行き先だけを上下で辿る)
+ * フォーカスするものではない (左のメニューの行き先だけを上下で辿る)
  */
 @Composable
 private fun Brand(open: Boolean) {
@@ -173,8 +189,8 @@ private fun Brand(open: Boolean) {
 }
 
 /**
- * 行き先の札。**畳んだときは印だけの小さな丸** (YouTube の Android TV と同じく細い帯にして、右の画面に幅を回す)、
- * 開くと名前も出して横に伸びる。選んでいるものは azure で塗り、合わせたものは白 (札と同じ縁と光)
+ * 行き先のボタン。**畳んだときは印だけの小さな丸** (YouTube の Android TV と同じく細い列にして、右の画面に幅を回す)、
+ * 開くと名前も出して横に伸びる。選んでいるものは azure で塗り、フォーカスしたものは白 (ボタンと同じ縁と光)
  */
 @Composable
 private fun RailItem(destination: Destination, selected: Boolean, open: Boolean, onClick: () -> Unit, modifier: Modifier) {
@@ -214,7 +230,7 @@ private fun RailItem(destination: Destination, selected: Boolean, open: Boolean,
     }
 }
 
-/** 畳んだ帯の左右の余白と、札 (畳んだときは丸) の大きさ・開いたときの幅、印の大きさ。畳んだ帯は 56dp */
+/** 畳んだ列の右の余白と、ボタン (畳んだときは丸) の大きさ・開いたときの幅、印の大きさ。畳んだ列は 96dp (左は安全域の 48dp) */
 private val RAIL_PADDING = 8.dp
 private val RAIL_ITEM = 40.dp
 private val RAIL_ITEM_OPEN = 200.dp

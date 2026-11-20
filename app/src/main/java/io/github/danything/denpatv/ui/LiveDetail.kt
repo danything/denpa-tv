@@ -16,13 +16,15 @@ import io.github.danything.denpatv.data.programMeta
 import kotlinx.coroutines.delay
 
 /**
- * ライブの詳しく (決定の長押し・情報キー)。**いま映している局で放送中の番組**を、録画の詳しくと同じもの
- * (`ProgramDetailDialog`) で出す。番組名・局・時間と進み・残り・札 (ジャンル・映像・音声)・説明・放送の詳細。
+ * ライブの詳細 (決定の長押し・情報キー)。**いま映している局で放送中の番組**を、録画の詳細と同じもの
+ * (`ProgramDetailDialog`) で出す。番組名・局・時間と進み・残り・ラベル (ジャンル・映像・音声)・説明・放送の詳細。
  *
  * - 中身は denpa の `api/programs/<局の now.id>` から開いたときに取る。取れるまでと、取れないとき (番組表から消えた・
  *   届かない) は `now` のぶん (番組名・時間) だけ
- * - 札は **「録画」(録っている・録る予定なら「録画中」「録画予約済み」) → 「閉じる」**。録画はメニューの「録画」と同じ口
- *   (`POST api/services/<id>/record`)。結果は札の下に1行
+ * - ボタンは **「録画」→「番組表」→「閉じる」**。録画はメニューの「録画」と同じ API (`POST api/services/<id>/record`)。結果はボタンの下に1行。
+ *   **録っている・録る予定なら「録画」のボタンは出さない** (押しても何も変わらない)。そのことはボタンの列の上の印 (「● 録画中」「予約済み」) で分かるので、
+ *   ボタンは「番組表」と「閉じる」だけにして、開いたときは「閉じる」にフォーカスする
+ * - 「番組表」は、いま映している局と時刻にフォーカスして番組表を開く (この番組の次に何があるかを見る・予約する)
  * - 番組が替わったら (局を取り直して `now` が替わる) 新しい番組を取り直す。映像はそのまま流れる
  */
 @Composable
@@ -30,6 +32,8 @@ fun LiveDetailDialog(
     repo: Repository,
     service: Service,
     onRecord: () -> Unit,
+    /** 番組表を開く */
+    onGuide: () -> Unit,
     /** 録画を押した結果の1行 */
     note: String?,
     onClose: () -> Unit,
@@ -54,21 +58,31 @@ fun LiveDetailDialog(
             clock = System.currentTimeMillis()
         }
     }
-    val actions = listOf(
-        DetailAction(recordLabel(now), onRecord),
-        DetailAction("閉じる", onClose),
+    val booked = now?.recording == true || now?.reserved == true
+    val actions = listOfNotNull(
+        DetailAction(RECORD, primary = true, onClick = onRecord).takeUnless { booked },
+        DetailAction(GUIDE, onClick = onGuide),
+        DetailAction(CLOSE, initial = booked, onClick = onClose),
     )
     ProgramDetailDialog(liveFacts(service, info, clock).copy(logo = repo.url(service.logo)), actions, onClose, note, overVideo = true, token = repo.token)
 }
 
-/** 録画の札の名前 (メニューの「録画」の札と同じ) */
+/**
+ * ライブのメニューの録画のボタンの名前。録っている・録る予定ならそう出す。**呼び方は局の列のカードの印・詳細の印と同じ** (「録画中」「予約済み」)
+ */
 internal fun recordLabel(now: NowProgram?): String = when {
     now?.recording == true -> "録画中"
-    now?.reserved == true -> "録画予約済み"
-    else -> "録画"
+    now?.reserved == true -> RESERVED
+    else -> RECORD
 }
 
-/** ライブの詳しくの中身。`info` (番組表の中身) が無ければ `now` のぶんだけ */
+private const val RECORD = "録画"
+private const val GUIDE = "番組表"
+
+/** 録る予定の印 (局の列のカード・ライブの詳細・メニューの録画のボタンで同じ呼び方) */
+internal const val RESERVED = "予約済み"
+
+/** ライブの詳細の中身。`info` (番組表の中身) が無ければ `now` のぶんだけ */
 internal fun liveFacts(service: Service, info: ProgramInfo?, at: Long): DetailFacts {
     val now = service.now
         ?: return DetailFacts(title = service.name, meta = "番組表にいまの番組がありません")
@@ -76,10 +90,11 @@ internal fun liveFacts(service: Service, info: ProgramInfo?, at: Long): DetailFa
     return DetailFacts(
         title = title,
         meta = programMeta(service.name, now.startAt, now.endAt),
+        service = service.name,
         chips = info?.chips.orEmpty(),
         badge = when {
-            now.recording -> "● 録画中"
-            now.reserved -> "録画予約済み"
+            now.recording -> RECORDING_BADGE
+            now.reserved -> RESERVED
             else -> null
         },
         progress = (at - now.startAt).coerceAtLeast(0) to (now.endAt - now.startAt),
@@ -89,5 +104,5 @@ internal fun liveFacts(service: Service, info: ProgramInfo?, at: Long): DetailFa
     )
 }
 
-/** 詳しくの進みを進める間 (ミリ秒) */
+/** 詳細の進みを進める間 (ミリ秒) */
 private const val PROGRESS_TICK_MS = 15_000L

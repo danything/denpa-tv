@@ -17,11 +17,11 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 data class Connection(val server: String, val token: String?)
 
 /**
- * 覚えておくもの: 繋ぐ先 (とトークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・音声 (名前とデュアルモノの側)・
+ * 覚えておくもの: 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・実況 (流すか・一覧を出すか)・音声 (名前とデュアルモノの側)・
  * アップデートを確かめた時刻と、押して許可の画面へ送った版。
  *
- * **トークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
- * 2025 年に全部非推奨になった。アプリの領域は他のアプリから読めず、トークンは denpa の画面からいつでも外せる
+ * **アクセストークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
+ * 2025 年に全部非推奨になった。アプリの領域は他のアプリから読めず、アクセストークンは denpa の画面からいつでも外せる
  * (docs/libraries.md)
  */
 class Settings(private val context: Context) {
@@ -33,6 +33,8 @@ class Settings(private val context: Context) {
     private val lastServiceKey = longPreferencesKey("last_service")
     private val speedKey = floatPreferencesKey("playback_speed")
     private val subtitlesKey = booleanPreferencesKey("subtitles")
+    private val jikkyoKey = booleanPreferencesKey("jikkyo")
+    private val jikkyoListKey = booleanPreferencesKey("jikkyo_list")
     private val audioKey = stringPreferencesKey("audio_label")
     private val dualMonoKey = stringPreferencesKey("dual_mono_side")
     private val updateCheckedKey = longPreferencesKey("update_checked_at")
@@ -48,7 +50,7 @@ class Settings(private val context: Context) {
     /** 前に繋いでいた先 (外れたあと、繋ぐ画面に最初から入れておく) */
     val lastServer: Flow<String?> = context.dataStore.data.map { it[lastServerKey] ?: it[serverKey] }
 
-    /** `LiveQuality` の名前。未設定なら null (端末に合わせて選ぶ) */
+    /** `LiveQuality` の名前。未設定なら null (「自動」。denpa に選ばせる) */
     val liveQuality: Flow<String?> = context.dataStore.data.map { it[liveQualityKey] }
 
     /** 既定で飛ばす (denpa が CM の区切りをチャプターに書いた録画だけ効く) */
@@ -62,7 +64,7 @@ class Settings(private val context: Context) {
         }
     }
 
-    /** 繋ぐ先を忘れる (外したとき・トークンが効かなくなったとき)。繋ぐ画面に戻る */
+    /** 繋ぐ先を忘れる (外したとき・アクセストークンが効かなくなったとき)。繋ぐ画面に戻る */
     suspend fun disconnect() {
         context.dataStore.edit {
             it.remove(serverKey)
@@ -87,15 +89,33 @@ class Settings(private val context: Context) {
         context.dataStore.edit { it[lastServiceKey] = id }
     }
 
-    suspend fun setLiveQuality(quality: LiveQuality) {
-        context.dataStore.edit { it[liveQualityKey] = quality.name }
+    /** ライブの画質のメニューで選んだもの。null (「自動」) なら消す (自動で決まった画質は覚えない。開いた場所で変わる) */
+    suspend fun setLiveQuality(quality: LiveQuality?) {
+        context.dataStore.edit { if (quality == null) it.remove(liveQualityKey) else it[liveQualityKey] = quality.name }
     }
 
-    /** 字幕を出すか (焼いた録画の PGS など)。既定は出す。端末ごと (ブラウザの再生と同じく観ながら変える) */
+    /** 字幕を出すか。既定は出す。端末ごと (ブラウザの再生と同じく観ながら変える) */
     val subtitles: Flow<Boolean> = context.dataStore.data.map { it[subtitlesKey] ?: true }
 
     suspend fun setSubtitles(on: Boolean) {
         context.dataStore.edit { it[subtitlesKey] = on }
+    }
+
+    /**
+     * 実況のコメントを流すか。既定は流さない。端末ごと (ブラウザの denpa の「実況」と同じく観ながら変える。設定の画面には置かない)。
+     * 出すのは世帯の設定 (denpa の連携の「実況」) がオンのときだけ
+     */
+    val jikkyo: Flow<Boolean> = context.dataStore.data.map { it[jikkyoKey] ?: false }
+
+    suspend fun setJikkyo(on: Boolean) {
+        context.dataStore.edit { it[jikkyoKey] = on }
+    }
+
+    /** 実況のコメントの一覧を右に出すか。既定は出さない。端末ごと */
+    val jikkyoList: Flow<Boolean> = context.dataStore.data.map { it[jikkyoListKey] ?: false }
+
+    suspend fun setJikkyoList(on: Boolean) {
+        context.dataStore.edit { it[jikkyoListKey] = on }
     }
 
     /** 最後に選んだ音声の名前 (「解説ステレオ」など)。同じ名前の音声があればそれで始める */
@@ -106,7 +126,7 @@ class Settings(private val context: Context) {
     }
 
     /**
-     * デュアルモノで最後に選んだ側 (主音声・副音声・主+副)。**既定は主音声** (ブラウザの denpa が何も頼まれないとき
+     * デュアルモノで最後に選んだ側 (主音声・副音声・主+副)。**既定は主音声** (ブラウザの denpa が何もリクエストされないとき
      * 主音声を選ぶのと同じ)。次のデュアルモノの番組もこれで始める
      */
     val dualMonoSide: Flow<AudioSide> = context.dataStore.data.map { AudioSide.of(it[dualMonoKey]) ?: AudioSide.Main }

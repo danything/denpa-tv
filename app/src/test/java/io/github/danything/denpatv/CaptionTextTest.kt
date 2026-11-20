@@ -55,7 +55,7 @@ class CaptionTextTest {
         assertTrue(ruby.underline && ruby.flash)
         assertEquals(5, ruby.box)
         assertTrue(page.flashes)
-        // 外字の絵 (#..# / .##.)
+        // 外字の画像 (#..# / .##.)
         assertArrayEquals(
             byteArrayOf(-1, 0, 0, -1, 0, -1, -1, 0),
             page.drcs.getValue("65569").alpha,
@@ -106,7 +106,7 @@ class CaptionTextTest {
     }
 
     @Test
-    fun 外字の絵を濃さに開く() {
+    fun 外字の画像を濃さに開く() {
         // 4 階調 (2 ビット): 0, 1, 2, 3 → 0, 85, 170, 255
         val gray = decodeDrcs(4, 1, 4, 2, "Gw==")!!
         assertArrayEquals(byteArrayOf(0, 85, 170.toByte(), 255.toByte()), gray.alpha)

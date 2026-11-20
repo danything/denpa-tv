@@ -1,0 +1,73 @@
+{
+  "licenses": {
+    "AGPL-3.0": "GNU Affero General Public License v3.0",
+    "Apache-2.0": "Apache License 2.0",
+    "MIT": "MIT License",
+    "OFL-1.1": "SIL Open Font License 1.1"
+  },
+  "components": [
+    {
+      "name": "denpa-tv",
+      "license": "AGPL-3.0",
+      "file": "LICENSE",
+      "source": "https://github.com/danything/denpa-tv"
+    },
+    {
+      "name": "AndroidX (Jetpack Compose・Compose for TV・Media3・Navigation 3・DataStore など)",
+      "license": "Apache-2.0",
+      "file": "Apache-2.0.txt",
+      "groups": ["androidx.*"]
+    },
+    {
+      "name": "Kotlin 標準ライブラリ",
+      "license": "Apache-2.0",
+      "file": "Apache-2.0.txt",
+      "groups": ["org.jetbrains.kotlin"]
+    },
+    {
+      "name": "kotlinx.coroutines・kotlinx.serialization・atomicfu",
+      "license": "Apache-2.0",
+      "file": "Apache-2.0.txt",
+      "groups": ["org.jetbrains.kotlinx"]
+    },
+    {
+      "name": "JetBrains Java Annotations",
+      "license": "Apache-2.0",
+      "file": "Apache-2.0.txt",
+      "groups": ["org.jetbrains"]
+    },
+    {
+      "name": "Guava",
+      "license": "Apache-2.0",
+      "file": "Apache-2.0.txt",
+      "groups": ["com.google.guava"]
+    },
+    {
+      "name": "Okio",
+      "license": "Apache-2.0",
+      "file": "Apache-2.0.txt",
+      "groups": ["com.squareup.okio"]
+    },
+    {
+      "name": "JSpecify",
+      "license": "Apache-2.0",
+      "file": "Apache-2.0.txt",
+      "groups": ["org.jspecify"]
+    },
+    {
+      "name": "Material Symbols・Material Icons (アイコン)",
+      "license": "Apache-2.0",
+      "file": "Apache-2.0.txt"
+    },
+    {
+      "name": "QR Code generator (Project Nayuki)",
+      "license": "MIT",
+      "file": "MIT-qrcodegen.txt"
+    },
+    {
+      "name": "Denpa Font (字幕と放送の字)",
+      "license": "OFL-1.1",
+      "file": "OFL-1.1-denpa-font.txt"
+    }
+  ]
+}

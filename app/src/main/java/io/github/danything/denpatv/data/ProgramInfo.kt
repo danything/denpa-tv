@@ -13,7 +13,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * 番組表の番組の中身 (`GET api/programs/<id>`。ライブの詳しく)。denpa の `ProgramDetail` そのままで、鍵は snake_case。
+ * 番組表の番組の中身 (`GET api/programs/<id>`。ライブの詳細)。denpa の `ProgramDetail` そのままで、鍵は snake_case。
  * 番組表から消えた番組は 404 (呼ぶ側は `now` のぶんだけを出す)
  */
 data class ProgramInfo(
@@ -27,7 +27,7 @@ data class ProgramInfo(
     val videoResolution: String? = null,
     val isFree: Boolean = true,
 ) {
-    /** 札 (ジャンル・映像・音声・有料)。ブラウザの denpa の詳細 (`ProgramFacts`) と同じ並び。同じ札は1つにまとめる */
+    /** ラベル (ジャンル・映像・音声・有料)。ブラウザの denpa の詳細 (`ProgramFacts`) と同じ並び。同じラベルは1つにまとめる */
     val chips: List<String>
         get() = (
             genres.map(::genreLabel) +
@@ -44,7 +44,7 @@ data class Genre(val lv1: Int, val lv2: Int)
 data class ProgramAudio(val componentType: Int, val langs: List<String> = emptyList(), val text: String? = null)
 
 /**
- * `api/programs/<id>` の答えを読む。**形がずれていても読めるところは読む** (denpa を新しくした・古いままのずれ)。
+ * `api/programs/<id>` の答えを読む。**形式がずれていても読めるところは読む** (denpa を新しくした・古いままのずれ)。
  * 型の違う鍵はその鍵だけ捨てて `warn` に言う。オブジェクトでなければ null
  */
 fun parseProgramInfo(text: String, warn: (String) -> Unit): ProgramInfo? {
@@ -65,14 +65,14 @@ fun parseProgramInfo(text: String, warn: (String) -> Unit): ProgramInfo? {
             val genre = item as? JsonObject
             val lv1 = genre?.get("lv1")?.let(::number)?.toInt()
             val lv2 = genre?.get("lv2")?.let(::number)?.toInt()
-            if (lv1 == null) warn("genre_detail の形が違います: $item")
+            if (lv1 == null) warn("genre_detail の形式が違います: $item")
             lv1?.let { Genre(it, lv2 ?: -1) }
         }.orEmpty(),
         audios = read.array("audios")?.mapNotNull { item ->
             val audio = item as? JsonObject
             val type = audio?.get("componentType")?.let(::number)?.toInt()
             if (type == null) {
-                warn("audios の形が違います: $item")
+                warn("audios の形式が違います: $item")
                 return@mapNotNull null
             }
             ProgramAudio(
@@ -93,7 +93,7 @@ private class Fields(private val root: JsonObject, private val warn: (String) ->
 
     private fun <T> typed(key: String, pick: (JsonElement) -> T?): T? {
         val value = field(key) ?: return null
-        return pick(value) ?: run { warn("番組の $key の形が違います (denpa の版のずれ?): $value"); null }
+        return pick(value) ?: run { warn("番組の $key の形式が違います (denpa の版のずれ?): $value"); null }
     }
 
     fun string(key: String) = typed(key) { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
@@ -103,10 +103,10 @@ private class Fields(private val root: JsonObject, private val warn: (String) ->
     fun array(key: String) = typed(key) { it as? JsonArray }
 }
 
-/** 数 (文字の "3" は数とみなさない — 形のずれ) */
+/** 数 (文字の "3" は数とみなさない — 形式のずれ) */
 private fun number(value: JsonElement): Long? = (value as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
 
-/** 番組の口を引いた結果 (`DenpaApi.program`) */
+/** 番組のエンドポイントを引いた結果 (`DenpaApi.program`) */
 sealed interface ProgramLookup {
     data class Found(val info: ProgramInfo) : ProgramLookup
     /** 番組表に無い (終わって消えた)・届かない・読めない。`now` のぶんだけを出す */
@@ -169,7 +169,7 @@ fun videoLabel(resolution: String?, type: String?): String =
     listOfNotNull(resolution, type?.let { VIDEO_TYPE[it] ?: it }).filter { it.isNotEmpty() }.joinToString(" ")
 
 /**
- * 詳しくの1行目の下に出す「局 ・ 10/6(火) 21:00〜21:54 (54分)」。ブラウザの denpa の詳細と同じ並び。
+ * 詳細の1行目の下に出す「局 ・ 10/6(火) 21:00〜21:54 (54分)」。ブラウザの denpa の詳細と同じ並び。
  * 終わりが分からなければ始まりだけ、局が分からなければ日時から
  */
 fun programMeta(serviceName: String?, startAt: Long, endAt: Long?, zone: TimeZone = TimeZone.getDefault()): String {

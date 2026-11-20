@@ -1,8 +1,5 @@
 package io.github.danything.denpatv.data
 
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.abs
 
@@ -40,33 +37,27 @@ data class WatchNextItem(
     val durationMs: Long,
     val positionMs: Long,
     val engagedAt: Long,
-    /** 選ばれたら開くリンク (README の「リンクで開く」) */
+    /** 選ばれたら開くリンク (docs/usage.md の「リンクで開く」) */
     val link: String,
 )
 
 sealed interface WatchNextChange {
     data class Insert(val item: WatchNextItem) : WatchNextChange
-    /** 位置と長さだけ直す (題名・ポスターは変わらない) */
+    /** 位置と長さだけ直す (タイトル・ポスターは変わらない) */
     data class Update(val rowId: Long, val recordingId: Long, val positionMs: Long, val durationMs: Long, val engagedAt: Long) : WatchNextChange
     data class Delete(val rowId: Long, val recordingId: Long) : WatchNextChange
 }
 
-/** 録画の長さ。焼いた長さ、無ければ予定の長さ (録画中)。分からなければ 0 */
+/** 録画の長さ。エンコードした長さ、無ければ予定の長さ (録画中)。分からなければ 0 */
 fun Recording.lengthMs(): Long = durationMs?.takeIf { it > 0 } ?: endAt?.let { it - startAt }?.takeIf { it > 0 } ?: 0L
 
-fun watchNextLink(recordingId: Long) = "denpa://recording/$recordingId"
-
-fun watchNextDescription(recording: Recording, zone: TimeZone = TimeZone.getDefault()): String {
-    val format = SimpleDateFormat("M/d(E) HH:mm", Locale.JAPAN).apply { timeZone = zone }
-    return listOfNotNull(recording.serviceName?.takeIf { it.isNotBlank() }, format.format(Date(recording.startAt)))
-        .joinToString(" ・ ")
-}
+private fun watchNextLink(recordingId: Long) = "denpa://recording/$recordingId"
 
 fun watchNextItem(recording: Recording, positionMs: Long, durationMs: Long, engagedAt: Long, zone: TimeZone = TimeZone.getDefault()) =
     WatchNextItem(
         recordingId = recording.id,
         title = recording.title,
-        description = watchNextDescription(recording, zone),
+        description = programMeta(recording.serviceName, recording.startAt, null, zone),
         durationMs = durationMs,
         positionMs = positionMs,
         engagedAt = engagedAt,
@@ -103,7 +94,7 @@ fun onStopped(
 }
 
 /** これより小さい位置のずれは直さない (預けるのは 15 秒おき・秒の小数で、行の位置と少し食い違う) */
-const val WATCH_NEXT_POSITION_SLACK_MS = 5_000L
+private const val WATCH_NEXT_POSITION_SLACK_MS = 5_000L
 
 /**
  * 録画の一覧 (全部) を読み直した。消えた録画と続きの無い録画の行を消し、続きの位置が違えば直す。

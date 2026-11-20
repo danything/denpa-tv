@@ -13,7 +13,7 @@ import io.nayuki.qrcodegen.QrCode
 
 /**
  * QR コードを描く。符号化は Project Nayuki の QR Code generator (MIT、`io.nayuki.qrcodegen` に同梱。
- * docs/libraries.md)。白地に黒、周りに 4 マスの余白 (読み取りに要る静かな帯)
+ * docs/libraries.md)。白地に黒、周りに 4 マスの余白 (読み取りに要るクワイエットゾーン)
  */
 @Composable
 fun QrCodeView(text: String, size: Dp, modifier: Modifier = Modifier) {

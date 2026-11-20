@@ -1,0 +1,40 @@
+# 開発
+
+- JDK 17 以上 (CI は 25)、Android SDK (compileSdk 37)
+- `./gradlew assembleDebug` / `./gradlew testDebugUnitTest` / `./gradlew lintDebug`
+- 縮めた APK をエミュレータ (か繋いだテレビ) で動かす: `./gradlew :smoke:connectedMinifiedAndroidTest`
+  (`smoke/`。偽の denpa を立ててライブと録画を映し、落ちないか・映像が出るかを見る。CI は APK を1度だけビルドし、
+  API 24・28・31・34・36 の Android TV のエミュレータに `scripts/smoke-run.sh` で入れて走らせる)。
+  端末が何台も繋がっているときは `ANDROID_SERIAL` で1台に絞る
+- 使っているライブラリと選んだ理由は [libraries.md](libraries.md)、リリースの出し方 (署名の鍵) は [release.md](release.md)
+- 要る denpa のバージョンを上げるときは、[README](../README.md#denpa-に繋ぐ)・[pairing.md](pairing.md#要る-denpa-のバージョン) と `MIN_DENPA` (`data/DenpaVersion.kt`) をいっしょに直す。
+  古い denpa に合わせた作りは持たない
+
+## スクリーンショット
+
+`docs/images/` の画像は全部、CI の Screenshots ワークフロー (`.github/workflows/screenshots.yml`) で撮ります。smoke/ の `Screenshots` が
+Android TV のエミュレータ (API 36、1080p) で、作り物の局・番組・録画・説明 (`Showcase`) を返す偽の denpa に繋ぎ、
+繋ぐ画面 → 録画の一覧・詳細 → ライブ (局の切り替え・選局の間・メニュー・局の列・詳細) → 番組表 (表・詳細・競合した予約) → 設定 → 録画の再生 (字幕・操作の列・詳細・最後まで) → 追っかけ → 実況とコメントの一覧 (作り物の過去ログ `FakeJikkyo`) → ライブのメニューの「実況」の列 (作り物の勢い)
+の順に撮って、1280 幅の webp にします。README の頭のアニメーション (`navigation.webp`) は、途中で撮ったコマを繋いだものです。
+番組名・人名・説明は作り物で、ポスターと映像はぼかした場面に見えるように描いたもの、局ロゴは番号を書いただけの画像です
+(観た割合のバー・録画中・予約済み・競合・エンコード中・勢いも、偽の denpa がそう返しているだけ)。局名だけは実在の名前です。
+
+撮り直すとき:
+
+1. Actions の Screenshots を手で走らせる (`gh workflow run screenshots.yml --ref <ブランチ>`)
+2. 終わったら artifact (`shots`) を取ってきて (`gh run download <run id> -n shots`)、`docs/images/` にあるのと同じ名前の webp を上書きする
+3. 画像が変わったら、README・usage.md の alt も合わせる
+
+ライブの字幕は撮っていません (偽の denpa がライブの字幕を返さない)。字幕は録画の再生の画像に出ています。
+
+## 実況の取得先を偽物にする
+
+実況のコメントの取得先 (NX-Jikkyo の WebSocket・過去ログ API) は、**縮めた APK (minified) だけ** ビルドのときに差し替えられます
+(`DENPA_TV_JIKKYO_NX`・`DENPA_TV_JIKKYO_KAKOLOG`。release は差し替えない)。smoke は偽の過去ログ API (`FakeJikkyo`) を `127.0.0.1:18080` に立てるので、
+手元で smoke を走らせるときは CI と同じく
+
+```sh
+DENPA_TV_JIKKYO_NX=ws://127.0.0.1:18080 DENPA_TV_JIKKYO_KAKOLOG=http://127.0.0.1:18080 ./gradlew :smoke:connectedMinifiedAndroidTest
+```
+
+でビルドします (付けないと本物の過去ログ API を訊き、`recordingJikkyo` が落ちる)。

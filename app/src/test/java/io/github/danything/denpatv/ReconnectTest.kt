@@ -1,8 +1,8 @@
 package io.github.danything.denpatv
 
 import androidx.media3.common.PlaybackException
-import io.github.danything.denpatv.data.Chase
 import io.github.danything.denpatv.data.ChaseEnd
+import io.github.danything.denpatv.data.FirstFrameWatch
 import io.github.danything.denpatv.data.Reconnect
 import io.github.danything.denpatv.data.Reconnect.Verdict
 import io.github.danything.denpatv.data.StallWatch
@@ -23,6 +23,16 @@ class ReconnectTest {
     }
 
     @Test
+    fun ライブの作り直しは30秒以内に続いたら待ちを伸ばす() {
+        // 初めて・間が空いていれば 1 秒
+        assertEquals(0, Reconnect.restartAttempts(null, 0))
+        assertEquals(0, Reconnect.restartAttempts(30_000, 3))
+        // 続けて来たら前の次 (2・4 秒…)
+        assertEquals(1, Reconnect.restartAttempts(5_000, 0))
+        assertEquals(2, Reconnect.restartAttempts(29_999, 1))
+    }
+
+    @Test
     fun 失敗の見分け() {
         val badStatus = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
         assertEquals(Verdict.Unauthorized, Reconnect.verdict(badStatus, 401))
@@ -40,7 +50,7 @@ class ReconnectTest {
         assertEquals(Verdict.Retry, Reconnect.verdict(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT, null))
         assertEquals(Verdict.Retry, Reconnect.verdict(PlaybackException.ERROR_CODE_IO_UNSPECIFIED, null))
         assertEquals(Verdict.Retry, Reconnect.verdict(PlaybackException.ERROR_CODE_TIMEOUT, null))
-        // 中身が読めない (途中で切れた fMP4 もここ)・解けないは何度か
+        // 中身が読めない (途中で切れた fMP4 もここ)・デコードできないは何度か
         assertEquals(Verdict.RetryFew, Reconnect.verdict(PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, null))
         assertEquals(Verdict.RetryFew, Reconnect.verdict(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, null))
         assertEquals(Verdict.RetryFew, Reconnect.verdict(PlaybackException.ERROR_CODE_UNSPECIFIED, null))
@@ -50,6 +60,50 @@ class ReconnectTest {
         assertEquals(Verdict.GiveUp, Reconnect.verdict(PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED, null))
     }
 
+    /** 溜まりはじめてから 15 秒たっても最初のフレームが出なければ、端末で再生できないとみなす (リクエストごとに1度だけ) */
+    @Test
+    fun 溜まってから最初のフレームが来なければ形式を外す() {
+        val watch = FirstFrameWatch()
+        // 届いて 1 秒ぶん溜まったときから数える
+        assertFalse(watch.check(0, request = 1, watching = true, bufferedAheadMs = 1_000))
+        assertFalse(watch.check(14_999, request = 1, watching = true, bufferedAheadMs = 8_000))
+        assertTrue(watch.check(15_000, request = 1, watching = true, bufferedAheadMs = 8_000))
+        // 同じリクエストでは2度言わない。リクエストし直したら数え直す
+        assertFalse(watch.check(40_000, request = 1, watching = true, bufferedAheadMs = 8_000))
+        assertFalse(watch.check(40_000, request = 2, watching = true, bufferedAheadMs = 8_000))
+        assertTrue(watch.check(55_000, request = 2, watching = true, bufferedAheadMs = 8_000))
+    }
+
+    /** 回線が遅くて溜まらない間・見張らない間 (止めている・繋ぎ直しの最中) は数えない */
+    @Test
+    fun 回線が遅いだけなら形式を外さない() {
+        val slow = FirstFrameWatch()
+        for (at in 0L..60_000L step 1_000) assertFalse(slow.check(at, request = 1, watching = true, bufferedAheadMs = 500))
+        // 60 秒かけてやっと溜まった: そこから数える
+        assertFalse(slow.check(61_000, request = 1, watching = true, bufferedAheadMs = 1_000))
+        assertFalse(slow.check(75_000, request = 1, watching = true, bufferedAheadMs = 2_000))
+        assertTrue(slow.check(76_000, request = 1, watching = true, bufferedAheadMs = 2_000))
+
+        val paused = FirstFrameWatch()
+        assertFalse(paused.check(0, request = 1, watching = true, bufferedAheadMs = 5_000))
+        assertFalse(paused.check(10_000, request = 1, watching = false, bufferedAheadMs = 5_000))
+        // 見張りに戻ったら、そこから数え直す
+        assertFalse(paused.check(20_000, request = 1, watching = true, bufferedAheadMs = 5_000))
+        assertFalse(paused.check(34_000, request = 1, watching = true, bufferedAheadMs = 5_000))
+        assertTrue(paused.check(35_000, request = 1, watching = true, bufferedAheadMs = 5_000))
+    }
+
+    /** 端末の側で再生できないもの (自動ならその形式を外してリクエストし直す)。デコードの途中の失敗と denpa の側の失敗は入れない */
+    @Test
+    fun 端末で再生できない形式の見分け() {
+        assertTrue(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED))
+        assertTrue(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED))
+        assertTrue(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES))
+        assertFalse(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_DECODING_FAILED))
+        assertFalse(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED))
+        assertFalse(Reconnect.deviceCannotPlay(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
+    }
+
     @Test
     fun ライブと追っかけは回線の失敗なら何度でも繋ぎ直す() {
         assertTrue(Reconnect.shouldRetry(Verdict.Retry, stream = true, attempts = 1_000, few = 0))
@@ -57,6 +111,20 @@ class ReconnectTest {
         assertFalse(Reconnect.shouldRetry(Verdict.RetryFew, stream = true, attempts = 1_000, few = Reconnect.FEW))
         assertFalse(Reconnect.shouldRetry(Verdict.GiveUp, stream = true, attempts = 0, few = 0))
         assertFalse(Reconnect.shouldRetry(Verdict.Unauthorized, stream = true, attempts = 0, few = 0))
+    }
+
+    /** 変換の枠が埋まって断られた 503 は、ライブ・追っかけでも何度かだけ (何度でもリクエストし直すと denpa を呼び続けるだけ)。ほかの 503 は入れ替えなので何度でも */
+    @Test
+    fun 混んでいて断られたら何度かだけ() {
+        val badStatus = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+        assertEquals(Verdict.Busy, Reconnect.verdict(badStatus, 503, busy = true))
+        assertEquals(Verdict.Retry, Reconnect.verdict(badStatus, 503, busy = false))
+        // アクセストークンが効かないのが先
+        assertEquals(Verdict.Unauthorized, Reconnect.verdict(badStatus, 401, busy = true))
+        for (stream in listOf(true, false)) {
+            assertTrue(Reconnect.shouldRetry(Verdict.Busy, stream, attempts = 0, few = Reconnect.FEW - 1))
+            assertFalse(Reconnect.shouldRetry(Verdict.Busy, stream, attempts = 0, few = Reconnect.FEW))
+        }
     }
 
     @Test
@@ -82,7 +150,7 @@ class ReconnectTest {
     fun 位置か溜まりが動いていれば止まっていない() {
         val watch = StallWatch()
         watch.check(0, watching = true, positionMs = 0, bufferedMs = 1_000)
-        // 絵は止まっていても届いている (溜めている最中)
+        // 映像は止まっていても届いている (溜めている最中)
         assertNull(watch.check(6_000, watching = true, positionMs = 0, bufferedMs = 2_000))
         assertNull(watch.check(12_000, watching = true, positionMs = 0, bufferedMs = 2_000))
         // 届いてはいないが進んでいる (溜めたぶんを流している)
@@ -108,24 +176,10 @@ class ReconnectTest {
         assertEquals(ChaseEnd.Lost, chaseEnd(stillRecording = null, positionMs = 600_000, durationMs = 600_000, pictured = true))
         // 録り終えて尻まで観た
         assertEquals(ChaseEnd.Finished, chaseEnd(stillRecording = false, positionMs = 1_790_000, durationMs = 1_800_000, pictured = true))
-        // 録り終えたが途中で切れた (denpa の入れ替え)。居た場所から続ける
+        // 録り終えたが途中で切れた (denpa の入れ替え)。いた位置から続ける
         assertEquals(ChaseEnd.Lost, chaseEnd(stillRecording = false, positionMs = 600_000, durationMs = 1_800_000, pictured = true))
-        // 頼み直しても何も映らずに終わった・長さが分からない (前と同じく観終えたことに)
+        // リクエストし直しても何も映らずに終わった・長さが分からない (前と同じく観終えたことに)
         assertEquals(ChaseEnd.Finished, chaseEnd(stillRecording = false, positionMs = 600_000, durationMs = 1_800_000, pictured = false))
         assertEquals(ChaseEnd.Finished, chaseEnd(stillRecording = false, positionMs = 600_000, durationMs = null, pictured = true))
-    }
-
-    @Test
-    fun 追っかけで映る前に繋がらないのは断られたのではない() {
-        val parse = PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
-        // 焼くのを断られた空の 200 は、形が分からないと言われる
-        assertTrue(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = parse))
-        // denpa の入れ替えの最中 (繋ぎ直しの途中) に繋がらない・読めないのは、繋ぎ直しに任せる
-        assertFalse(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED))
-        assertFalse(Chase.refused(started = false, baked = true, httpStatus = null, errorCode = PlaybackException.ERROR_CODE_IO_UNSPECIFIED))
-        // HTTP の番号があるもの・映したあと・生の TS は断られたのではない
-        assertFalse(Chase.refused(started = false, baked = true, httpStatus = 503, errorCode = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
-        assertFalse(Chase.refused(started = true, baked = true, httpStatus = null, errorCode = parse))
-        assertFalse(Chase.refused(started = false, baked = false, httpStatus = null, errorCode = parse))
     }
 }

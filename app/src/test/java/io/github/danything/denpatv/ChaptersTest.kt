@@ -8,11 +8,14 @@ import io.github.danything.denpatv.data.cmRuns
 import io.github.danything.denpatv.data.cmSkipTarget
 import io.github.danything.denpatv.data.nextChapter
 import io.github.danything.denpatv.data.previousChapter
+import io.github.danything.denpatv.data.resumedInCm
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** denpa が焼くときに書くチャプター (cm.ts の chapterMetadata): 本編と CM が交互に並ぶ */
+/** denpa がエンコードするときに書くチャプター (cm.ts の chapterMetadata): 本編と CM が交互に並ぶ */
 class ChaptersTest {
     private val chapters = listOf(
         ChapterMark(0, 60_000, "本編"),
@@ -53,7 +56,7 @@ class ChaptersTest {
         // 過ぎた CM・飛ばした (戻って観に行った) CM は入れない
         assertEquals(listOf(900_000L - CM_LEAD_MS), cmHopPoints(chapters, 200_000, emptySet(), CM_LEAD_MS).map { it.first })
         assertEquals(listOf(900_000L - CM_LEAD_MS), cmHopPoints(chapters, 0, setOf(60_000L), CM_LEAD_MS).map { it.first })
-        // もう手前の幅に入っているもの・中に居るものは今すぐ飛ぶほう (cmSkipTarget)
+        // もう手前の幅に入っているもの・中にいるものは今すぐ飛ぶほう (cmSkipTarget)
         assertEquals(listOf(900_000L - CM_LEAD_MS), cmHopPoints(chapters, 59_990, emptySet(), CM_LEAD_MS).map { it.first })
         assertEquals(60_000L, cmSkipTarget(chapters, 59_990, emptySet(), CM_LEAD_MS)?.startMs)
         // 手前の幅の1つ前なら、まだ先回りして預ける
@@ -101,6 +104,20 @@ class ChaptersTest {
         assertEquals(150_000L, previousChapter(chapters, 200_000)?.startMs)
         assertEquals(60_000L, previousChapter(chapters, 151_000)?.startMs)
     }
+
+    @Test
+    fun 続きの位置が_CM_の中なら飛んでも知らせない() {
+        val cm = cmSkipTarget(chapters, 70_000, emptySet())!!
+        // 続きの位置 (70 秒) が CM (60〜150 秒) の中: 開いてすぐ飛ぶが「CM を飛ばしました」は出さない
+        assertTrue(resumedInCm(cm, resumeMs = 70_000, seeks = 0))
+        // 一度でも動かした (左右・チャプター送り・飛んだ) あとは知らせる
+        assertFalse(resumedInCm(cm, resumeMs = 70_000, seeks = 1))
+        // 頭から観ている・続きの位置が CM の外なら知らせる
+        assertFalse(resumedInCm(cm, resumeMs = null, seeks = 0))
+        assertFalse(resumedInCm(cm, resumeMs = 0, seeks = 0))
+        assertFalse(resumedInCm(cm, resumeMs = 30_000, seeks = 0))
+        assertFalse(resumedInCm(cm, resumeMs = 150_000, seeks = 0))
+    }
 }
 
 class SpeedTest {
@@ -116,8 +133,25 @@ class SpeedTest {
         assertEquals(1f, io.github.danything.denpatv.data.knownSpeed(null))
         assertEquals(1f, io.github.danything.denpatv.data.knownSpeed(0.75f))
         assertEquals(1.5f, io.github.danything.denpatv.data.knownSpeed(1.5f))
-        assertEquals("1.25×", io.github.danything.denpatv.data.speedLabel(1.25f))
-        assertEquals("2×", io.github.danything.denpatv.data.speedLabel(2f))
+        assertEquals("×1.25", io.github.danything.denpatv.data.speedLabel(1.25f))
+        assertEquals("×2", io.github.danything.denpatv.data.speedLabel(2f))
+    }
+
+    @org.junit.Test
+    fun 速さのボタンは等速なら印だけ_速めている間は数字だけ() {
+        val normal = io.github.danything.denpatv.ui.speedControl(1f) {}
+        assertEquals("", normal.label)
+        assertEquals(io.github.danything.denpatv.R.drawable.ic_speed, normal.icon)
+        assertEquals(false, normal.on)
+        assertEquals("再生の速さ", normal.description)
+        val fast = io.github.danything.denpatv.ui.speedControl(1.25f) {}
+        // × は付けない (ボタンの外の通知・タイトルは `speedLabel` で「×1.25」)
+        assertEquals("1.25", fast.label)
+        assertNull(fast.icon)
+        assertEquals(true, fast.on)
+        assertEquals("再生の速さ 1.25倍", fast.description)
+        assertEquals("2", io.github.danything.denpatv.ui.speedControl(2f) {}.label)
+        assertEquals("再生の速さ 2倍", io.github.danything.denpatv.data.speedDescription(2f))
     }
 
     @org.junit.Test

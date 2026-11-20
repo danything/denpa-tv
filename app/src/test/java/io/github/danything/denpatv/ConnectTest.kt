@@ -90,13 +90,14 @@ class ConnectTest {
     }
 
     @Test
-    fun 断られたら登録をはじめ_登録の画面の_URL_は接頭辞の下に解く() = runTest {
+    fun 断られたら登録をはじめ_登録の画面の_URL_は接頭辞の下で解決する() = runTest {
         for (refused in listOf(401, 403)) {
             denpa.enqueue(HEALTH_OK)
             denpa.enqueue("""{"error":"unauthorized"}""", code = refused)
             denpa.enqueue(code)
             val step = connect(DenpaApi(), denpa.url("/denpa"), "denpa TV (emu)") as ConnectStep.NeedsLogin
             assertEquals(denpa.url("/denpa/device?code=ABCD-EFGH"), step.verificationUrl)
+            // テレビに出して、スマホの画面のコードと見比べてもらう
             assertEquals("ABCD-EFGH", step.code.userCode)
             denpa.requests.take(); denpa.requests.take()
             val request = denpa.requests.take()
@@ -134,14 +135,14 @@ class ConnectTest {
         assertEquals("application/json", logout.contentType)
         assertEquals("Bearer denpa_abc", logout.authorization)
 
-        // トークンの無い繋ぎ方では何も付けない
+        // アクセストークンの無い繋ぎ方では何も付けない
         denpa.enqueue("[]")
         DenpaApi().services(base)
         assertNull(denpa.requests.take().authorization)
     }
 
     @Test
-    fun 映像と絵にも同じヘッダを付ける() {
+    fun 映像と画像にも同じヘッダを付ける() {
         assertEquals(mapOf("Authorization" to "Bearer denpa_abc"), authorizationHeaders("denpa_abc"))
         assertEquals(emptyMap<String, String>(), authorizationHeaders(null))
         assertNull(Http.bearer(""))

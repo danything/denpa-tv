@@ -4,7 +4,7 @@
 #
 #   GH_TOKEN=... scripts/wait-apks.sh <置く先>
 #
-# emulator の列は apks を待たずに走り出し、エミュレータを起こしてからここで APK を待つ (焼くのと起こすのを重ねる)。
+# emulator の列は apks を待たずに走り出し、エミュレータを起こしてからここで APK を待つ (ビルドと起動を重ねる)。
 # apks の列が通らなかった (落ちた・止められた・飛ばされた) ら、待たずに落ちる。`WAIT_APKS_TIMEOUT` 秒 (既定 15 分) 来なければ落ちる。
 # 使うもの: GITHUB_REPOSITORY・GITHUB_RUN_ID (Actions が渡す)、GH_TOKEN (actions: read)
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ while :; do
     sleep 6
 done
 
-# 今の試行が上げたものがいちばん新しい (re-run で apks を走らせ直さなかったときは、前の試行が同じ commit から焼いたもの)
+# 今の試行が上げたものがいちばん新しい (re-run で apks を走らせ直さなかったときは、前の試行が同じ commit からビルドしたもの)
 id=$(gh api "$api/artifacts?name=$artifact" \
     --jq '[.artifacts[] | select((.expired | not) and .size_in_bytes > 0)] | sort_by(.created_at) | last | .id // empty')
 if [ -z "$id" ]; then

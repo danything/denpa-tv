@@ -42,7 +42,7 @@ jobs:
       #    checkout v7 は pull_request_target で fork のコードを取るのを既定で断るので、
       #    allow-unsafe-pr-checkout で明示的に許す。**取るだけで実行はしない**から許せる:
       #    ワークスペース直下は base のまま、PR のコードを走らせる step は無く、
-      #    Claude に渡す道具もコメントと gh pr diff/view だけ (下の allowedTools)。
+      #    Claude に渡すツールもコメントと gh pr diff/view だけ (下の allowedTools)。
       #    PR のコードを build / test / install する step をここに足してはいけない。
       - name: Checkout PR head into isolated directory
         uses: actions/checkout@v7
@@ -58,7 +58,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # 既定の「OIDC を Claude の GitHub App のトークンに交換する」道は、fork の
+          # 既定の「OIDC を Claude の GitHub App のトークンに交換する」経路は、fork の
           # pull_request_target では 401 (Invalid OIDC token) で断られる。コメントを
           # 書くのはワークフローの GITHUB_TOKEN (pull-requests: write) で足りる
           github_token: ${{ secrets.GITHUB_TOKEN }}

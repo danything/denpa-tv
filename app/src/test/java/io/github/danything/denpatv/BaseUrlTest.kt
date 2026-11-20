@@ -48,7 +48,7 @@ class BaseUrlTest {
         assertNull(BaseUrl.normalize("http://"))
     }
 
-    /** denpa は根からの相対 (`api/…`) で返す。前段の接頭辞の下でも、その下に足す */
+    /** denpa はルートからの相対 (`api/…`) で返す。前段の接頭辞の下でも、その下に足す */
     @Test
     fun 相対の_URL_は接頭辞の下に足す() {
         val base = BaseUrl.normalize("http://ha.local:8123/api/hassio_ingress/abc")!!

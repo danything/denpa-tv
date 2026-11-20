@@ -1,4 +1,5 @@
 import java.net.URI
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
@@ -8,7 +9,11 @@ plugins {
 
 android {
     namespace = "io.github.danything.denpatv"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
 
     defaultConfig {
         applicationId = "io.github.danything.denpatv"
@@ -39,12 +44,19 @@ android {
     }
 
     /*
-     * 新しい版を引く GitHub のリリース (Updater)。**debug だけ** 焼くときに `DENPA_TV_UPDATE_API` で差し替えられる
+     * 新しい版を引く GitHub のリリース (Updater)。**debug だけ** ビルドのときに `DENPA_TV_UPDATE_API` で差し替えられる
      * (手元のエミュレータで、偽のリリースから上げる流れを確かめる。docs/release.md の「アプリの中のアップデートを確かめる」)。
      * release・minified は差し替えない
      */
     val githubReleases = "https://api.github.com/repos/danything/denpa-tv"
     defaultConfig.buildConfigField("String", "UPDATE_API", "\"$githubReleases\"")
+
+    /*
+     * 実況のコメントの取得先 (NX-Jikkyo の WebSocket・過去ログ API。ui/Jikkyo.kt)。**minified (smoke) だけ** ビルドのときに
+     * `DENPA_TV_JIKKYO_NX`・`DENPA_TV_JIKKYO_KAKOLOG` で偽物へ差し替えられる (smoke の `FakeJikkyo`。docs/development.md)。release は差し替えない
+     */
+    defaultConfig.buildConfigField("String", "JIKKYO_NX", "\"wss://nx-jikkyo.tsukumijima.net\"")
+    defaultConfig.buildConfigField("String", "JIKKYO_KAKOLOG", "\"https://jikkyo.tsukumijima.net\"")
 
     buildTypes {
         debug {
@@ -65,6 +77,8 @@ android {
             initWith(getByName("release"))
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += "release"
+            System.getenv("DENPA_TV_JIKKYO_NX")?.let { buildConfigField("String", "JIKKYO_NX", "\"$it\"") }
+            System.getenv("DENPA_TV_JIKKYO_KAKOLOG")?.let { buildConfigField("String", "JIKKYO_KAKOLOG", "\"$it\"") }
         }
     }
 
@@ -79,6 +93,15 @@ android {
         buildConfig = true
     }
 
+    /*
+     * Denpa Font (assets の ttf、4.2MB) は **縮めずに入れる**。縮めてあると、読むときに丸ごと展開して heap (古い API は Native、
+     * 新しい API は Java) に 4.2MB 置きっぱなしになる。
+     * 縮めなければ APK の中をそのまま mmap して、描いた字のところだけ読む (APK は 2MB ほど大きくなる)
+     */
+    androidResources {
+        noCompress += "ttf"
+    }
+
     lint {
         warningsAsErrors = false
         abortOnError = true
@@ -86,16 +109,23 @@ android {
 }
 
 /*
- * 字幕の字 (denpa が字幕を焼いていたのと同じ丸ゴシック。Rounded M+ 1m for ARIB、M+ FONT LICENSE)。5MB あるので
- * リポジトリには置かず、**焼くときに取ってきて assets に入れる** (ui/CaptionFont.kt が読む)。版は denpa の Dockerfile の
- * ARIB_FONT_SHA と同じコミットに留め、Renovate が枝の先頭を追う (renovate.json)。差し替えるならここの URL だけ直す
+ * 字幕の字 (denpa が字幕を描くのと同じ丸ゴシック。Denpa Font = danything/denpa-font のリリース、SIL OFL 1.1)。
+ * 4.2MB あるのでリポジトリには置かず、**ビルドのときに取ってきて assets に入れる** (ui/DenpaFont.kt が読む)。
+ * **留めるのはタグだけ** (denpa の Dockerfile の DENPA_FONT_VERSION と揃える。Renovate はタグを上げるだけ)。
+ * 中身は同じリリースの SHA256SUMS で照らす (違えばビルドを止める)
  */
+<<<<<<< HEAD
 // renovate: datasource=git-refs depName=https://github.com/danything/arib-font branch=main
 val aribFontSha = "67fa483de74f1554f287c356f0f54bee89688b1a"
+=======
+// renovate: datasource=github-releases depName=danything/denpa-font
+val denpaFontVersion = "v3.7"
+>>>>>>> 8e6f1f5346e d69c756167a32ace5d3e455c97c98
 
-abstract class FetchCaptionFont : DefaultTask() {
+        abstract class FetchCaptionFont : DefaultTask() {
+    /** リリースの置き場 (…/releases/download/<タグ>) */
     @get:Input
-    abstract val url: Property<String>
+    abstract val release: Property<String>
 
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -103,23 +133,116 @@ abstract class FetchCaptionFont : DefaultTask() {
     @TaskAction
     fun fetch() {
         val dir = outputDir.get().asFile.apply { deleteRecursively(); mkdirs() }
-        val bytes = URI(url.get()).toURL().openStream().use { it.readBytes() }
-        // TrueType (0x00010000) でなければ止める (取り違えた・HTML の失敗の頁が来た)
-        check(bytes.size > 4 && bytes[0] == 0.toByte() && bytes[1] == 1.toByte() && bytes[2] == 0.toByte() && bytes[3] == 0.toByte()) {
-            "字幕の字が TrueType ではありません: ${url.get()}"
-        }
-        dir.resolve("caption-font.ttf").writeBytes(bytes)
+        val get = { name: String -> URI("${release.get()}/$name").toURL().openStream().use { it.readBytes() } }
+        val sums = get("SHA256SUMS").decodeToString()
+        val want = sums.lines()
+            .firstNotNullOfOrNull { Regex("""^([0-9a-f]{64}) +denpa-font\.ttf$""").find(it)?.groupValues?.get(1) }
+            ?: error("SHA256SUMS に denpa-font.ttf がありません: ${release.get()}")
+        val bytes = get("denpa-font.ttf")
+        val got = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        check(got == want) { "字幕の字の sha256 が SHA256SUMS と違います: ${release.get()} ($got)" }
+        dir.resolve("denpa-font.ttf").writeBytes(bytes)
     }
 }
 
 val fetchCaptionFont = tasks.register<FetchCaptionFont>("fetchCaptionFont") {
-    url.set("https://raw.githubusercontent.com/danything/arib-font/$aribFontSha/rounded-mplus-1m-arib.ttf")
+    release.set("https://github.com/danything/denpa-font/releases/download/$denpaFontVersion")
     outputDir.set(layout.buildDirectory.dir("generated/captionFont"))
 }
 
-androidComponents {
-    onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(fetchCaptionFont, FetchCaptionFont::outputDir) }
+/*
+ * 設定の「ライセンス」(ui/LicensesScreen.kt) に出すこのアプリの AGPL の全文。リポジトリの頭の LICENSE を
+ * ビルドのときに assets の `licenses/LICENSE` へ写す (同じものを2つ置かない)
+ */
+abstract class CopyAppLicense : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val license: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val dir = outputDir.get().asFile.apply { deleteRecursively(); mkdirs() }
+        license.get().asFile.copyTo(dir.resolve("licenses/LICENSE"))
+    }
 }
+
+val copyAppLicense = tasks.register<CopyAppLicense>("copyAppLicense") {
+    license.set(rootProject.layout.projectDirectory.file("LICENSE"))
+    outputDir.set(layout.buildDirectory.dir("generated/appLicense"))
+}
+
+/*
+ * ライセンスの一覧 (assets の licenses/licenses.json) が、**リリースの APK に入る依存** と合っているかを確かめる。
+ * 依存 (推移的なものも) の Maven のグループが、どれかの `groups` (`androidx.*` は前方一致、ほかは完全一致) に入っていなければ止める。
+ * 逆に、どの依存にも当たらない `groups` (外した依存の書き残し) も止める。CI の build の列で走らせる (`check` にも入れてある)
+ */
+abstract class CheckLicenses : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val manifest: RegularFileProperty
+
+    /** リリースの APK に入る依存のグループ */
+    @get:Input
+    abstract val groups: SetProperty<String>
+
+    @get:OutputFile
+    abstract val report: RegularFileProperty
+
+    @TaskAction
+    fun check() {
+        @Suppress("UNCHECKED_CAST")
+        val components = (groovy.json.JsonSlurper()
+            .parse(manifest.get().asFile) as Map<String, Any?>)["components"] as List<Map<String, Any?>>
+        val patterns = components.flatMap { (it["groups"] as List<*>?).orEmpty().map(Any?::toString) }
+        val matches = { pattern: String, group: String ->
+            if (pattern.endsWith(".*")) group.startsWith(pattern.removeSuffix("*")) else group == pattern
+        }
+        val used = groups.get().sorted()
+        val missing = used.filter { group -> patterns.none { matches(it, group) } }
+        val stale = patterns.filter { pattern -> used.none { matches(pattern, it) } }
+        check(missing.isEmpty() && stale.isEmpty()) {
+            buildString {
+                append("ライセンスの一覧 (app/src/main/assets/licenses/licenses.json) が依存と合っていません。")
+                if (missing.isNotEmpty()) append("\n一覧に無いグループ (ライセンスを確かめて components に足す): ${missing.joinToString()}")
+                if (stale.isNotEmpty()) append("\nどの依存にも当たらない groups (外した依存なら消す): ${stale.joinToString()}")
+            }
+        }
+        report.get().asFile.writeText(used.joinToString("\n", postfix = "\n"))
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(fetchCaptionFont, FetchCaptionFont::outputDir)
+        variant.sources.assets?.addGeneratedSourceDirectory(copyAppLicense, CopyAppLicense::outputDir)
+    }
+    onVariants(selector().withBuildType("release")) { variant ->
+        val runtime = variant.runtimeConfiguration.incoming.resolutionResult.rootComponent
+        tasks.register<CheckLicenses>("checkLicenses") {
+            manifest.set(layout.projectDirectory.file("src/main/assets/licenses/licenses.json"))
+            groups.set(
+                runtime.map { root ->
+                    val seen = mutableSetOf<ResolvedComponentResult>()
+                    val queue = ArrayDeque(listOf(root))
+                    while (queue.isNotEmpty()) {
+                        val next = queue.removeFirst()
+                        if (!seen.add(next)) continue
+                        next.dependencies.filterIsInstance<ResolvedDependencyResult>()
+                            .forEach { queue.add(it.selected) }
+                    }
+                    // プロジェクト自身 (:app) は除く
+                    seen.mapNotNull { (it.id as? ModuleComponentIdentifier)?.group }.toSet()
+                },
+            )
+            report.set(layout.buildDirectory.file("reports/licenses/groups.txt"))
+        }
+    }
+}
+
+tasks.named("check") { dependsOn("checkLicenses") }
 
 dependencies {
     implementation(platform(libs.compose.bom))
@@ -132,7 +255,6 @@ dependencies {
     implementation(libs.datastore.preferences)
 
     implementation(libs.media3.exoplayer)
-    implementation(libs.media3.ui)
     implementation(libs.media3.ui.compose)
 
     implementation(libs.kotlinx.serialization.json)

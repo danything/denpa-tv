@@ -57,7 +57,7 @@ data class Version(val major: Int, val minor: Int, val patch: Int, val pre: List
     }
 }
 
-/** 手元で焼いた版 (`0.0.0-dev`)。リリースの鍵と署名が違うので上げない */
+/** 手元でビルドした版 (`0.0.0-dev`)。リリースの鍵と署名が違うので上げない */
 fun isDevBuild(versionName: String): Boolean = Version.parse(versionName)?.let { it.major == 0 && it.minor == 0 && it.patch == 0 } ?: true
 
 /** `sha256sum` の出力 (`<hash>  <name>`、バイナリ扱いなら `<hash> *<name>`) を名前 → ハッシュ (小文字) に */
@@ -72,7 +72,6 @@ private val SUM_LINE = Regex("""([0-9A-Fa-f]{64}) [ *](.+)""")
 data class GitHubRelease(
     @SerialName("tag_name") val tagName: String,
     val draft: Boolean = false,
-    val prerelease: Boolean = false,
     val assets: List<GitHubAsset> = emptyList(),
 )
 
@@ -83,7 +82,7 @@ data class GitHubAsset(
     val size: Long = 0,
 )
 
-/** 上げる先。覚えておいて、次に開いたときも (確かめ直す前でも) 知らせを出す */
+/** 上げる先。覚えておいて、次に開いたときも (確かめ直す前でも) 通知を出す */
 @Serializable
 data class Update(
     val version: String,
@@ -120,7 +119,7 @@ open class UpdateRejected(message: String) : IOException(message)
 class HashMismatch(message: String) : UpdateRejected(message)
 
 /** ファイルの SHA-256 (小文字の16進) */
-fun sha256Hex(file: File): String {
+private fun sha256Hex(file: File): String {
     val digest = MessageDigest.getInstance("SHA-256")
     file.inputStream().use { input ->
         val buffer = ByteArray(64 * 1024)
@@ -137,8 +136,8 @@ private fun ByteArray.toHex() = joinToString("") { (it.toInt() and 0xff).toStrin
 
 /**
  * 新しい版が見えたときにどうするか。**確かめた APK が手元にあればそれを使う** (取り直さない)。
- * 無ければ裏で取ってくる。ただし SHA256SUMS の無いリリースは取っても入れられないので、前のとおり知らせだけ出す
- * (押すと断る文が出る)。裏で何度も取れないときも知らせだけ出し、押したら取ってくる。
+ * 無ければ裏で取ってくる。ただし SHA256SUMS の無いリリースは取っても入れられないので、通知だけ出す
+ * (押すと断る文が出る)。裏で何度も取れないときも通知だけ出し、押したら取ってくる。
  * `fresh` は GitHub をいま引いた (開いたときの 12 時間ごと・設定の「確かめる」) とき。そのときは数えずにもう一度取りに行く
  */
 enum class Prefetch { Reuse, Download, Offer }
@@ -151,7 +150,7 @@ fun prefetchPlan(cached: Boolean, hasSums: Boolean, failures: Int, fresh: Boolea
 }
 
 /**
- * 裏で取れなかったあと、知らせ (「アップデート (v0.4.0)」、押すと取ってくる) を出すか。
+ * 裏で取れなかったあと、通知 (「アップデート (v0.4.0)」、押すと取ってくる) を出すか。
  * 黙っているのは、開いたときの裏の取り込みが続けて [MAX_SILENT_FAILURES] 回より少なく失敗したときだけ
  * (次に確かめたときに取り直す)。設定で「確かめる」を押したときは、見ているので出す
  */
@@ -160,12 +159,12 @@ fun offerAfterFailure(failures: Int, manual: Boolean): Boolean = manual || failu
 const val MAX_SILENT_FAILURES = 3
 
 /**
- * 押して「不明なアプリのインストール」の許可の画面へ送った (denpa-tv#32)。**許可して戻ったら、もう一度押さなくても続けて入れる。**
+ * 押して「不明なアプリのインストール」の許可の画面へ送った。**許可して戻ったら、もう一度押さなくても続けて入れる。**
  * テレビによっては許可の画面にいる間・許可したときにアプリが閉じられ、戻ると開き直しになるので、覚えておく (Settings)。
- * 古い頼み (許可せずに戻って、ずっと後に開いた) では勝手に入れ始めない
+ * 古いリクエスト (許可せずに戻って、ずっと後に開いた) では勝手に入れ始めない
  */
 data class InstallRequest(val version: String, val at: Long) {
-    /** 頼んでから間もない (時計が戻ったときは古いとみなす) */
+    /** リクエストしてから間もない (時計が戻ったときは古いとみなす) */
     fun fresh(now: Long): Boolean = now - at in 0..INSTALL_REQUEST_TTL_MS
 }
 

@@ -9,10 +9,11 @@ import io.github.danything.denpatv.data.EngineHttp
 import io.github.danything.denpatv.data.Images
 import io.github.danything.denpatv.data.Settings
 import io.github.danything.denpatv.data.WatchNextRows
-import io.github.danything.denpatv.ui.CaptionFont
+import io.github.danything.denpatv.ui.DenpaFont
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * アプリ全体で1つずつ持つもの。**DI の仕組みは入れない** (docs/libraries.md)。
@@ -21,8 +22,10 @@ import kotlinx.coroutines.SupervisorJob
 class DenpaApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        // 絵を覚えておく量を、端末のメモリに合わせる
+        // 画像を覚えておく量を、端末のメモリに合わせる
         Images.init(this)
+        // 放送の字 (番組名・字幕)。一覧のタイトルが出る前に読み終えておく (読み終えるまでは端末の字)
+        scope.launch { denpaFont.load() }
     }
 
     val settings: Settings by lazy { Settings(this) }
@@ -30,7 +33,7 @@ class DenpaApp : Application() {
     val updater: Updater by lazy { Updater(this) }
 
     /**
-     * 映像を HttpEngine で取る口。**アプリで1つを使い回す** (Media3 のネットワーク スタックの頁の勧め)。
+     * 映像を HttpEngine で取得するクライアント。**アプリで1つを使い回す** (Media3 のネットワーク スタックのページの推奨)。
      * OS に入っているのは Android 14 (S 拡張 7) から。使えない端末では null で、
      * Media3 の DefaultHttpDataSource (OS の HttpURLConnection) を使う。
      * 型を `HttpEngine?` にしないわけは EngineHttp に書いた
@@ -49,20 +52,20 @@ class DenpaApp : Application() {
         }
     }
 
-    /** 字幕の字 (APK に入れてある丸ゴシック)。字幕の文字の配置を描くのに使う */
-    val captionFont: CaptionFont by lazy { CaptionFont(assets) }
+    /** 放送の字 (APK に入れてある丸ゴシック)。字幕の文字の配置と、番組名・説明・局名に使う */
+    val denpaFont: DenpaFont by lazy { DenpaFont(assets) }
 
     /** Google TV のホームの「続きを視聴」。TvProvider の WatchNextPrograms は Android 8.0 からで、それより前は何もしない */
     val watchNext: WatchNextRows by lazy { WatchNextRows(this) }
 
-    /** 画面より長く生きる仕事 (閉じたときに観た位置を預けるなど) */
+    /** 画面より長く続く処理 (閉じたときに観た位置を預けるなど) */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 }
 
 /**
  * HttpEngine が使えるか。**S 拡張の版だけでは決めない** — Android TV 12 の BRAVIA (KJ-75X80WK) は
  * S 拡張 7 以上と答えるのに `android.net.http.HttpEngine` が無く、映像を開いた瞬間に
- * NoClassDefFoundError で落ちていた (denpa-tv#24)。クラスが本当に引けるかも確かめる
+ * NoClassDefFoundError で落ちる。クラスが本当に引けるかも確かめる
  */
 fun hasHttpEngine(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&

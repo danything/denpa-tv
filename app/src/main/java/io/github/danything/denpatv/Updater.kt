@@ -49,10 +49,10 @@ sealed interface UpdateState {
     data object Checking : UpdateState
     /** 新しい版は無い (`latest` は見えたいちばん新しい版。リリースが無ければ null) */
     data class UpToDate(val latest: String?) : UpdateState
-    /** 手元で焼いた版 (0.0.0-dev)。リリースと署名が違うので上げない */
+    /** 手元でビルドした版 (0.0.0-dev)。リリースと署名が違うので上げない */
     data class DevBuild(val latest: String?) : UpdateState
     data class CheckFailed(val message: String) : UpdateState
-    /** 新しい版がある。裏で取れなかった (取らない) ときの知らせで、押すと取ってきて入れる */
+    /** 新しい版がある。裏で取れなかった (取らない) ときの通知で、押すと取ってきて入れる */
     data class Available(val update: Update) : UpdateState
     /** 新しい版を見つけて、裏で取ってきて照らしている。**録画の一覧の頭には出さない** (設定にだけ進みを出す) */
     data class Preparing(val update: Update, val percent: Int) : UpdateState
@@ -89,22 +89,22 @@ fun UpdateState.notice(): String? = when (this) {
     else -> null
 }
 
-/** 許可の画面へ送ったあとに開き直したとき、覚えておいた頼み (`InstallRequest`) をどうするか */
+/** 許可の画面へ送ったあとに開き直したとき、覚えておいたリクエスト (`InstallRequest`) をどうするか */
 enum class Resume {
-    /** 頼まれた版を入れられる (許可が見えなくても続けて入れてみる) */
+    /** リクエストされた版を入れられる (許可が見えなくても続けて入れてみる) */
     Start,
     /**
-     * まだ分からない (確かめられなかった・裏で取れなかった)。頼みは残し、期限で切れる。
+     * まだ分からない (確かめられなかった・裏で取れなかった)。リクエストは残し、期限で切れる。
      * 取ってきている・入れている (開き直してから押された・設定で確かめている) ときは、そちらが入れる
      * (開き直したときの裏の取り込みは確かめの中で取り終えるので、ここでは取ってきている途中にならない)
      */
     Wait,
-    /** 古い頼み・ほかの版になった (もっと新しい版が出た)。忘れる */
+    /** 古いリクエスト・ほかの版になった (もっと新しい版が出た)。忘れる */
     Forget,
 }
 
 /**
- * 開き直して確かめ終えたときの `state` で、頼み `request` をどうするか。**確かめられなかったときに頼みを捨てない**
+ * 開き直して確かめ終えたときの `state` で、リクエスト `request` をどうするか。**確かめられなかったときにリクエストを捨てない**
  * (許可の画面にいる間に閉じられ、開き直したときにたまたま届かなくても、次に開いたときに続けられるように)
  */
 fun resumePlan(state: UpdateState, request: InstallRequest, now: Long): Resume {
@@ -128,10 +128,9 @@ enum class InstallStep {
 /**
  * 許可が見えるか (`allowed` = `canRequestPackageInstalls()`)、REQUEST_INSTALL_PACKAGES の appop (`appop`。Android 7.x は null)、
  * この版でもう許可の画面へ送ったか (`asked`) から決める。
- * **許可が見えなくても、一度送ったあとはセッションで入れてみる**: テレビによっては許可しても false のまま (denpa-tv#32 の
- * BRAVIA。設定には「許可」と出るのに appop は未設定のまま)、許可の画面と行き来するだけになる。本当に許可されていなければ、OS が確認の画面で尋ねるか断る。
+ * **許可が見えなくても、一度送ったあとはセッションで入れてみる**: テレビによっては許可しても false のまま (BRAVIA。設定には「許可」と出るのに appop は未設定のまま)、許可の画面と行き来するだけになる。本当に許可されていなければ、OS が確認の画面で尋ねるか断る。
  * ただ**はっきり拒否** (MODE_ERRORED) なら入れてみない: 確認の画面を経て拒否になったのなら、また尋ねても同じなので
- * 許可の画面を直接開く (denpa-tv#32 のログ。確認の画面のあとに 2 になり、押し直しても入らなかった)
+ * 許可の画面を直接開く
  */
 fun installStep(allowed: Boolean, appop: Int?, asked: InstallRequest?, version: String, now: Long): InstallStep = when {
     allowed -> InstallStep.Install
@@ -153,7 +152,7 @@ fun reopenConfirm(shownAt: Long, now: Long): Boolean = now - shownAt >= CONFIRM_
 const val CONFIRM_GRACE_MS = 3_000L
 
 /**
- * アプリの中から新しい版に上げる (README の「アップデート」)。**設定は増やさない**: 開いたとき (12 時間に1回まで) に
+ * アプリの中から新しい版に上げる (docs/updates.md)。**設定は増やさない**: 開いたとき (12 時間に1回まで) に
  * GitHub のリリースを見て、新しければ**黙って裏で取ってきて SHA256SUMS と照らし**、照らし終えたら録画の一覧の頭に1行出す。
  * 押すと PackageInstaller のセッションで入れる (リリースは同じ鍵で署名しているので上書きで入る)。
  * 照らした APK は cache に版ごとに置き、開き直しても (ハッシュを計り直して合えば) 取り直さない。
@@ -172,7 +171,7 @@ class Updater(private val app: DenpaApp) {
     private val started = AtomicBoolean(false)
 
     /**
-     * 開いたとき (プロセスごとに1回。プロセスが落ちて画面が作り直されたときも)。手元で焼いた版では見ない。
+     * 開いたとき (プロセスごとに1回。プロセスが落ちて画面が作り直されたときも)。手元でビルドした版では見ない。
      * 許可の画面へ送ったあとに開き直したのなら、続けて入れる (許可が見えなくても入れてみる) (`resumeRequest`)
      */
     fun checkOnStart() {
@@ -199,8 +198,7 @@ class Updater(private val app: DenpaApp) {
     }
 
     /**
-     * 画面に戻った (MainActivity の onResume)。許可の画面から戻ったら**もう一度押さなくても続けて入れる**
-     * (denpa-tv#32。前は「もう一度押してください」と出したまま待っていた)。許可が見えなくても入れてみる (`installStep`)
+     * 画面に戻った (MainActivity の onResume)。許可の画面から戻ったら**もう一度押さなくても続けて入れる**。許可が見えなくても入れてみる (`installStep`)
      */
     fun resume() {
         val state = _state.value as? UpdateState.NeedsPermission ?: return
@@ -221,7 +219,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * 許可の画面へ送ったあと、アプリが閉じられて開き直した (テレビによっては許可の画面にいる間・許可したときに閉じられる)。
-     * 頼まれた版がまだ新しく、頼んでから間もなければ、続けて入れる。許可が見えなくても入れてみる (本当に無ければ OS が尋ねる。`installStep`)
+     * リクエストされた版がまだ新しく、リクエストしてから間もなければ、続けて入れる。許可が見えなくても入れてみる (本当に無ければ OS が尋ねる。`installStep`)
      */
     private suspend fun resumeRequest() {
         val request = app.settings.installRequest() ?: return
@@ -229,9 +227,9 @@ class Updater(private val app: DenpaApp) {
         if (asked == null) asked = request
         val state = _state.value
         val plan = resumePlan(state, request, System.currentTimeMillis())
-        Log.i(TAG, "開き直しました。v${request.version} を頼まれていました: $plan (${permissionReport()})")
+        Log.i(TAG, "開き直しました。v${request.version} をリクエストされていました: $plan (${permissionReport()})")
         when (plan) {
-            // 許可が見えなくても入れてみる (頼まれた版で間もないので、`start` の `installStep` は Install になる)
+            // 許可が見えなくても入れてみる (リクエストされた版で間もないので、`start` の `installStep` は Install になる)
             // 拒否のままなら、開くたびに許可の画面へ飛ばさない。案内だけ出して押すのを待つ (押せば許可の画面を開く)
             Resume.Start -> {
                 val (update, file) = when (state) {
@@ -246,7 +244,7 @@ class Updater(private val app: DenpaApp) {
                 }
             }
             Resume.Wait -> Unit
-            // 確かめている間に押されて新しい頼みを覚えていたら、それは消さない
+            // 確かめている間に押されて新しいリクエストを覚えていたら、それは消さない
             Resume.Forget -> if (asked == request) remember(null)
         }
     }
@@ -257,7 +255,7 @@ class Updater(private val app: DenpaApp) {
         app.scope.launch(requestWriter) { app.settings.setInstallRequest(request) }
     }
 
-    /** 書いておいた頼みだけ消す (`asked` は残す) */
+    /** 書いておいたリクエストだけ消す (`asked` は残す) */
     private fun forgetSaved() {
         app.scope.launch(requestWriter) { app.settings.setInstallRequest(null) }
     }
@@ -301,7 +299,7 @@ class Updater(private val app: DenpaApp) {
             is UpdateState.NeedsPermission -> start(state.update, state.file?.takeIf { it.exists() })
             is UpdateState.Failed -> start(state.update, state.file?.takeIf { it.exists() })
             // 確認の画面を戻るで閉じると、OS から何も返らないことがある。押せばもう一度出す
-            // (セッションを書いている最中 = 確認の画面を出す前・出した直後は何もしない。denpa-tv#32 で続けて押されて作り直し続けた)
+            // (セッションを書いている最中 = 確認の画面を出す前・出した直後は何もしない。続けて押されても作り直さない)
             is UpdateState.Installing -> when {
                 !state.confirming -> Unit
                 !reopenConfirm(confirmShownAt, SystemClock.elapsedRealtime()) -> Log.i(TAG, "確認の画面を出したばかりなので、押されても出し直しません")
@@ -313,7 +311,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * 新しい版 `update` を見つけた (null なら無い)。ほかの版の APK を捨て、照らした APK があればそれで「入れられます」に、
-     * 無ければ裏で取ってきて照らす。取ってきている・入れている・知らせを押したあとは触らない
+     * 無ければ裏で取ってきて照らす。取ってきている・入れている・通知を押したあとは触らない
      */
     private fun prepare(update: Update?, fresh: Boolean, manual: Boolean) {
         // 入れ終えた・もっと新しい版が出た・新しい版が無い: 要らない APK を捨てる
@@ -328,7 +326,7 @@ class Updater(private val app: DenpaApp) {
         }
     }
 
-    /** 知らせを出したり裏で取り始めたりしてよいとき (ほかに何もしていない) */
+    /** 通知を出したり裏で取り始めたりしてよいとき (ほかに何もしていない) */
     private fun settled(state: UpdateState) = state is UpdateState.Idle || state is UpdateState.Checking ||
         state is UpdateState.UpToDate || state is UpdateState.CheckFailed || state is UpdateState.Available || state is UpdateState.Ready
 
@@ -355,7 +353,7 @@ class Updater(private val app: DenpaApp) {
             fallBack(update, manual)
             return
         } catch (e: UpdateRejected) {
-            // SHA256SUMS に名前が無いなど。取り直しても変わらないので知らせを出す (押すと断る文が出る)
+            // SHA256SUMS に名前が無いなど。取り直しても変わらないので通知を出す (押すと断る文が出る)
             Log.w(TAG, "${update.label} は入れられません: ${e.message}")
             _state.value = UpdateState.Available(update)
             return
@@ -376,7 +374,7 @@ class Updater(private val app: DenpaApp) {
     private fun start(update: Update, downloaded: File?) {
         // 先に「不明なアプリのインストール」を確かめる (取ってきてから断られると無駄になる)
         // 許可して戻ったら続けて入れる (`resume`)。アプリが閉じられても開き直したときに続けられるよう、先に覚えておく。
-        // 一度送ったあとは、許可が見えなくても入れてみる (`installStep`。denpa-tv#32)
+        // 一度送ったあとは、許可が見えなくても入れてみる (`installStep`)
         // はっきり拒否なら、送ったあとでも入れてみずに許可の画面を開き直す
         val allowed = allowedToInstall()
         val appop = appop()
@@ -386,7 +384,7 @@ class Updater(private val app: DenpaApp) {
             askPermission(update, downloaded, denied(appop))
             return
         }
-        // 入れはじめたので、開き直したときに勝手に始めないよう覚えた頼みは消す。ただ許可が見えないまま入れるときは、
+        // 入れはじめたので、開き直したときに勝手に始めないよう覚えたリクエストは消す。ただ許可が見えないまま入れるときは、
         // このプロセスの中では覚えておく (確認の画面を閉じて押し直しても、許可の画面へ戻さない)
         if (allowed) remember(null) else forgetSaved()
         // 続けて押されても2本取らないよう、先に「取ってきている」にする
@@ -426,7 +424,7 @@ class Updater(private val app: DenpaApp) {
     }
 
     /**
-     * 許可まわりをログに書くための1行 (denpa-tv#32: 許可したのに canRequestPackageInstalls が false のテレビがある)。
+     * 許可まわりをログに書くための1行 (許可したのに canRequestPackageInstalls が false のテレビがある)。
      * `appop` は REQUEST_INSTALL_PACKAGES の mode (0 許可・1 無視・2 断る・3 既定)、`制限` はユーザーの制限
      */
     private fun permissionReport(): String = buildString {
@@ -467,7 +465,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * 許可の画面を開いて「許可を待つ」にする (許可して戻れば続けて入れる)。アプリが閉じられても開き直したときに続けられるよう、
-     * 先に頼みを覚えておく。`denied` (はっきり拒否) なら、拒否になっていることと切り直すことを添える
+     * 先にリクエストを覚えておく。`denied` (はっきり拒否) なら、拒否になっていることと切り直すことを添える
      */
     private fun askPermission(update: Update, downloaded: File?, denied: Boolean) {
         remember(InstallRequest(update.version, System.currentTimeMillis()))
@@ -503,7 +501,7 @@ class Updater(private val app: DenpaApp) {
 
     /**
      * PackageInstaller のセッションで入れる。結果は `onStatus` に返る。
-     * 1本ずつ: 前のセッションを書いている・渡している最中に捨てない (denpa-tv#32 で書いている途中に捨てて EPIPE になった)
+     * 1本ずつ: 前のセッションを書いている・渡している最中に捨てない (書いている途中に捨てると EPIPE になる)
      */
     private suspend fun install(update: Update, file: File) = sessions.withLock {
         _state.value = UpdateState.Installing(update, file)
@@ -545,7 +543,7 @@ class Updater(private val app: DenpaApp) {
             abandon(installer, id)
             if (session == id) session = NO_SESSION
             _state.value = if (e is SecurityException && !allowedToInstall()) {
-                // セッションを作れない・渡せない: 許可が無いせい。次に押すと許可の画面を開き直す (頼みを忘れて AskPermission に)
+                // セッションを作れない・渡せない: 許可が無いせい。次に押すと許可の画面を開き直す (リクエストを忘れて AskPermission に)
                 remember(null)
                 UpdateState.Failed(update, "インストールの許可がありません。もう一度押して許可してください ($RETOGGLE)", file)
             } else {
@@ -651,7 +649,7 @@ class Updater(private val app: DenpaApp) {
         const val CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000L
         const val STATUS_TIMEOUT_MS = 30_000L
         const val ACTION_STATUS = "io.github.danything.denpatv.UPDATE_STATUS"
-        /** BRAVIA は未設定でも設定に「許可」と出す (denpa-tv#32)。一度オフにしてオンにすると許可が書かれる */
+        /** BRAVIA は未設定でも設定に「許可」と出す。一度オフにしてオンにすると許可が書かれる */
         const val RETOGGLE = "許可と出ていても一度オフにしてオンに"
         /** AppOpsManager の OPSTR_REQUEST_INSTALL_PACKAGES (SDK には出ていない名前) */
         const val OPSTR_REQUEST_INSTALL_PACKAGES = "android:request_install_packages"

@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
@@ -18,12 +17,11 @@ import io.github.danything.denpatv.notice
  * 知らせることが無ければ (裏で取ってきている間も) 何も出さない
  */
 @Composable
-fun UpdateNotice(updater: Updater, modifier: Modifier = Modifier) {
+fun UpdateNotice(updater: Updater) {
     val state by updater.state.collectAsState()
     val text = state.notice() ?: return
     DenpaButton(
         onClick = { updater.act() },
-        modifier = modifier,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
     ) {
         Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)

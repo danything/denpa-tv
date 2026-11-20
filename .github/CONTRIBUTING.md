@@ -34,4 +34,4 @@
 
 JDK 17 以上と Android SDK があれば、`./gradlew assembleDebug` で組めます。
 Android TV のエミュレータ (または実機に adb で) 入れて、手元の denpa に繋いで試せます。
-詳しくは [README](../README.md) の「開発」へ。
+詳しくは [docs/development.md](../docs/development.md) へ。

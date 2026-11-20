@@ -1,7 +1,6 @@
 package io.github.danything.denpatv
 
 import io.github.danything.denpatv.data.keepEpisode
-import io.github.danything.denpatv.data.shortServiceName
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -11,7 +10,7 @@ class TitlesTest {
         if (title.length <= chars) title else keepEpisode(title, visible = chars, room = room) { it.length <= chars }
 
     @Test
-    fun 収まる題はそのまま() {
+    fun 収まるタイトルはそのまま() {
         assertEquals("NHKニュース7", fit("NHKニュース7", 22))
         assertEquals("葬送のフリーレン #12「本物の勇者」", fit("葬送のフリーレン #12「本物の勇者」", 22))
     }
@@ -62,13 +61,5 @@ class TitlesTest {
         assertEquals("#1 から始まるとても長い番組名", fit("#1 から始まるとても長い番組名", 8))
         // 話数だけでも収まらない
         assertEquals("番組名 #1234", fit("番組名 #1234", 4))
-    }
-
-    @Test
-    fun 局の名前は半角に寄せる() {
-        assertEquals("TOKYO MX1", shortServiceName("ＴＯＫＹＯ　ＭＸ１"))
-        assertEquals("NHK総合1・東京", shortServiceName("ＮＨＫ総合１・東京"))
-        assertEquals("AT-X", shortServiceName("ＡＴ－Ｘ"))
-        assertEquals("BS11イレブン", shortServiceName("ＢＳ１１イレブン"))
     }
 }

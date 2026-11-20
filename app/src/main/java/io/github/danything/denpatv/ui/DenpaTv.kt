@@ -39,9 +39,11 @@ import io.github.danything.denpatv.data.chasing
 import io.github.danything.denpatv.data.Connection
 import io.github.danything.denpatv.data.DeepLink
 import io.github.danything.denpatv.data.Unauthorized
+import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.findService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -51,12 +53,15 @@ import kotlinx.serialization.Serializable
  */
 @Serializable data class Main(val link: Long = 0) : NavKey
 @Serializable data class Live(val link: Long = 0) : NavKey
-/** 録画を観る。`fromStart` なら続きではなく頭から (詳しくの「最初から」) */
+/** 録画を観る。`fromStart` なら続きではなく頭から (詳細の「最初から」) */
 @Serializable data class Watch(val recordingId: Long, val fromStart: Boolean = false) : NavKey
+/** 設定の「ライセンス」と、その全文 (`index` は licenses.json の components の何番目か) */
+@Serializable data object LicenseList : NavKey
+@Serializable data class LicenseText(val index: Int) : NavKey
 
 @Composable
 fun DenpaTv(app: DenpaApp, link: MutableState<DeepLink?>) {
-    DenpaTheme {
+    DenpaTheme(app.denpaFont.fonts) {
         val back = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
         Surface(modifier = Modifier.fillMaxSize().backKeyGoesBack(back)) {
             // 未設定 (null) と読み込み中を分ける。読み込み中は何も出さない
@@ -87,9 +92,9 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
     val backStack = rememberNavBackStack(Main())
     val scope = rememberCoroutineScope()
     val repo = remember(base, token) { Repository(app, base, token) }
-    /** トークンが効かなくなった (外された・期限切れ)、または家の外と見なされた。忘れて繋ぐ画面へ */
+    /** アクセストークンが効かなくなった (外された・期限切れ)、または家の外と見なされた。忘れて繋ぐ画面へ */
     val unauthorized: () -> Unit = { scope.launch { app.settings.disconnect() } }
-    // denpa の知らせ (SSE) は、アプリが前に出ている間だけ1本繋ぐ。ここはどの画面より外なので Activity の生き死にに沿う
+    // denpa の通知 (SSE) は、アプリが前に出ている間だけ1本繋ぐ。ここはどの画面より外なので Activity のライフサイクルに沿う
     LifecycleStartEffect(repo) {
         val job = scope.launch { repo.listen(unauthorized) }
         onStopOrDispose { job.cancel() }
@@ -113,19 +118,27 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
                     onLive = { backStack.add(Live()) },
                     onWatch = { recording, fromStart -> backStack.add(Watch(recording.id, fromStart)) },
                     onUnauthorized = unauthorized,
+                    onLicenses = { backStack.add(LicenseList) },
                 )
             }
+            entry<LicenseList> { LicensesScreen(onOpen = { backStack.add(LicenseText(it)) }) }
+            entry<LicenseText> { key -> LicenseTextScreen(key.index) }
             entry<Live> { LivePlayerScreen(repo, onLeave = { backStack.removeAt(backStack.lastIndex) }, onUnauthorized = unauthorized) }
             entry<Watch> { key ->
                 val leave = { backStack.removeAt(backStack.lastIndex); Unit }
-                // 録画中は追っかけ (伸びている生TSを denpa に流してもらう)、録り終えたものはファイルで
+                // 録画中は追っかけ (伸びている元のTSを denpa に流してもらう)、録り終えたものはファイルで
                 // 「最初から」は続きの位置を持たないものとして開く (頭から流し、観た位置はいつもどおり預ける)
-                val recording = remember(key) {
-                    repo.recordings.firstOrNull { it.id == key.recordingId }?.let { if (key.fromStart) it.copy(resumeMs = null) else it }
+                // 追っかけの途中でエンコードが終わったら、読み直した録画 (続きはそこまで観た位置) に替えてファイルで続ける
+                val opened = remember(key) {
+                    mutableStateOf(repo.recordings.firstOrNull { it.id == key.recordingId }?.let { if (key.fromStart) it.copy(resumeMs = null) else it })
                 }
+                val recording = opened.value
                 when {
                     recording == null -> Centered("録画が見つかりません")
-                    recording.chasing -> ChasePlayerScreen(repo, recording, leave, unauthorized)
+                    recording.chasing -> ChasePlayerScreen(repo, recording, leave, unauthorized) { encoded ->
+                        notice(context, "エンコードが終わったので、ファイルで再生します")
+                        opened.value = encoded
+                    }
                     else -> RecordingPlayerScreen(repo, recording, leave, unauthorized)
                 }
             }
@@ -135,6 +148,7 @@ private fun Navigation(app: DenpaApp, base: java.net.URI, token: String?, link: 
 
 /**
  * リンクの行き先を開く。**いまの再生の画面は置き換え、積み増さない。** 戻るで行く先は、ライブならメニュー、録画なら録画の一覧。
+ * 番組表はメニューの画面の番組表 (`Repository.guideReturn` に局を置く)。
  * 局・録画が見つからなければ、ライブ・一覧をふつうに開いて1行知らせる
  */
 private suspend fun open(
@@ -148,20 +162,20 @@ private suspend fun open(
     try {
         when (link) {
             is DeepLink.Live -> {
-                val channel = link.channel
-                if (channel != null) {
-                    val fetched = if (repo.services.isEmpty() || repo.servicesStale) refreshQuietly { repo.refreshServices() } else true
-                    // ライブは最後に観ていた局から映す。そこを替えて開く
-                    val service = findService(repo.services, channel)
-                    when {
-                        service != null -> repo.app.settings.setLastService(service.id)
-                        // 取れなかったのに「見つからない」とは言わない
-                        repo.services.isEmpty() && !fetched -> notice("局の一覧を取れませんでした")
-                        else -> notice("${channel.take(NOTICE_MAX)} という局が見つかりませんでした")
-                    }
-                }
+                // ライブは最後に観ていた局から映す。そこを替えて開く
+                link.channel?.let { linkService(repo, it, notice) }?.let { repo.app.settings.setLastService(it.id) }
                 backStack.subList(1, backStack.size).clear()
                 backStack.add(Live(stamp))
+            }
+            is DeepLink.Guide -> {
+                // その局 (無い・見つからなければ最後に観ていた局) のいまの番組にフォーカスして開く。最後に観ていた局は替えない
+                val service = link.channel?.let { linkService(repo, it, notice) } ?: run {
+                    if (repo.services.isEmpty()) refreshQuietly { repo.refreshServices() }
+                    val last = repo.app.settings.lastService.first()
+                    repo.services.firstOrNull { it.id == last }
+                }
+                repo.guideReturn = GuidePlace(service?.type ?: "GR", service?.id, null, System.currentTimeMillis())
+                backStack.replaceAll(Main(stamp))
             }
             DeepLink.Recordings -> backStack.replaceAll(Main(stamp))
             is DeepLink.Watch -> {
@@ -169,7 +183,7 @@ private suspend fun open(
                 val fetched = if (id != null && repo.recordings.none { it.id == id }) refreshQuietly { repo.refreshRecordings() } else true
                 if (id != null && repo.recordings.any { it.id == id }) backStack.replaceAll(Main(stamp), Watch(id))
                 else {
-                    notice(if (fetched) "録画 ${link.id.take(NOTICE_MAX)} が見つかりませんでした" else "録画の一覧を取れませんでした")
+                    notice(if (fetched) "録画 ${link.id.take(NOTICE_MAX)} が見つかりませんでした" else "録画の一覧を取得できませんでした")
                     backStack.replaceAll(Main(stamp))
                 }
             }
@@ -177,6 +191,19 @@ private suspend fun open(
     } catch (_: Unauthorized) {
         unauthorized()
     }
+}
+
+/** リンクの局を探す (局の一覧が無い・古ければ取り直してから)。見つからなければ1行知らせて null */
+private suspend fun linkService(repo: Repository, channel: String, notice: (String) -> Unit): Service? {
+    val fetched = if (repo.services.isEmpty() || repo.servicesStale) refreshQuietly { repo.refreshServices() } else true
+    val service = findService(repo.services, channel)
+    when {
+        service != null -> {}
+        // 取れなかったのに「見つからない」とは言わない
+        repo.services.isEmpty() && !fetched -> notice("局の一覧を取得できませんでした")
+        else -> notice("${channel.take(NOTICE_MAX)} という局が見つかりませんでした")
+    }
+    return service
 }
 
 /** 取り直す。取れなくても続ける (手元の一覧で探す) — 取れたかを返す。401 と取り消し (次のリンクが来た) は上へ */
@@ -192,7 +219,7 @@ private suspend fun refreshQuietly(block: suspend () -> Unit): Boolean =
         false
     }
 
-/** 知らせに入れるリンクの文字の長さ (ほかのアプリから長いものを投げられても1行に収める) */
+/** 通知に入れるリンクの文字の長さ (ほかのアプリから長いものを投げられても1行に収める) */
 private const val NOTICE_MAX = 40
 
 private fun NavBackStack<NavKey>.replaceAll(vararg keys: NavKey) {
@@ -202,7 +229,7 @@ private fun NavBackStack<NavKey>.replaceAll(vararg keys: NavKey) {
     subList(0, old).clear()
 }
 
-/** 1行の知らせ (リンクの局が見つからないなど)。画面をまたいでも出るよう Toast で */
+/** 1行の通知 (リンクの局が見つからないなど)。画面をまたいでも出るよう Toast で */
 private fun notice(context: Context, text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
 
 @Composable
@@ -213,11 +240,11 @@ fun Centered(text: String) {
 }
 
 /**
- * **戻るキーは、合いを動かすのに使わせず、そのまま「戻る」にする** (`BackHandler` が受ける)。
+ * **戻るキーは、フォーカスの移動に使わせず、そのまま「戻る」にする** (`BackHandler` が受ける)。
  *
- * Android 12 以前 (予測型の戻るが無い) では、戻るキーはまず画面の部品に届き、Compose は合いのあるところから
- * **合いを外へ出す** (FocusDirection.Exit) のに使ってしまう。そうなると、ライブのメニューや操作の帯を開いて戻るを押しても
- * 帯は閉じず、合いだけが帯の外へ抜けて (どこにも合わずに) リモコンが効かなくなったり、帯を飛ばして画面ごと戻ったりした。
+ * Android 12 以前 (予測型の戻るが無い) では、戻るキーはまず画面の部品に届き、Compose はフォーカスのあるところから
+ * **フォーカスを外へ出す** (FocusDirection.Exit) のに使ってしまう。そうなると、ライブのメニューや操作バーを開いて戻るを押しても
+ * 操作バーは閉じず、フォーカスだけが操作バーの外へ抜けて (どこにもフォーカスが無いまま) リモコンが効かなくなったり、操作バーを飛ばして画面ごと戻ったりした。
  * Android 13 以降の予測型の戻るでは、もともと戻るキーは部品に届かない。どちらでも同じ動きにする。
  * 押し続けた繰り返しは捨て、離したときに1回だけ戻る
  */
