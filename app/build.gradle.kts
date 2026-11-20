@@ -114,15 +114,10 @@ android {
  * **留めるのはタグだけ** (denpa の Dockerfile の DENPA_FONT_VERSION と揃える。Renovate はタグを上げるだけ)。
  * 中身は同じリリースの SHA256SUMS で照らす (違えばビルドを止める)
  */
-<<<<<<< HEAD
-// renovate: datasource=git-refs depName=https://github.com/danything/arib-font branch=main
-val aribFontSha = "67fa483de74f1554f287c356f0f54bee89688b1a"
-=======
 // renovate: datasource=github-releases depName=danything/denpa-font
 val denpaFontVersion = "v3.7"
->>>>>>> 8e6f1f5346e d69c756167a32ace5d3e455c97c98
 
-        abstract class FetchCaptionFont : DefaultTask() {
+abstract class FetchCaptionFont : DefaultTask() {
     /** リリースの置き場 (…/releases/download/<タグ>) */
     @get:Input
     abstract val release: Property<String>
