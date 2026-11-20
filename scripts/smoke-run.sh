@@ -39,6 +39,9 @@ trap '{ [ -z "$logcat" ] || kill "$logcat" 2>/dev/null || true; }; stop_emulator
 if [ -n "${SMOKE_WAIT_APKS:-}" ]; then
     bash "$(dirname "$0")/wait-apks.sh" "$SMOKE_WAIT_APKS"
 fi
+# 復元された AVD に別署名の旧 APK が残っている場合、更新インストールは失敗するため先に削除する
+adb uninstall io.github.danything.denpatv || true
+adb uninstall io.github.danything.denpatv.smoke || true
 adb install -r -t "$app"
 adb install -r -t "$smoke"
 adb logcat -c || true
