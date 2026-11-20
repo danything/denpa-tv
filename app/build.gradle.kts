@@ -9,7 +9,11 @@ plugins {
 
 android {
     namespace = "io.github.danything.denpatv"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
 
     defaultConfig {
         applicationId = "io.github.danything.denpatv"
@@ -126,7 +130,8 @@ abstract class FetchCaptionFont : DefaultTask() {
         val dir = outputDir.get().asFile.apply { deleteRecursively(); mkdirs() }
         val get = { name: String -> URI("${release.get()}/$name").toURL().openStream().use { it.readBytes() } }
         val sums = get("SHA256SUMS").decodeToString()
-        val want = sums.lines().firstNotNullOfOrNull { Regex("""^([0-9a-f]{64}) +denpa-font\.ttf$""").find(it)?.groupValues?.get(1) }
+        val want = sums.lines()
+            .firstNotNullOfOrNull { Regex("""^([0-9a-f]{64}) +denpa-font\.ttf$""").find(it)?.groupValues?.get(1) }
             ?: error("SHA256SUMS に denpa-font.ttf がありません: ${release.get()}")
         val bytes = get("denpa-font.ttf")
         val got = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
@@ -184,7 +189,8 @@ abstract class CheckLicenses : DefaultTask() {
     @TaskAction
     fun check() {
         @Suppress("UNCHECKED_CAST")
-        val components = (groovy.json.JsonSlurper().parse(manifest.get().asFile) as Map<String, Any?>)["components"] as List<Map<String, Any?>>
+        val components = (groovy.json.JsonSlurper()
+            .parse(manifest.get().asFile) as Map<String, Any?>)["components"] as List<Map<String, Any?>>
         val patterns = components.flatMap { (it["groups"] as List<*>?).orEmpty().map(Any?::toString) }
         val matches = { pattern: String, group: String ->
             if (pattern.endsWith(".*")) group.startsWith(pattern.removeSuffix("*")) else group == pattern
@@ -219,7 +225,8 @@ androidComponents {
                     while (queue.isNotEmpty()) {
                         val next = queue.removeFirst()
                         if (!seen.add(next)) continue
-                        next.dependencies.filterIsInstance<ResolvedDependencyResult>().forEach { queue.add(it.selected) }
+                        next.dependencies.filterIsInstance<ResolvedDependencyResult>()
+                            .forEach { queue.add(it.selected) }
                     }
                     // プロジェクト自身 (:app) は除く
                     seen.mapNotNull { (it.id as? ModuleComponentIdentifier)?.group }.toSet()
