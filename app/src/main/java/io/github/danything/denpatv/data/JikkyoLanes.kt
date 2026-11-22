@@ -25,12 +25,15 @@ import kotlin.random.Random
  * @param random 重ねる高さを選ぶくじ (0 以上 1 未満。テストでは決まった値を渡す)
  */
 class JikkyoLanes(private var height: Float = 1f, private val random: () -> Double = { Random.nextDouble() }) {
-    /** 縦の場所 (行の高さを 1 として)。流れているものは `entryAt`・`exitAt`、止めているものは `exitAt` を消す時刻に使う */
+    /**
+     * 縦の場所 (行の高さを 1 として)。流れているものは `entryAt`・`exitAt` で並べられるかを決める。
+     * 止めているものは `exitAt` を消す時刻に使い、`entryAt` は使わない (置いた時刻を入れておく)
+     */
     private class Placed(val top: Float, val bottom: Float, val entryAt: Long, val exitAt: Long)
 
     /** 流れているもの。`entryAt` は末尾 (と間) が枠の右の端を過ぎる時刻、`exitAt` は左の端を出る時刻 */
     private val moving = mutableListOf<Placed>()
-    /** 止めているもの。`exitAt` は消す時刻 */
+    /** 止めているもの。`exitAt` は消す時刻。消えたものは次の `hold` で外す (同時に流すのは 60 件までなので溜まらない) */
     private val held = mutableListOf<Placed>()
 
     /** 1件の置き方。`top` は上の端 (行の高さを 1 として)、`duration` は流れ終わる (止めたものは消す) までの放送時刻の ms */
