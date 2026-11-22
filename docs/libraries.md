@@ -14,7 +14,7 @@
 | Compose for TV (`androidx.tv:tv-material`) | 1.1.0 | 2026-05-06 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/tv))。TV 向けのフォーカスの見せ方 (拡大・縁取り) を持つ Card / Button / ListItem / Surface と、いちばん上の **NavigationDrawer** を使う。Android TV のデザインの指針は、行き先を 5〜6 までのナビゲーション ドロワーにまとめ、畳んだ状態 (アイコンだけの列) も見せるよう勧めていて、NavigationDrawer / ModalNavigationDrawer はどちらも実験扱いではない ([ナビゲーション ドロワーの指針](https://developer.android.com/design/ui/tv/guides/components/navigation-drawer)、2026-10-04 に確認)。メニューの3つのアイコンは Material Symbols、再生の操作ボタンのアイコンは Material Icons (どちらも Apache License 2.0) を vector drawable として置いた (アイコンのライブラリは入れない) |
 | `androidx.tv:tv-foundation` | **使わない** | TV 用の Lazy レイアウトは alpha11 で非推奨、alpha12 で削除済み。普通の Compose の `LazyRow` / `LazyColumn` で足りる (同ノート) |
 | Navigation 3 (`androidx.navigation3`) | 1.2.0 | 戻る履歴をただのリストとして持つ Compose 向けの新しい Navigation。行き先は `@Serializable` のクラス。**minSdk 24 を求める** ので、アプリの minSdk もこれに合わせた |
-| DataStore Preferences | 1.2.1 | 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・実況を流すか・音声 (名前とデュアルモノの側)・アップデートを確かめた時刻を覚える。SharedPreferences の後継 |
+| DataStore Preferences | 1.2.1 | 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・実況を流すか・音声 (名前とデュアルモノの側)・データ放送を自動で受信するか・アップデートを確かめた時刻を覚える。SharedPreferences の後継 |
 | Media3 (ExoPlayer) | 1.11.1 | 2026-09-10 の安定版 ([リリースノート](https://developer.android.com/jetpack/androidx/releases/media3))。minSdk 23。入れるのは `media3-exoplayer` と、映像の面 (`PlayerSurface`) の `media3-ui-compose` だけ (View の `media3-ui` は入れない。字幕は自分で描く) |
 
 ### minSdk 24 (Android 7.0)
@@ -174,6 +174,31 @@ EncryptedSharedPreferences (`androidx.security:security-crypto`) は 1.1.0-beta0
 **ポスターはアプリが取って `content://` で渡す** (`WatchNextPosters`、読むだけの ContentProvider)。denpa のポスターの URL を
 そのまま渡すと、ログインが要る denpa (アクセストークンが要る) ではホームが読めず、家の LAN でもホームのアプリが素の HTTP を読むとは限らない。
 ホームが読めるよう exported にしてあり、ほかのアプリからも「続きを視聴」に出ている録画のポスターは読める (出すのはそれだけ)。
+
+### データ放送: 入れない (OS の WebView で denpa のページを開く)
+
+2026-11-22 に決めた。データ放送 (BML) は、ブラウザの denpa と同じエンジンを動かす denpa のページ (`/embed/data`) を、
+OS の `android.webkit.WebView` で映像の上に透明に重ねて出す (`ui/DataBroadcast.kt`。約束は denpa の docs/api.md「データ放送のページ `/embed/data`」)。
+映像はプレーヤー (Media3) のまま、ページが言う場所に縮める。
+
+| 候補 | 見たところ |
+| --- | --- |
+| エンジンを Kotlin で作り直す | BML・ECMAScript のサブセット・カルーセルの組み立てを二重に持つことになる。ブラウザと動きがずれる |
+| 映像も WebView に任せる | MPEG-2 を Media3 のデコーダで観られなくなり、ライブの遅れ・字幕・実況の作りを二重に持つ |
+| `androidx.webkit` | WebView の新しい API (`WebViewCompat` の `addWebMessageListener` など) を古い端末でも呼べる。使うのはどれも API 23 からの OS の API (`createWebMessageChannel`・`postWebMessage`) で足り、依存が増える |
+| **OS の WebView に denpa のページ** | エンジンは denpa と 1 つ。依存が増えない |
+
+→ **OS の WebView**。決めたこと:
+
+- **JavaScript と Kotlin の間は MessagePort 1 本** (`createWebMessageChannel` の片方を `postWebMessage` で、相手のオリジンを denpa にしてメインフレームへ渡す)。
+  `addJavascriptInterface` は使わない。WebView の中では放送の文書と Hybridcast のアプリ (別のオリジンの iframe) が動くので、どのフレームからも Kotlin を呼べないようにする
+- メインフレームが denpa のオリジンの外へ移る読み込みは断る (`shouldOverrideUrlLoading`)。ファイルと content:// は読ませない
+- WebView は `Authorization` を付けられないので、アクセストークンと引き換えた Cookie (`POST api/device/web`) を `CookieManager` に入れる。WebView を作るたびに取り直す
+- WebView はフォーカスを取らない。キーは映像が受けて、ARIB のキーコードに直してページへ渡す
+- WebView を作るのは開いている・自動で受信している間だけ。メモリの少ない端末 (`isLowRamDevice`) は、自動で受信するのを既定でオフにする
+  (繋いだときに数十 MB のモジュールが届き、WebView を裏で動かし続けるため)
+- ライブのデータ (`GET api/services/<id>/data`) は 1 通ずつ、ページへ送り終えてから次を読む (メインスレッドのキューに溜め込まない)
+- WebView の描く側が落ちても (`onRenderProcessGone`)、アプリは落とさずデータ放送だけやめる
 
 ### DI: 入れない (手で渡す)
 

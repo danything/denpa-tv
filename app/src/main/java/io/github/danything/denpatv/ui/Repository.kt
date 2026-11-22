@@ -149,6 +149,19 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
         return api.playbackOptions(base)?.also { optionsKnown = it } ?: PlaybackOptions.FALLBACK
     }
 
+    /** denpa がデータ放送のページを持っているか (`DenpaApi.hasDataPage`)。分かったものを控える (denpa に繋ぎ直したら聞き直す) */
+    @Volatile
+    private var dataPageKnown: Boolean? = null
+
+    /**
+     * **denpa がデータ放送のページを持っているか。** 持っていない denpa (古い版) なら、再生の画面に「データ放送」を出さない。
+     * 控えが無ければ聞く。分からなければ false (控えないので、次に開いた画面で聞き直す)。アクセストークンが取り消されていれば `Unauthorized`
+     */
+    suspend fun dataPage(): Boolean {
+        dataPageKnown?.let { return it }
+        return api.hasDataPage(base)?.also { dataPageKnown = it } ?: false
+    }
+
     /** 局だけ取り直す (いま放送中の番組が変わるので) */
     suspend fun refreshServices() {
         services = api.services(base)
@@ -196,6 +209,8 @@ class Repository(val app: DenpaApp, val base: URI, val token: String?) {
             DenpaEvent.Opened -> {
                 recordingsStale = true
                 servicesStale = true
+                // denpa を上げたかもしれない (データ放送のページを持つようになった)
+                dataPageKnown = null
                 launch { checkVersion() }
             }
             is DenpaEvent.Changed -> {

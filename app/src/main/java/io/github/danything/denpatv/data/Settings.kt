@@ -18,7 +18,7 @@ data class Connection(val server: String, val token: String?)
 
 /**
  * 覚えておくもの: 繋ぐ先 (とアクセストークン)・ライブの画質と最後に観た局・CM を飛ばすか・録画の速さ・字幕・実況 (流すか・一覧を出すか)・音声 (名前とデュアルモノの側)・
- * アップデートを確かめた時刻と、押して許可の画面へ送った版。
+ * データ放送を自動で受信するか・アップデートを確かめた時刻と、押して許可の画面へ送った版。
  *
  * **アクセストークンは暗号化せずアプリの領域に置く。** EncryptedSharedPreferences (androidx.security-crypto) は
  * 2025 年に全部非推奨になった。アプリの領域は他のアプリから読めず、アクセストークンは denpa の画面からいつでも外せる
@@ -35,6 +35,7 @@ class Settings(private val context: Context) {
     private val subtitlesKey = booleanPreferencesKey("subtitles")
     private val jikkyoKey = booleanPreferencesKey("jikkyo")
     private val jikkyoListKey = booleanPreferencesKey("jikkyo_list")
+    private val dataAutoKey = booleanPreferencesKey("data_auto_receive")
     private val audioKey = stringPreferencesKey("audio_label")
     private val dualMonoKey = stringPreferencesKey("dual_mono_side")
     private val updateCheckedKey = longPreferencesKey("update_checked_at")
@@ -116,6 +117,16 @@ class Settings(private val context: Context) {
 
     suspend fun setJikkyoList(on: Boolean) {
         context.dataStore.edit { it[jikkyoListKey] = on }
+    }
+
+    /**
+     * データ放送を自動で受信するか (入口に自動起動の指定がある局・録画で、d を押す前から受信する。denpa の docs/stream.md「自動で受信する端末」)。
+     * 端末ごと。選んでいなければ null で、既定は画面が決める (メモリの少ない端末はオフ、ほかはオン。`rememberDataAutoReceive`)
+     */
+    val dataAutoReceive: Flow<Boolean?> = context.dataStore.data.map { it[dataAutoKey] }
+
+    suspend fun setDataAutoReceive(on: Boolean) {
+        context.dataStore.edit { it[dataAutoKey] = on }
     }
 
     /** 最後に選んだ音声の名前 (「解説ステレオ」など)。同じ名前の音声があればそれで始める */

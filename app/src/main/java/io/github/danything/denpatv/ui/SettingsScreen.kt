@@ -26,7 +26,7 @@ import io.github.danything.denpatv.notice
 import kotlinx.coroutines.launch
 
 /**
- * 設定。**繋ぐ先と、アプリのバージョン (下に繋いだ denpa のバージョン) と、ライセンスだけ**。 ライブの画質・録画の速さ・CM 飛ばしは、ブラウザの denpa と同じく
+ * 設定。**繋ぐ先と、アプリのバージョン (下に繋いだ denpa のバージョン) と、データ放送を自動で受信するかと、ライセンスだけ**。 ライブの画質・録画の速さ・CM 飛ばしは、ブラウザの denpa と同じく
  * 再生の画面の操作バー (メニュー) で変える (観ながら変えて、端末ごとに覚えるもの)
  */
 @Composable
@@ -92,6 +92,16 @@ fun SettingsScreen(repo: Repository, onLicenses: () -> Unit) {
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
             }
+            /*
+             * データ放送を自動で受信するか (端末ごと。ブラウザの denpa では d ボタンの長押しで替えるもの)。d の無いリモコンでも替えられるよう、
+             * 再生の画面ではなくここに置く。既定はメモリの少ない端末でオフ、ほかはオン (`rememberDataAutoReceive`)
+             */
+            val dataAuto = rememberDataAutoReceive(repo)
+            WideButton(
+                "データ放送を自動で受信: " + if (dataAuto) "オン" else "オフ",
+                "入口に自動起動の指定がある局・録画で、開く前から受信します。押すと切り替え",
+                onClick = { scope.launch { app.settings.setDataAutoReceive(!dataAuto) } },
+            )
             // このアプリ (AGPL) と、APK に入っているもののライセンス (LicensesScreen)
             WideButton(
                 "ライセンス",
