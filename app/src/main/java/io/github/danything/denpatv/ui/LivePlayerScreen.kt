@@ -239,8 +239,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             chasing != null -> CaptionPaths.recording(chasing.recording.id).takeIf { streamed == LiveQuality.Raw }
             streamed == LiveQuality.Raw -> playing?.let { CaptionPaths.live(it.live) }
             // 変換したライブの字幕と時計は、映像と同じ形式 (denpa が選んだもの)・音声を渡すと同じストリームのものが fMP4 の時刻で来る。
-            // denpa の字幕のエンドポイントは H.265 を受けない (`codec` は raw・h264・av1。ほかは 400) ので、H.265 では字幕と時計を取らない
-            streamed != null && streamed != LiveQuality.Hevc -> playing?.let { CaptionPaths.live(it.live) }?.let { "$it?codec=${streamed.codec}$liveAudio" }
+            streamed != null -> playing?.let { CaptionPaths.live(it.live) }?.let { "$it?codec=${streamed.codec}$liveAudio" }
             else -> null
         },
         generation = chasing?.let { "chase ${it.recording.id} $chaseLoads" } ?: playing?.id,
@@ -533,8 +532,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     rememberDataBroadcast(
         data,
         repo,
-        // 追っかけ (録画に譲った間)・H.265 (字幕と時計を取らない)・裏に回っている間は出さない
-        target = playing?.takeIf { !background && chasing == null && streamed != null && streamed != LiveQuality.Hevc }?.let { DataTarget.Live(it.id) },
+        // 追っかけ (録画に譲った間)・裏に回っている間は出さない
+        target = playing?.takeIf { !background && chasing == null && streamed != null }?.let { DataTarget.Live(it.id) },
         receiving = dataAuto && captions.autoStart,
         subtitles = subtitlesOn,
         time = {
@@ -559,11 +558,11 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         },
         onCaptions = { on -> scope.launch { repo.app.settings.setSubtitles(on) } },
         onUnauthorized = onUnauthorized,
-        // 字幕と同じく、映像に渡した形式 (と変換したライブは音声) を渡す。H.265 では取らない
+        // 字幕と同じく、映像に渡した形式 (と変換したライブは音声) を渡す
         feed = playing?.let { DataPaths.live(it.live) }?.let { path ->
             when (streamed) {
                 LiveQuality.Raw -> path
-                null, LiveQuality.Hevc -> null
+                null -> null
                 else -> "$path?codec=${streamed.codec}$liveAudio"
             }
         },
