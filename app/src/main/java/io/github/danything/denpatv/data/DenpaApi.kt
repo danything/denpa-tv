@@ -206,6 +206,28 @@ class DenpaApi(
             ?: null.also { warn("観るときの決まりの形式が違います (denpa の版のずれ?): ${res.text().take(200)}") }
     }
 
+    /**
+     * denpa がデータ放送のページ (`embed/data`) を持っているか。持っていれば true、無ければ (古い denpa の 404) false、
+     * 届かない・ほかの答えなら null (分からない。呼ぶ側は次に聞き直す)
+     */
+    suspend fun hasDataPage(base: URI): Boolean? = withContext(Dispatchers.IO) {
+        val res = call(base, DataPage.PATH) ?: return@withContext null
+        when {
+            res.ok -> true
+            res.code == 404 -> false
+            else -> null
+        }
+    }
+
+    /**
+     * WebView の Cookie (`POST api/device/web`。アクセストークンと引き換える)。アクセストークンが取り消されていれば `Unauthorized`、
+     * 届かない・出してもらえない・読めなければ null
+     */
+    suspend fun appCookie(base: URI): AppCookie? = withContext(Dispatchers.IO) {
+        val res = call(base, DataPaths.COOKIE, "POST")?.takeIf { it.ok } ?: return@withContext null
+        AppCookie.parse(res.text()) ?: null.also { warn("WebView の Cookie の形式が違います (denpa の版のずれ?)") }
+    }
+
     /** 録画を消す (`DELETE /api/recordings/<id>`。消えれば 204)。もう無い (404) のも消せたとみなして true。録画中 (409) などは false */
     suspend fun deleteRecording(base: URI, id: Long): Boolean = withContext(Dispatchers.IO) {
         val res = call(base, "api/recordings/$id", "DELETE") ?: return@withContext false

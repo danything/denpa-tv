@@ -30,6 +30,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.AirClock
 import io.github.danything.denpatv.data.AirTime
+import io.github.danything.denpatv.data.AribKey
 import io.github.danything.denpatv.data.CaptionPaths
 import io.github.danything.denpatv.data.CenterPress
 import io.github.danything.denpatv.data.RecordingCenter
@@ -87,6 +88,8 @@ import kotlinx.coroutines.launch
  *
  * 位置・尺・チャプター・続きの位置は、どれも録画の時刻 (`playback` の物差し) で数える (`RecordingTimeline`)。
  * 観た位置は denpa に預ける (15 秒ごとと、閉じるとき)。ブラウザで続きから観られる
+ *
+ * データ放送は、denpa が取り出してある録画だけ (`playback` の `data`)。d と操作の列の「データ放送」で開き、決定の長押しで閉じる (`rememberDataBroadcast`)
  */
 @Composable
 fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
@@ -280,11 +283,13 @@ private fun RecordingPlayback(
     } else {
         rememberCaptionPages(repo, player, CaptionPaths.recordingText(recording.id), onUnauthorized) { timeline.position() }
     }
+    /** いま映しているコマの放送時刻 (実況の頭の放送時刻から。実況の無い録画では分からない)。データ放送のページに渡す */
+    val airClock = remember { arrayOfNulls<AirClock>(1) }
     val jikkyo = rememberRecordingJikkyo(repo, recording.id, flash, onUnauthorized) { j ->
         // 物差しがエンコードしたものなら、元の TS の時刻に直してから頭の放送時刻を足す
         val ruler = info.ruler.takeIf { info.axis == "encoded" }
         Pair(
-            AirClock { AirTime.recording(j.head, timeline.position(), ruler) },
+            AirClock { AirTime.recording(j.head, timeline.position(), ruler) }.also { airClock[0] = it },
             JikkyoPast(j.head, { j.end ?: AirTime.recording(j.head, lengthMs, ruler) }),
         )
     }
@@ -346,6 +351,29 @@ private fun RecordingPlayback(
         if (resyncAfterSpeedChange(from, speed, flowing)) timeline.seekTo(timeline.position())
     }
     fun length() = timeline.durationMs() / 1000.0
+    /*
+     * データ放送 (取り出してある録画だけ。`playback` の `data`)。変化ログはページが自分で取得し、ここが渡す再生位置に合わせて流す。
+     * 自動で受信する端末は、入口に自動起動の指定がある録画でだけ開く前から受信する
+     */
+    val dataAuto = rememberDataAutoReceive(repo)
+    val subtitlesOn by repo.app.settings.subtitles.collectAsState(initial = true)
+    val data = rememberDataBroadcast(
+        rememberDataState(repo),
+        repo,
+        target = info.data?.let { DataTarget.Recording(recording.id) },
+        receiving = dataAuto && info.data?.autoStart == true,
+        subtitles = subtitlesOn,
+        time = {
+            DataTime(airClock[0]?.now(), timeline.position(), speed, !player.playWhenReady)
+        },
+        // 飛んだ・止めた・動かした・速さを変えたら、すぐ送り直す
+        timeKey = Triple(moves, playing, speed),
+        flash = flash,
+        // 元の TS は音声が全部入っているので端末で選び直す。エンコードしたもの・変換したものは、文書の言う ES が分からないので替えない
+        onAudio = { index -> if (raw) player.selectBroadcastAudio(index) },
+        onCaptions = { on -> scope.launch { repo.app.settings.setSubtitles(on) } },
+        onUnauthorized = onUnauthorized,
+    )
     var chapters by remember { mutableStateOf(emptyList<ChapterMark>()) }
     val skipped = remember { mutableSetOf<Long>() }
     /**
@@ -628,7 +656,9 @@ private fun RecordingPlayback(
 
     // 操作バー (終わり・止めている間・操作の列) を出している間は、通知を操作バーのタイトルに添える (`covered`)
     val covered = ended || bar != null || !playing
-    PlayerFrame(player, overlay, error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, jikkyo = jikkyo, recovery = recovery, covered = covered, above = {
+    // データ放送を開いている間は、戻るを文書へ (閉じるのは決定の長押し・d・操作の列の「データ放送」)
+    ui.back = { data.open.also { if (it) data.press(AribKey.BACK) } }
+    PlayerFrame(player, overlay ?: data.note.ifEmpty { null }, error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, jikkyo = jikkyo, recovery = recovery, covered = covered, data = data, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
@@ -661,7 +691,7 @@ private fun RecordingPlayback(
                             toggleCm()
                         },
                     ),
-                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + bakedAudio.controls(),
+                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + bakedAudio.controls() + listOfNotNull(data.control { bar = null }),
                     "" to listOf(deleteControl),
                 ),
                 header = { actions ->
@@ -673,6 +703,8 @@ private fun RecordingPlayback(
             )
         }
     }, onKey = { event ->
+        // データ放送を開いている間は、十字・数字・色 (緑の速さより先)・d を文書へ
+        if (data.keyDown(event.nativeKeyEvent.keyCode, event.nativeKeyEvent.repeatCount)) return@PlayerFrame true
         when (recordingCommand(event.nativeKeyEvent.keyCode)) {
             // 止めている間は位置のバーに出るので、通知は出さない
             RecordingCommand.Back -> { step(-1).let { if (playing) flash(position(it)) }; true }
@@ -686,7 +718,14 @@ private fun RecordingPlayback(
             RecordingCommand.Details -> { ui.details = true; true }
             null -> false
         }
-    }, onCenter = { press -> ui.center(press) { togglePause() } })
+    }, onKeyUp = { event -> data.keyUp(event.nativeKeyEvent.keyCode) }, onCenter = { press ->
+        // データ放送を開いている間は、短押しは文書へ、長押しで閉じる
+        when {
+            !data.open -> ui.center(press) { togglePause() }
+            press == CenterPress.Action.Short -> data.press(AribKey.ENTER)
+            else -> data.close()
+        }
+    })
 
     if (details) PlayerDetailDialog(repo, recording, onDelete = { deleteNow() }, onClose = { details = false }, onUnauthorized = onUnauthorized)
 }
@@ -727,6 +766,8 @@ internal class PlayerBar(private val onLeave: () -> Unit) {
     var touched by mutableLongStateOf(0L)
     /** 番組の詳しいところを開いているか (決定の長押し) */
     var details by mutableStateOf(false)
+    /** 操作バーが閉じているときの戻るを、先に受けるもの (データ放送を開いている間は文書へ)。受けたら true */
+    var back: () -> Boolean = { false }
     /** 一覧へ戻るところ (映像にフォーカスを取り返させない。戻った先の一覧が開いた録画にフォーカスするので) */
     var leaving by mutableStateOf(false)
         private set
@@ -748,7 +789,13 @@ internal class PlayerBar(private val onLeave: () -> Unit) {
 internal fun rememberPlayerBar(onLeave: () -> Unit, playing: Boolean): PlayerBar {
     val leave by rememberUpdatedState(onLeave)
     val state = remember { PlayerBar { leave() } }
-    BackHandler(enabled = !state.leaving) { if (state.bar != null) state.bar = null else state.leave() }
+    BackHandler(enabled = !state.leaving) {
+        when {
+            state.bar != null -> state.bar = null
+            state.back() -> Unit
+            else -> state.leave()
+        }
+    }
     LaunchedEffect(state.bar, state.touched, playing) {
         if (state.bar == null) return@LaunchedEffect
         delay(5_000)

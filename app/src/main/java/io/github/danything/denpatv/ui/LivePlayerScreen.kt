@@ -27,7 +27,10 @@ import androidx.media3.common.Player
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.AirClock
 import io.github.danything.denpatv.data.AirTime
+import io.github.danything.denpatv.data.AribKey
 import io.github.danything.denpatv.data.CaptionPaths
+import io.github.danything.denpatv.data.CenterPress
+import io.github.danything.denpatv.data.DataPaths
 import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.LiveCommand
@@ -90,6 +93,7 @@ import kotlinx.coroutines.launch
  * - **番組表へは、詳細の「番組表」と番組表キー**。メニューの画面の番組表を、いま映している局と時刻にフォーカスして開く
  *   (`Repository.guideReturn`。番組表の「視聴」から来て戻るときと同じ)。操作の列には置かない (画質・字幕・実況・音声・録画で埋まっている)
  * - 何も開いていないときの戻るは、メニューの画面へ (「ライブ」にフォーカス)
+ * - **d とメニューの「データ放送」でデータ放送** (`rememberDataBroadcast`)。開いている間は十字・決定・数字・色・戻るを文書へ渡し、決定の長押しで閉じる
  */
 @Composable
 fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
@@ -208,6 +212,22 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         key = playing?.id,
         onChange = flash,
     )
+    /*
+     * データ放送 (denpa の docs/stream.md「テレビのアプリ」)。描くのは denpa のページで、ライブのデータは `api/services/<id>/data` を
+     * ここで読んでページへ渡す。自動で受信する端末は、字幕のストリームに来る `autoStart` が true の局でだけ開く前から受信する
+     */
+    val data = rememberDataState(repo)
+    val dataAuto = rememberDataAutoReceive(repo)
+    val subtitlesOn by repo.app.settings.subtitles.collectAsState(initial = true)
+    /** 文書が替えた主音声 (PMT の音声の ES の何本目か)。局を替えた・音声のボタンで選び直したら忘れる */
+    var dataAudio by remember { mutableStateOf<Int?>(null) }
+    /** 文書が主音声を替えた回数 (元の TS は端末で選び直す) */
+    var dataAudioChanges by remember { mutableIntStateOf(0) }
+    LaunchedEffect(baked.audio?.id) { dataAudio = null }
+    /** 変換したライブでリクエストする音声。文書が替えていればそれ (`<N>:es`) */
+    val liveAudio = broadcastAudioQuery(dataAudio) ?: audioQuery(baked.audio)
+    /** 映像をリクエストした回数。データ放送のストリームもリクエストし直す */
+    var loads by remember { mutableIntStateOf(0) }
     // 字幕は denpa がデコードした文字の配置を別のエンドポイントで受け取る (元の TS は放送の PTS、変換したライブは fMP4 の時刻で来る)
     val captions = rememberRawCaptions(
         repo,
@@ -220,13 +240,13 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             streamed == LiveQuality.Raw -> playing?.let { CaptionPaths.live(it.live) }
             // 変換したライブの字幕と時計は、映像と同じ形式 (denpa が選んだもの)・音声を渡すと同じストリームのものが fMP4 の時刻で来る。
             // denpa の字幕のエンドポイントは H.265 を受けない (`codec` は raw・h264・av1。ほかは 400) ので、H.265 では字幕と時計を取らない
-            streamed != null && streamed != LiveQuality.Hevc -> playing?.let { CaptionPaths.live(it.live) }?.let { "$it?codec=${streamed.codec}${audioQuery(baked.audio)}" }
+            streamed != null && streamed != LiveQuality.Hevc -> playing?.let { CaptionPaths.live(it.live) }?.let { "$it?codec=${streamed.codec}$liveAudio" }
             else -> null
         },
         generation = chasing?.let { "chase ${it.recording.id} $chaseLoads" } ?: playing?.id,
         fromMs = chasing?.let { { YieldPlan.EDGE_MS } },
-        // 実況がオンなら、字幕がオフでも読み続ける (時計の通知で放送時刻を出す)
-        keepOpen = household && jikkyoOn && chasing == null,
+        // 実況がオン・データ放送を自動で受信する・データ放送を出しているなら、字幕がオフでも読み続ける (時計の通知で放送時刻を出し、`autoStart` を受ける)
+        keepOpen = (household && jikkyoOn || dataAuto || data.loaded) && chasing == null,
         onUnauthorized = onUnauthorized,
     )
     // デュアルモノの主・副は、元の TS のときだけ配り直す (変換したライブは denpa が選んだ1つだけをエンコードする。下の `baked`)。追っかけの音声は分からないので並べない
@@ -283,7 +303,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
      * 画質だけを替えたときも出さない (切り替え中・切り替えたは `codec` が言う)
      */
     var shown by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(playing?.id, quality, playable, baked.ready, baked.audio?.id, returns, codec.chosen, chasing?.recording?.id, chaseLoads) {
+    LaunchedEffect(playing?.id, quality, playable, baked.ready, baked.audio?.id, returns, codec.chosen, chasing?.recording?.id, chaseLoads, dataAudio.takeIf { quality != LiveQuality.Raw }) {
         val service = playing ?: return@LaunchedEffect
         if (background) return@LaunchedEffect
         // 選んだ画質が覚えている画質に届くまではリクエストしない (届いたらリクエストする。選び直しが1フレームにまとまって画質が変わらなくても、ここでリクエストし直す)
@@ -303,11 +323,12 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             return@LaunchedEffect
         }
         if (!baked.ready) return@LaunchedEffect
-        val url = repo.url("${service.live}?${codecQuery(quality, playable)}${audioQuery(baked.audio)}") ?: return@LaunchedEffect
+        val url = repo.url("${service.live}?${codecQuery(quality, playable)}$liveAudio") ?: return@LaunchedEffect
         // 取り上げられたあと・「ライブに戻る」の再リクエスト。映らずに終わったら追っかけへ (`rememberPlayer` に渡した決まり)
         trying = returning || kicked?.serviceId == service.id
         recovery.requested()
         player.load(url, quality?.mime)
+        loads++
         codec.requested(quality)
         if (shown == service.id) return@LaunchedEffect
         shown = service.id
@@ -426,6 +447,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             returning = false
         }
         if (kicked?.serviceId != playing?.id) kicked = null
+        dataAudio = null
     }
     /** 局を取り直して、映している局を新しいものに替える (取れなければそのまま) */
     suspend fun refresh() {
@@ -481,6 +503,9 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     BackHandler(enabled = !leaving) {
         if (menu != null) {
             menu = null
+        } else if (data.open) {
+            // データ放送を開いている間は、戻るは文書へ (閉じるのは決定の長押し・d・メニューの「データ放送」)
+            data.press(AribKey.BACK)
         } else {
             leaving = true
             repo.menuOnReturn = true
@@ -503,6 +528,51 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         held = false
         playing = target
         stepping = null
+    }
+
+    rememberDataBroadcast(
+        data,
+        repo,
+        // 追っかけ (録画に譲った間)・H.265 (字幕と時計を取らない)・裏に回っている間は出さない
+        target = playing?.takeIf { !background && chasing == null && streamed != null && streamed != LiveQuality.Hevc }?.let { DataTarget.Live(it.id) },
+        receiving = dataAuto && captions.autoStart,
+        subtitles = subtitlesOn,
+        time = {
+            val notice = captions.clock
+            val offset = clock.offsetUs()
+            val air = if (notice == null || offset == null) null else AirTime.live(notice, Pts.broadcast(player.currentPosition, offset))
+            DataTime(air, 0, 1f, false)
+        },
+        timeKey = playing?.id,
+        flash = flash,
+        // 文書が別の局への選局を求めた (epgTune)。ページは作り直さず、`channel` を送る
+        onTune = { id ->
+            services.firstOrNull { it.id == id }?.let { target ->
+                stepping = null
+                held = false
+                playing = target
+            }
+        },
+        onAudio = { index ->
+            dataAudio = index
+            dataAudioChanges++
+        },
+        onCaptions = { on -> scope.launch { repo.app.settings.setSubtitles(on) } },
+        onUnauthorized = onUnauthorized,
+        // 字幕と同じく、映像に渡した形式 (と変換したライブは音声) を渡す。H.265 では取らない
+        feed = playing?.let { DataPaths.live(it.live) }?.let { path ->
+            when (streamed) {
+                LiveQuality.Raw -> path
+                null, LiveQuality.Hevc -> null
+                else -> "$path?codec=${streamed.codec}$liveAudio"
+            }
+        },
+        feedKey = loads,
+        canFeed = { clock.offsetUs() != null && player.isPlaying },
+    )
+    // 元の TS は音声が全部入っているので、文書が替えた主音声は端末で選び直す
+    LaunchedEffect(dataAudioChanges) {
+        if (dataAudioChanges > 0 && streamed == LiveQuality.Raw) player.selectBroadcastAudio(dataAudio)
     }
 
     if (!ready) return Centered("読み込んでいます…")
@@ -596,7 +666,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
          * 詳細を開いている間は通知を出さない。メニューを開いている間はメニューのタイトルに添える (`covered`)。
          * 録画に譲っている間は、その通知を出しっぱなしにする (ほかの通知が出ている間はそちら)
          */
-        (overlay ?: chasing?.let(::yieldNotice)).takeUnless { detail },
+        (overlay ?: chasing?.let(::yieldNotice) ?: data.note.ifEmpty { null }).takeUnless { detail },
         // 譲った録画の追っかけは変換の枠を使う。埋まって断られたら MPEG-2 を勧める (ライブそのものは断られない)
         if (quality == null && playable.empty) NO_PLAYABLE_MESSAGE else withBusyAdvice(error, quality, repo.app.decoders),
         active = menu == null && !detail && !leaving,
@@ -604,12 +674,23 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         onKey = { event ->
             val code = event.nativeKeyEvent.keyCode
             // 数字キーは押し続けた繰り返しを捨てる (1回押したのと同じ。局を何度もリクエストし直さない)
-            liveCommand(code)?.let { run(it) } != null ||
+            // データ放送を開いている間は、十字・数字・色・d を文書へ (CH±・Menu・番組表・情報は TV)
+            data.keyDown(code, event.nativeKeyEvent.repeatCount) ||
+                liveCommand(code)?.let { run(it) } != null ||
                 liveChannelKey(code)?.let { if (event.nativeKeyEvent.repeatCount == 0) tune(it) } != null
         },
-        onKeyUp = { held = false },
-        // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳細)
-        onCenter = { press -> run(liveCenter(press)) },
+        onKeyUp = { event ->
+            held = false
+            data.keyUp(event.nativeKeyEvent.keyCode)
+        },
+        // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳細)。データ放送を開いている間は、短押しは文書へ、長押しで閉じる
+        onCenter = { press ->
+            when {
+                !data.open -> run(liveCenter(press))
+                press == CenterPress.Action.Short -> data.press(AribKey.ENTER)
+                else -> data.close()
+            }
+        },
         // 送っている途中は行き先の番組の進み (通知の文と揃える)。録画に譲っている間は出さない (映しているのはその局の番組ではない)
         progress = (stepping ?: current.takeIf { chasing == null })?.now
             ?.let { System.currentTimeMillis() - it.startAt to it.endAt - it.startAt },
@@ -618,6 +699,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         busyLabel = "選局しています",
         recovery = recovery,
         covered = menu != null,
+        data = data,
     ) {
         menu?.let { start ->
             val now = current.now
@@ -656,7 +738,8 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
                 groups = listOf(
                     qualities,
                     // 元の TS が流れているときは、音声は端末で選ぶ (`tracks`)。denpa にリクエストする音声のボタンは出さない
-                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + baked.controls().takeIf { streamed != LiveQuality.Raw }.orEmpty(),
+                    "" to tracks.controls(jikkyo.control(), jikkyo.listControl()) + baked.controls().takeIf { streamed != LiveQuality.Raw }.orEmpty() +
+                        listOfNotNull(data.control { menu = null }),
                     "" to listOf(recordControl(now) { record(fromDetail = false) }),
                 ),
                 // 上で開いたときは、操作の列ではなく局の列のいま映している局にフォーカスする (下の LaunchedEffect)

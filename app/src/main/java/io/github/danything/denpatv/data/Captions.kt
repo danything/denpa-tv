@@ -3,6 +3,7 @@ package io.github.danything.denpatv.data
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import java.io.DataInputStream
 import java.io.EOFException
 import java.io.IOException
@@ -32,6 +33,9 @@ sealed interface CaptionFrame {
     /** 時計 (`clock` の通知)。実況の放送時刻に使う (`AirTime.live`) */
     class Clock(val notice: ClockNotice) : CaptionFrame
 
+    /** データ放送の入口に自動起動の指定があるか (`autoStart` の通知。ライブだけ)。自動で受信する端末は、これが true の局でだけ開く前から受信する */
+    class AutoStart(val on: Boolean) : CaptionFrame
+
     /** ほかの通知 (20 秒おきの ping など)。読み捨てる */
     data object Other : CaptionFrame
 }
@@ -47,25 +51,37 @@ object CaptionFeed {
     const val TEXT = 0x22
     const val CONTROL = 0x40
 
-    /** 1フレームの上限。壊れた長さで何百 MB も取りにいかない */
+    /**
+     * 1フレームの上限。壊れた長さで何百 MB も取りにいかない。データ放送も 1 フレームは ResponseMessage 1 つ (大きいのはモジュール 1 つで、実機で約 90 KB を base64 にしたもの) で、
+     * 繋いだときにまとめて届く数十 MB はフレームが何百も並んだもの
+     */
     private const val MAX_FRAME = 16 * 1024 * 1024
     /** denpa は 20 秒おきに ping を送る。2 回来なければ切れたとみなす */
     private const val READ_TIMEOUT_MS = 45_000
 
-    /** 1フレーム読む。終わり (きれいに閉じた) なら null */
-    fun read(input: DataInputStream): CaptionFrame? {
+    /** 1フレーム。字幕とデータ放送のエンドポイントで同じ並び (`DataFeed`) */
+    class Frame(val kind: Int, val pts: Long, val payload: ByteArray)
+
+    /** 1フレームを、中身を読まずに取り出す。終わり (きれいに閉じた) なら null */
+    fun frame(input: DataInputStream): Frame? {
         val length = try {
             input.readInt()
         } catch (_: EOFException) {
             return null
         }
-        if (length < 9 || length > MAX_FRAME) throw IOException("字幕のフレームの長さが不正です: $length")
+        if (length < 9 || length > MAX_FRAME) throw IOException("フレームの長さが不正です: $length")
         val kind = input.readUnsignedByte()
         val pts = input.readLong()
         val payload = ByteArray(length - 9).also { input.readFully(it) }
-        return when (kind) {
-            TEXT -> text(pts, payload)
-            CONTROL -> notice(payload)
+        return Frame(kind, pts, payload)
+    }
+
+    /** 1フレーム読む。終わり (きれいに閉じた) なら null */
+    fun read(input: DataInputStream): CaptionFrame? {
+        val frame = frame(input) ?: return null
+        return when (frame.kind) {
+            TEXT -> text(frame.pts, frame.payload)
+            CONTROL -> notice(frame.payload)
             else -> CaptionFrame.Other
         }
     }
@@ -83,6 +99,7 @@ object CaptionFeed {
         when ((obj["type"] as? JsonPrimitive)?.content) {
             "captions" -> Unit
             "clock" -> return clock(obj)
+            "autoStart" -> return (obj["on"] as? JsonPrimitive)?.booleanOrNull?.let { CaptionFrame.AutoStart(it) } ?: CaptionFrame.Other
             else -> return CaptionFrame.Other
         }
         return CaptionFrame.Tracks((obj["tracks"] as? JsonArray)?.size ?: 0)
@@ -98,8 +115,8 @@ object CaptionFeed {
         return CaptionFrame.Clock(ClockNotice(at, unixMs.toLong()))
     }
 
-    /** 断られた。404 はライブなら「まだ流していない」(映像を開いた直後)、録画なら「元のTSが無い」 */
-    class Refused(val code: Int) : IOException("字幕を取得できません (HTTP $code)")
+    /** 断られた。404 はライブなら「まだ流していない」(映像を開いた直後)、録画なら「元のTSが無い」。データ放送のエンドポイントも同じ */
+    class Refused(val code: Int) : IOException("取得できません (HTTP $code)")
 
     /** 繋ぐ。`token` があれば `Authorization: Bearer` を付ける。401 は `Unauthorized`、ほかの失敗は `Refused` */
     fun connect(url: URI, token: String?): HttpURLConnection {

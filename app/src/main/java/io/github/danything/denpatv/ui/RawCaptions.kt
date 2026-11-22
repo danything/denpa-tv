@@ -190,6 +190,11 @@ class CaptionState(
     var available by mutableStateOf(false)
     /** いま重ねている文字の配置 */
     var page by mutableStateOf<CaptionPage?>(null)
+    /**
+     * データ放送の入口に自動起動の指定があるか (ライブの `autoStart` の通知)。局を替えたら、次の局の通知が来るまで false
+     * (denpa の docs/stream.md「自動で受信する端末」)
+     */
+    var autoStart by mutableStateOf(false)
     /** 元の TS のライブの時計 (`clock` の通知)。実況の放送時刻に使う。まだ届いていなければ null */
     @Volatile
     var clock: ClockNotice? = null
@@ -210,7 +215,7 @@ class CaptionState(
  *
  * @param path 字幕のエンドポイント (denpa のルートからの相対、`?from=` は付けない)。null なら元の TS ではないので何もしない
  * @param fromMs 録画で読ませる位置 (ミリ秒、頭から)。ライブは null
- * @param keepOpen 字幕をオフにしていても読み続ける (実況がオンのライブ。時計の通知 (`clock`) で放送時刻を出すため)
+ * @param keepOpen 字幕をオフにしていても読み続ける (実況がオンのライブ・データ放送を受信するライブ。時計の通知 (`clock`) で放送時刻を出し、`autoStart` の通知を受けるため)
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -235,6 +240,7 @@ fun rememberRawCaptions(
             state.key = path
             state.available = false
             state.clock = null
+            state.autoStart = false
         }
         state.timeline.clear()
         state.page = null
@@ -399,6 +405,7 @@ private suspend fun follow(url: URI, token: String?, state: CaptionState, keepGo
                             if (!keepGoing()) finished = false
                         }
                         is CaptionFrame.Clock -> state.clock = frame.notice
+                        is CaptionFrame.AutoStart -> state.autoStart = frame.on
                         CaptionFrame.Other -> Unit
                     }
                 }

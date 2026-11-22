@@ -93,6 +93,7 @@ import io.github.danything.denpatv.data.ChapterMark
 import io.github.danything.denpatv.data.Http
 import io.github.danything.denpatv.data.LiveQuality
 import io.github.danything.denpatv.data.Reconnect
+import io.github.danything.denpatv.data.VideoPlace
 import io.github.danything.denpatv.data.isBusyAnswer
 import io.github.danything.denpatv.data.isMediaContentType
 import io.github.danything.denpatv.data.playbackMessage
@@ -320,6 +321,8 @@ fun PlayerFrame(
     recovery: Recovery,
     /** `above` が操作バーを出しているか。出している間は、通知を下の端に出さずに操作バーのタイトルに添える */
     covered: Boolean = false,
+    /** データ放送 (`rememberDataBroadcast`)。映像の上に重ね、映像と字幕をデータ放送が言う場所に縮める */
+    data: DataBroadcast? = null,
     above: @Composable BoxScope.() -> Unit = {},
 ) {
     val loading = rememberLoading(player)
@@ -373,14 +376,28 @@ fun PlayerFrame(
          * 実況のコメントの一覧を出している間は、映像を左に寄せて 16:9 のまま縮め、右に一覧の列を置く (コメントと字幕は縮めた映像の中)。
          * 木の形は出していないときも同じにしておく (映像の面を作り直さない)
          */
-        val listed = jikkyo?.listShown == true
+        // データ放送を開いている間は、実況のコメントと一覧を隠す (データ放送の画面と重ねない)
+        val dataOpen = data?.open == true
+        val listed = jikkyo?.listShown == true && !dataOpen
+        /** 映像と字幕を置く場所。データ放送が小窓へ縮めたらそこ (`videoPlace`)。木の形はいつも同じにする (映像の面を作り直さない) */
+        val place = data?.place ?: VideoPlace.Full
         Row(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 Box(if (listed) Modifier.fillMaxWidth().aspectRatio(16f / 9f) else Modifier.fillMaxSize()) {
-                    PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
-                    // 重ねる順は 映像 < 実況のコメント < 字幕 < 操作バー (コメントは操作バーの影の下を通り、字幕のように持ち上げない)
-                    jikkyo?.let { JikkyoLayer(it) }
-                    CaptionLayer(captions, inset)
+                    /*
+                     * 重ねる順は 映像 < 実況のコメント < データ放送 < 字幕 < 操作バー (コメントは操作バーの影の下を通り、字幕のように持ち上げない)。
+                     * 字幕はデータ放送より上 (放送の字幕の面と同じ)。データ放送の WebView の下にあると読み上げのツリーからも外れる
+                     */
+                    Box(Modifier.fillMaxSize().videoPlace(place)) {
+                        PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
+                        if (!dataOpen) jikkyo?.let { JikkyoLayer(it) }
+                    }
+                    // Hybridcast のアプリが映像を隠した。面は残したまま (作り直さない) 黒で覆う
+                    if (place == VideoPlace.Hidden) Box(Modifier.fillMaxSize().background(Color.Black))
+                    data?.let { DataBroadcastLayer(it) }
+                    Box(Modifier.fillMaxSize().videoPlace(place)) {
+                        CaptionLayer(captions, inset)
+                    }
                 }
             }
             if (listed && jikkyo != null) JikkyoListColumn(jikkyo, Modifier.width(JIKKYO_LIST_WIDTH))

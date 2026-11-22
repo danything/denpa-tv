@@ -25,6 +25,8 @@ data class PlaybackInfo(
     val ruler: Ruler? = null,
     /** denpa が「自動」で選んだ観方 (`playable` を付けて聞いたときだけ)。選べなければ null */
     val auto: PlayAuto? = null,
+    /** 録画のデータ放送。取り出していなければ (データ放送の無い局・古い録画・まだエンコードしていない録画) null */
+    val data: PlayData? = null,
 )
 
 /** 出せるもの1つ。`way` は `file` (エンコード済みのファイルそのまま) / `stream` (fMP4 で流す) / `raw` (元の TS を流す)。使う鍵だけ (`codecs` は読まない。デコードできるかは端末のデコーダで見る) */
