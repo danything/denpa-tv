@@ -2,6 +2,7 @@ package io.github.danything.denpatv.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -77,6 +78,8 @@ data class Control(
     val initial: Boolean = false,
     /** 読み上げの名前。ボタンを短くしたもの (「前へ」) だけ、略さない名前 (「前のチャプター」) を付ける。null なら `label` */
     val description: String? = null,
+    /** 頭に付ける色の丸 (データ放送の色のボタン)。`icon` の代わりに置く */
+    val mark: Color? = null,
     val onClick: () -> Unit,
 )
 
@@ -184,6 +187,9 @@ fun BoxScope.ControlBar(
     }
 }
 
+/** 色の丸 (`Control.mark`) の大きさ。印 (18dp) より少し小さく、字の高さに揃える */
+private val MARK_SIZE = 14.dp
+
 /** 印だけのボタン (丸) の大きさ。ほかのボタンの高さ (tv-material の Button の最小の高さ) と同じ */
 private val ICON_CHIP = 40.dp
 
@@ -289,6 +295,11 @@ private fun Chip(control: Control, modifier: Modifier) {
     val iconOnly = control.label.isEmpty() && control.icon != null
     val padding = if (iconOnly) PaddingValues(0.dp) else PaddingValues(horizontal = 10.dp, vertical = 4.dp)
     val content: @Composable RowScope.() -> Unit = {
+        // 色の丸は、フォーカスして白くなった地でも黄が沈まないよう、薄く暗い縁を付ける
+        control.mark?.let {
+            Box(Modifier.size(MARK_SIZE).background(it, CircleShape).border(1.dp, Color(0x66000000), CircleShape))
+            Spacer(Modifier.width(6.dp))
+        }
         control.icon?.let {
             Icon(painterResource(it), contentDescription = null, modifier = Modifier.size(18.dp))
             if (!iconOnly) Spacer(Modifier.width(6.dp))

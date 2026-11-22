@@ -89,7 +89,7 @@ import kotlinx.coroutines.launch
  * 位置・尺・チャプター・続きの位置は、どれも録画の時刻 (`playback` の物差し) で数える (`RecordingTimeline`)。
  * 観た位置は denpa に預ける (15 秒ごとと、閉じるとき)。ブラウザで続きから観られる
  *
- * データ放送は、denpa が取り出してある録画だけ (`playback` の `data`)。d と操作の列の「データ放送」で開き、決定の長押しで閉じる (`rememberDataBroadcast`)
+ * データ放送は、denpa が取り出してある録画だけ (`playback` の `data`)。d と操作の列の「データ放送」で開き、決定の長押しで色のボタンの列 (青・赤・緑・黄・閉じる。`DataKeyRow`) を出す (`rememberDataBroadcast`)
  */
 @Composable
 fun RecordingPlayerScreen(repo: Repository, recording: Recording, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
@@ -655,16 +655,30 @@ private fun RecordingPlayback(
     val seekFocus = remember { FocusRequester() }
 
     // 操作バー (終わり・止めている間・操作の列) を出している間は、通知を操作バーのタイトルに添える (`covered`)
-    val covered = ended || bar != null || !playing
-    // データ放送を開いている間は、戻るを文書へ (閉じるのは決定の長押し・d・操作の列の「データ放送」)
-    ui.back = { data.open.also { if (it) data.press(AribKey.BACK) } }
-    PlayerFrame(player, overlay ?: data.note.ifEmpty { null }, error, active = bar == null && !details && !ended && !ui.leaving, captions = captions, jikkyo = jikkyo, recovery = recovery, covered = covered, data = data, above = {
+    val covered = ended || bar != null || !playing || data.keyRow
+    // 最後まで観たら色のボタンの列は消す (「最後まで観ました」の操作バーに替わる)
+    LaunchedEffect(ended) { if (ended) data.hideKeyRow() }
+    /*
+     * 色のボタンの列は戻るで消す (文書へは渡さない)。データ放送を開いている間は、戻るを文書へ
+     * (閉じるのは色のボタンの列の「閉じる」・d・操作の列の「データ放送」)
+     */
+    ui.back = {
+        when {
+            data.keyRow -> true.also { data.hideKeyRow() }
+            data.open -> true.also { data.press(AribKey.BACK) }
+            else -> false
+        }
+    }
+    PlayerFrame(player, overlay ?: data.note.ifEmpty { null }, error, active = bar == null && !details && !ended && !ui.leaving && !data.keyRow, captions = captions, jikkyo = jikkyo, recovery = recovery, covered = covered, data = data, above = {
         if (ended) {
             ControlBar(
                 "最後まで観ました",
                 // 観終えたものは消すことが多いので、最初は削除にフォーカスする (2回押しなので、1回では消えない)
                 listOf("" to listOf(Control(BACK_TO_LIST, icon = R.drawable.ic_back) { ui.leave() }, deleteControl.copy(initial = true))),
             )
+        } else if (data.keyRow) {
+            // 止めている間の位置のバーより先に出す (どちらも下の端なので重ねない)
+            DataKeyRow(data)
         } else if (bar == null && !playing) {
             val total = timeline.durationMs().takeIf { it > 0 }
             PausedBar(recording.title, "${position(at)}${total?.let { " / ${position(it)}" } ?: ""}") { ProgressLine(at, total ?: 0, chapters) }
@@ -719,11 +733,14 @@ private fun RecordingPlayback(
             null -> false
         }
     }, onKeyUp = { event -> data.keyUp(event.nativeKeyEvent.keyCode) }, onCenter = { press ->
-        // データ放送を開いている間は、短押しは文書へ、長押しで閉じる
+        // データ放送を開いている間は、短押しは文書へ、長押しで色のボタンの列
         when {
             !data.open -> ui.center(press) { togglePause() }
             press == CenterPress.Action.Short -> data.press(AribKey.ENTER)
-            else -> data.close()
+            else -> {
+                flasher.clear()
+                data.showKeyRow()
+            }
         }
     })
 

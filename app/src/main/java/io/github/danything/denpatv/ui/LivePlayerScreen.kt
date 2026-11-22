@@ -93,7 +93,7 @@ import kotlinx.coroutines.launch
  * - **番組表へは、詳細の「番組表」と番組表キー**。メニューの画面の番組表を、いま映している局と時刻にフォーカスして開く
  *   (`Repository.guideReturn`。番組表の「視聴」から来て戻るときと同じ)。操作の列には置かない (画質・字幕・実況・音声・録画で埋まっている)
  * - 何も開いていないときの戻るは、メニューの画面へ (「ライブ」にフォーカス)
- * - **d とメニューの「データ放送」でデータ放送** (`rememberDataBroadcast`)。開いている間は十字・決定・数字・色・戻るを文書へ渡し、決定の長押しで閉じる
+ * - **d とメニューの「データ放送」でデータ放送** (`rememberDataBroadcast`)。開いている間は十字・決定・数字・色・戻るを文書へ渡し、決定の長押しで色のボタンの列 (青・赤・緑・黄・閉じる。`DataKeyRow`) を出す
  */
 @Composable
 fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -> Unit) {
@@ -503,8 +503,11 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
     BackHandler(enabled = !leaving) {
         if (menu != null) {
             menu = null
+        } else if (data.keyRow) {
+            // 色のボタンの列は、戻るで消す (文書へは渡さない)
+            data.hideKeyRow()
         } else if (data.open) {
-            // データ放送を開いている間は、戻るは文書へ (閉じるのは決定の長押し・d・メニューの「データ放送」)
+            // データ放送を開いている間は、戻るは文書へ (閉じるのは色のボタンの列の「閉じる」・d・メニューの「データ放送」)
             data.press(AribKey.BACK)
         } else {
             leaving = true
@@ -669,7 +672,7 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         (overlay ?: chasing?.let(::yieldNotice) ?: data.note.ifEmpty { null }).takeUnless { detail },
         // 譲った録画の追っかけは変換の枠を使う。埋まって断られたら MPEG-2 を勧める (ライブそのものは断られない)
         if (quality == null && playable.empty) NO_PLAYABLE_MESSAGE else withBusyAdvice(error, quality, repo.app.decoders),
-        active = menu == null && !detail && !leaving,
+        active = menu == null && !detail && !leaving && !data.keyRow,
         // `::run` (関数の参照) にしない。Compose が参照を覚えたままにして、前の局から送ってしまう
         onKey = { event ->
             val code = event.nativeKeyEvent.keyCode
@@ -683,12 +686,15 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
             held = false
             data.keyUp(event.nativeKeyEvent.keyCode)
         },
-        // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳細)。データ放送を開いている間は、短押しは文書へ、長押しで閉じる
+        // 決定の短押しはメニュー、長押しは情報キーと同じ (番組の詳細)。データ放送を開いている間は、短押しは文書へ、長押しで色のボタンの列
         onCenter = { press ->
             when {
                 !data.open -> run(liveCenter(press))
                 press == CenterPress.Action.Short -> data.press(AribKey.ENTER)
-                else -> data.close()
+                else -> {
+                    flasher.clear()
+                    data.showKeyRow()
+                }
             }
         },
         // 送っている途中は行き先の番組の進み (通知の文と揃える)。録画に譲っている間は出さない (映しているのはその局の番組ではない)
@@ -698,9 +704,10 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
         jikkyo = jikkyo,
         busyLabel = "選局しています",
         recovery = recovery,
-        covered = menu != null,
+        covered = menu != null || data.keyRow,
         data = data,
     ) {
+        if (data.keyRow) DataKeyRow(data)
         menu?.let { start ->
             val now = current.now
             // 下の局の列 (どちらのメニューにも出す)。選んだらその局に替えて閉じる
