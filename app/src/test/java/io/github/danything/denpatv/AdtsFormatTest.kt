@@ -72,9 +72,18 @@ class AdtsFormatTest {
         return header + ByteArray(payload) { 0x11 }
     }
 
-    /** 音声の PES 1 つ (PTS だけ付ける) */
-    private fun pes(pts: Long, aligned: Boolean, vararg frames: ByteArray): ByteArray {
+    /** 音声の PES 1 つ。`pts` が null なら PTS を付けない (付けるときも PTS だけ) */
+    private fun pes(pts: Long?, aligned: Boolean, vararg frames: ByteArray): ByteArray {
         val body = frames.fold(ByteArray(0)) { all, frame -> all + frame }
+        if (pts == null) {
+            return byteArrayOf(
+                0, 0, 1, 0xC0.toByte(),
+                ((body.size + 3) shr 8).toByte(), (body.size + 3).toByte(),
+                (0x80 or if (aligned) 0x04 else 0).toByte(),
+                0,
+                0,
+            ) + body
+        }
         val header = byteArrayOf(
             0, 0, 1, 0xC0.toByte(),
             ((body.size + 8) shr 8).toByte(), (body.size + 8).toByte(),
@@ -167,6 +176,40 @@ class AdtsFormatTest {
             pes(3840, aligned = false, stereo, stereo),
         )
         assertEquals(listOf(1), track.formats.map { it.channelCount })
+    }
+
+    @Test
+    fun PTS_の無い_PES_の中でフレームが終わっても_前の時刻に長さを足して続ける() {
+        // 区切りにそろっていない PES。2 つ目のフレームは PTS の無い PES にまたがる (denpa-tv#146)
+        val track = run(
+            pes(0, aligned = false, stereo, stereo.copyOfRange(0, 20)),
+            pes(null, aligned = false, stereo.copyOfRange(20, stereo.size), stereo),
+            pes(5760, aligned = false, stereo),
+        )
+        assertEquals(4, track.samples.size)
+        // 1 フレームは 1024 サンプル (48kHz で 21,333 マイクロ秒)
+        assertEquals(listOf(0L, 21_333L, 42_666L, 64_000L), track.samples)
+    }
+
+    @Test
+    fun 時刻を受け取るまでは_PTS_の無い_PES_を捨てる() {
+        val track = run(
+            pes(null, aligned = true, stereo, stereo),
+            pes(3840, aligned = true, stereo, stereo),
+        )
+        // TimestampAdjuster は最初に受け取った PTS を 0 にする
+        assertEquals(listOf(0L, 21_333L), track.samples)
+    }
+
+    @Test
+    fun PTS_の無い_PES_で形式が替わったら_PTS_の付いた_PES_まで捨てて作り直す() {
+        val track = run(
+            pes(0, aligned = true, mono, mono),
+            pes(null, aligned = true, stereo, stereo),
+            pes(7680, aligned = true, stereo, stereo),
+        )
+        assertEquals(listOf(1, 2), track.formats.map { it.channelCount })
+        assertEquals(4, track.samples.size)
     }
 
     @Test
