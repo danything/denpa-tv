@@ -12,6 +12,7 @@ import io.github.danything.denpatv.data.DataKeyAction
 import io.github.danything.denpatv.data.DataKeys
 import io.github.danything.denpatv.data.DataPage
 import io.github.danything.denpatv.data.DataPaths
+import io.github.danything.denpatv.data.DataRowButton
 import io.github.danything.denpatv.data.PageMessage
 import io.github.danything.denpatv.data.PlaybackInfo
 import io.github.danything.denpatv.data.VideoPlace
@@ -92,6 +93,28 @@ class DataBroadcastTest {
         keys.down(KeyEvent.KEYCODE_PROG_RED, 0, open = true, canOpen = true)
         keys.clear()
         assertSame(DataKeyAction.Pass, keys.up(KeyEvent.KEYCODE_PROG_RED))
+    }
+
+    /** 色のボタンの列は青・赤・緑・黄・閉じるの順。色はリモコンの同じ色のキーと同じキーを送り、「閉じる」だけキーを送らない */
+    @Test
+    fun 色のボタンの列() {
+        assertEquals(
+            listOf(DataRowButton.BLUE, DataRowButton.RED, DataRowButton.GREEN, DataRowButton.YELLOW, DataRowButton.CLOSE),
+            DataRowButton.entries,
+        )
+        val remote = mapOf(
+            DataRowButton.BLUE to KeyEvent.KEYCODE_PROG_BLUE,
+            DataRowButton.RED to KeyEvent.KEYCODE_PROG_RED,
+            DataRowButton.GREEN to KeyEvent.KEYCODE_PROG_GREEN,
+            DataRowButton.YELLOW to KeyEvent.KEYCODE_PROG_YELLOW,
+        )
+        for ((button, keyCode) in remote) {
+            assertEquals(button.name, (dataKey(keyCode) as DataKey.Key).code, button.code)
+        }
+        assertNull(DataRowButton.CLOSE.code)
+        assertEquals(listOf("青", "赤", "緑", "黄", "閉じる"), DataRowButton.entries.map { it.label })
+        // 読み上げの名前は、ボタンの 1 字の名前より長く、何のボタンか分かるもの
+        assertTrue(DataRowButton.entries.all { it.description.length > it.label.length })
     }
 
     @Test

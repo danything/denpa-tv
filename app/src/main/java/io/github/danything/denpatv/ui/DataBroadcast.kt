@@ -18,6 +18,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -50,6 +52,7 @@ import io.github.danything.denpatv.data.DataFrame
 import io.github.danything.denpatv.data.DataKeyAction
 import io.github.danything.denpatv.data.DataKeys
 import io.github.danything.denpatv.data.DataPage
+import io.github.danything.denpatv.data.DataRowButton
 import io.github.danything.denpatv.data.PageMessage
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.VideoPlace
@@ -100,6 +103,13 @@ class DataBroadcast internal constructor(private val base: URI) {
 
     /** 開いているか (ページの `open`)。開いている間はキーをページへ渡し、実況を隠す */
     var open by mutableStateOf(false)
+        private set
+
+    /**
+     * 色のボタンの列 (`DataKeyRow`) を出しているか。開いている間に決定の長押しで出し、押す・戻る・閉じるで消す。
+     * 出している間は、十字・決定・戻るを列が受ける (文書へ渡さない)
+     */
+    var keyRow by mutableStateOf(false)
         private set
 
     /** 映像を置く場所 (ページの `video`) */
@@ -196,10 +206,28 @@ class DataBroadcast internal constructor(private val base: URI) {
         if (open) close() else pressD()
     }
 
-    /** 閉じる (決定の長押し・メニュー) */
+    /** 閉じる (色のボタンの列の「閉じる」・メニュー) */
     fun close() {
         requested = false
+        keyRow = false
         if (ready && open) send(DataPage.CLOSE)
+    }
+
+    /** 色のボタンの列を出す (開いている間の決定の長押し) */
+    fun showKeyRow() {
+        if (ready && open) keyRow = true
+    }
+
+    /** 色のボタンの列を消す (戻る) */
+    fun hideKeyRow() {
+        keyRow = false
+    }
+
+    /** 色のボタンの列で押した。色はそのキーを押して離したのと同じに文書へ送り、「閉じる」は閉じる。列は消す */
+    fun pressRow(button: DataRowButton) {
+        keyRow = false
+        val code = button.code ?: return close()
+        press(code)
     }
 
     /** 押して離したキー (決定・戻る)。開いていなければ何もしない */
@@ -233,6 +261,7 @@ class DataBroadcast internal constructor(private val base: URI) {
         ready = false
         loaded = false
         open = false
+        keyRow = false
         requested = false
         place = VideoPlace.Full
         note = ""
@@ -265,6 +294,8 @@ class DataBroadcast internal constructor(private val base: URI) {
             is PageMessage.Open -> {
                 if (message.on && !open) hooks.flash(OPEN_HINT)
                 open = message.on
+                // 文書が自分で閉じた (d を受けない文書・Hybridcast のアプリの終わり)。列も消す
+                if (!message.on) keyRow = false
             }
             is PageMessage.Video -> place = message.place
             is PageMessage.Tune -> hooks.onTune(message.service)
@@ -372,7 +403,7 @@ class DataBroadcast internal constructor(private val base: URI) {
 
         const val BROKEN_MESSAGE = "データ放送を出せません (このテレビの WebView では動きません)"
 
-        const val OPEN_HINT = "データ放送を開きました。決定の長押しで閉じます"
+        const val OPEN_HINT = "データ放送を開きました。決定を長押しすると、色のボタンと「閉じる」が出ます"
 
         /** ポートを渡し直す間 (ミリ秒) と回数 (`offer`)。合わせて `READY_TIMEOUT_MS` より短く */
         const val OFFER_EVERY_MS = 500L
@@ -636,6 +667,33 @@ fun DataBroadcast.control(onClick: () -> Unit): Control? =
         onClick()
         toggle()
     }
+
+/**
+ * **色のボタンの列** (データ放送を開いている間に決定の長押しで出す。`DataBroadcast.keyRow`)。青・赤・緑・黄と「閉じる」を
+ * 操作バーと同じボタンで下の端に並べ、開いたら青にフォーカスする。左右で選び、決定で押す (`pressRow`)。戻るで消すのは呼ぶ側の戻るの受け口。
+ * 長押しの続きの決定と離したのは、操作バー (`ControlBar`) が押し直すまで受けない。しばらく触らなくても消さない (押すか戻るまで出したまま。
+ * 呼び出してから、文書の案内を読んでどの色を押すか決める間に消えないように)
+ */
+@Composable
+fun BoxScope.DataKeyRow(state: DataBroadcast) {
+    fun control(button: DataRowButton) =
+        Control(button.label, mark = DATA_ROW_COLORS[button], description = button.description) { state.pressRow(button) }
+    ControlBar(
+        "データ放送",
+        listOf(
+            "" to DataRowButton.entries.filter { it.code != null }.map(::control),
+            "" to DataRowButton.entries.filter { it.code == null }.map(::control),
+        ),
+    )
+}
+
+/** 色のボタンの丸の色 (リモコンの色のボタンの色) */
+private val DATA_ROW_COLORS = mapOf(
+    DataRowButton.BLUE to Color(0xFF2F6FEB),
+    DataRowButton.RED to Color(0xFFE5392F),
+    DataRowButton.GREEN to Color(0xFF2EA043),
+    DataRowButton.YELLOW to Color(0xFFF5C518),
+)
 
 /**
  * 自動で受信する設定。選んでいなければ、メモリの少ない端末はオフ、ほかはオン (`lowRam`。数十 MB のモジュールを受け取り、

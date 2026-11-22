@@ -72,6 +72,19 @@ fun dataKey(keyCode: Int): DataKey? = when (keyCode) {
     else -> null
 }
 
+/**
+ * **色のボタンの列のボタン** (データ放送を開いている間に、決定の長押しで画面の下に出す。ui/DataBroadcast.kt の `DataKeyRow`)。
+ * 色のボタンの無いリモコンでも、文書の色のボタンの操作に届くようにする。並びはリモコンの色のボタンと同じ青・赤・緑・黄で、最後に「閉じる」。
+ * `code` はページへ押して離したのと同じに送るキー。null は「閉じる」(データ放送を閉じる)
+ */
+enum class DataRowButton(val label: String, val description: String, val code: Int?) {
+    BLUE("青", "青ボタン", AribKey.BLUE),
+    RED("赤", "赤ボタン", AribKey.RED),
+    GREEN("緑", "緑ボタン", AribKey.GREEN),
+    YELLOW("黄", "黄ボタン", AribKey.YELLOW),
+    CLOSE("閉じる", "データ放送を閉じる", null),
+}
+
 /** 映像を置く場所 (ページの `video`)。割合は WebView (= 映像の枠) に対するもの */
 sealed interface VideoPlace {
     /** 枠いっぱい (ふだん) */
