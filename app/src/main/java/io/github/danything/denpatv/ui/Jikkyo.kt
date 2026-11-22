@@ -241,12 +241,14 @@ private class Flowing(
  * **実況のコメントを映像の上に流す** (ライブ・追っかけ・録画で同じ)。決まりはブラウザの denpa の `JikkyoLayer.svelte` に揃える。
  *
  * - 重ねる順は 映像 < コメント < 字幕 < 操作バー (`PlayerFrame`)。操作バーの影の下を通す。字幕は操作バーの上へ持ち上げるが、コメントは持ち上げない
- * - 行・字の大きさは映像の枠 (この層の大きさ) で決める (`JikkyoLanes`)。字は端末の字 (`Typeface.DEFAULT`。絵文字は OS の字)
+ * - 行の高さ・字の大きさは映像の枠 (この層の大きさ) で決める (`JikkyoLanes`)。字は端末の字 (`Typeface.DEFAULT`。絵文字は OS の字)
  * - **1件ごとに小さな部品を作り、字は作るときに Paint で縁 → 字を1回描く。** 動かすのは `graphicsLayer` の `translationX` だけで、
  *   x は放送時刻 W から毎フレーム決める (描き直さない。止めれば止まり、再生の速さに従う)
- * - 色・位置・大きさはコメントのコマンドどおり。`ue`・`shita` は上・下の行に 3 秒止める。透明度 0.5
- * - **アニメーションを切っている端末では流さず、上の行に 3 秒置く** (`shita` は下の行)
- * - 同時に流すのは 60 件まで (メモリの少ない端末は 15 件)。空いた行が無ければ捨てる
+ * - 色・位置・大きさはコメントのコマンドどおり。`ue`・`shita` は上・下の端から積んで 3 秒止める。透明度 0.5
+ * - **アニメーションを切っている端末では流さず、上の端から積んで 3 秒置く** (`shita` は下の端から)
+ * - 決まった行は持たず、字の高さぶんの場所を上から空いた所に積む。1件はどれも枠を 4 秒で渡り、長いものほど速い。
+ *   空いた所が無ければ、くじで選んだ高さに重ねる (どれもニコニコと同じ。`JikkyoLanes`)
+ * - 同時に流すのは 60 件まで (メモリの少ない端末は 15 件)。超えたものは捨てる
  */
 @Composable
 fun JikkyoLayer(state: JikkyoState) {
@@ -258,7 +260,7 @@ fun JikkyoLayer(state: JikkyoState) {
     /** いまのフレームの W。読むのは部品の `graphicsLayer` だけ (毎フレーム組み直さない) */
     var w by remember { mutableLongStateOf(Long.MIN_VALUE) }
     var size by remember { mutableStateOf(IntSize.Zero) }
-    val lanes = remember { JikkyoLanes(1) }
+    val lanes = remember { JikkyoLanes() }
     val waiting = remember { mutableListOf<JikkyoComment>() }
     val measure = remember { Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.DEFAULT } }
     var nextId by remember { mutableLongStateOf(0L) }
@@ -269,7 +271,7 @@ fun JikkyoLayer(state: JikkyoState) {
         if (frame.width <= 0 || frame.height <= 0) return
         val height = frame.height.toFloat()
         val width = frame.width.toFloat()
-        lanes.resize(JikkyoLanes.laneCount(height))
+        lanes.resize(height / JikkyoLanes.lineHeight(height))
         val take = current.feed.take(now)
         if (current.backfill) current.feed.backfill(now)
         if (take.jumped) {
@@ -302,7 +304,8 @@ fun JikkyoLayer(state: JikkyoState) {
                 measure.textSize = px
                 textWidth = measure.measureText(text) + outline(px)
             }
-            val flow = if (still) lanes.hold(now, fromBottom = style?.place == "shita") else lanes.flow(now, textWidth, width, px)
+            val rows = px / base
+            val flow = if (still) lanes.hold(now, fromBottom = style?.place == "shita", rows) else lanes.flow(now, textWidth, width, px, rows)
             flow ?: continue
             items += Flowing(
                 id = nextId++,
@@ -310,9 +313,9 @@ fun JikkyoLayer(state: JikkyoState) {
                 startW = now,
                 duration = flow.duration,
                 still = still,
-                top = (flow.lane + 0.5f) * line,
+                top = flow.top * line,
                 width = textWidth,
-                height = line,
+                height = rows * line,
                 fontSize = px,
                 color = style?.color?.let { android.graphics.Color.parseColor(it) } ?: android.graphics.Color.WHITE,
             )
@@ -379,7 +382,7 @@ private fun Comment(item: Flowing, frameWidth: Float, w: () -> Long) {
                 translationX = if (item.still) {
                     (frameWidth - item.width) / 2
                 } else {
-                    frameWidth - (w() - item.startW) * frameWidth / JikkyoLanes.SPAN_MS
+                    frameWidth - (w() - item.startW) * JikkyoLanes.speedOf(frameWidth, item.width)
                 }
                 alpha = COMMENT_ALPHA
             }

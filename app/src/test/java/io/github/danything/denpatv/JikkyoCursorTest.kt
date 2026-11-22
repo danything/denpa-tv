@@ -74,50 +74,114 @@ class JikkyoCursorTest {
         assertTrue(jumped(10_000, 30_000))
     }
 
+    /** くじがいつも同じ値を返す、高さ 14 の枠 (長さは行の高さを 1 として数える) */
+    private fun lanes(draw: Double = 0.0, height: Float = 14f) = JikkyoLanes(height) { draw }
+
     @Test
-    fun 行の高さは枠の_1_14_下限_14px_上下に余白を残しておよそ_13_行() {
+    fun 行の高さは枠の_1_14_下限_14px() {
         assertEquals(1080f / 14, JikkyoLanes.lineHeight(1080f), 0.001f)
         assertEquals(14f, JikkyoLanes.lineHeight(100f))
-        assertEquals(13, JikkyoLanes.laneCount(1080f))
     }
 
     @Test
-    fun 上の行から使い_前のコメントの尻尾が入りきるまで同じ行に入れない() {
-        val lanes = JikkyoLanes(2)
-        // 幅 1000px の枠で、幅 200px のコメント。速さは 1000px / 4 秒
-        assertEquals(JikkyoLanes.Flow(0, (1000 + 200) * JikkyoLanes.SPAN_MS / 1000), lanes.flow(0, 200f, 1000f, 20f))
-        assertEquals(1, lanes.flow(100, 200f, 1000f, 20f)?.lane)
-        // 尻尾 (200px + 間 20px) が入りきるのは 880ms 後
-        assertNull(lanes.flow(800, 200f, 1000f, 20f))
-        assertEquals(0, lanes.flow(880, 200f, 1000f, 20f)?.lane)
-    }
-
-    @Test
-    fun 空いた行が無ければ捨てる_飛んだら全部空ける() {
-        val lanes = JikkyoLanes(1)
-        lanes.flow(0, 100f, 1000f, 20f)
-        assertNull(lanes.flow(1, 100f, 1000f, 20f))
-        lanes.clear()
-        assertEquals(0, lanes.flow(1, 100f, 1000f, 20f)?.lane)
-    }
-
-    @Test
-    fun 止めるものは_3_秒置いて空ける_上は上の行から_下は下の行から積み_流れるものとは別に数える() {
-        val lanes = JikkyoLanes(3)
-        assertEquals(JikkyoLanes.Flow(0, 3000), lanes.hold(0, fromBottom = false))
-        assertEquals(JikkyoLanes.Flow(2, 3000), lanes.hold(0, fromBottom = true))
-        assertEquals(1, lanes.hold(1, fromBottom = true)?.lane)
-        assertNull(lanes.hold(2, fromBottom = false))
-        assertEquals(0, lanes.hold(3000, fromBottom = false)?.lane)
-        // 流れるものの行は空いたまま
-        assertEquals(0, lanes.flow(1, 100f, 1000f, 20f)?.lane)
-    }
-
-    @Test
-    fun 大きいものは_1_25_倍_小さいものは_0_75_倍() {
-        assertEquals(1.25f, JikkyoLanes.sizeScale("big"))
-        assertEquals(0.75f, JikkyoLanes.sizeScale("small"))
+    fun 大きいものと小さいものの比はニコニコと同じ() {
+        assertEquals(1.625f, JikkyoLanes.sizeScale("big"), 0.0001f)
+        assertEquals(0.625f, JikkyoLanes.sizeScale("small"), 0.0001f)
         assertEquals(1f, JikkyoLanes.sizeScale(null))
+    }
+
+    @Test
+    fun どれも枠を_4_秒で渡りきり_長いものほど速い() {
+        assertEquals(1200f / JikkyoLanes.SPAN_MS, JikkyoLanes.speedOf(1000f, 200f), 0.0001f)
+        assertEquals(2 * JikkyoLanes.speedOf(1000f, 0f), JikkyoLanes.speedOf(1000f, 1000f), 0.0001f)
+        assertEquals(JikkyoLanes.Flow(0.5f, JikkyoLanes.SPAN_MS), lanes().flow(0, 200f, 1000f, 20f))
+    }
+
+    @Test
+    fun 上から積み_前のものの末尾が入りきるまで同じ高さに入れない() {
+        val lanes = lanes()
+        // 幅 1000px の枠で、幅 200px のコメント。速さは 1200px / 4 秒
+        lanes.flow(0, 200f, 1000f, 20f)
+        assertEquals(1.5f, lanes.flow(100, 200f, 1000f, 20f)?.top)
+        // 末尾 (200px + 間 20px) が入りきるのは 733ms 後
+        assertEquals(0.5f, lanes.flow(734, 200f, 1000f, 20f)?.top)
+    }
+
+    @Test
+    fun 決まった行は持たない_大きいものは高さぶん場所を取り_次のものはその下に積む() {
+        val lanes = lanes()
+        assertEquals(0.5f, lanes.flow(0, 200f, 1000f, 30f, JikkyoLanes.sizeScale("big"))?.top)
+        assertEquals(2.125f, lanes.flow(0, 200f, 1000f, 20f)?.top ?: 0f, 0.0001f)
+        assertEquals(3.125f, lanes.flow(0, 200f, 1000f, 12f, JikkyoLanes.sizeScale("small"))?.top ?: 0f, 0.0001f)
+    }
+
+    @Test
+    fun 普通の大きさなら_13_件_大きいものなら_8_件まで縦に並ぶ_それより多いとくじの高さに重ねる() {
+        val normal = lanes(0.5)
+        repeat(13) { assertEquals(0.5f + it, normal.flow(0, 200f, 1000f, 20f)?.top ?: 0f, 0.0001f) }
+        // 余白の内 (0.5〜13.5) でくじ (0.5) を引く
+        assertEquals(0.5f + 12 * 0.5f, normal.flow(0, 200f, 1000f, 20f)?.top ?: 0f, 0.0001f)
+        val big = lanes(0.5)
+        repeat(8) { big.flow(0, 200f, 1000f, 30f, JikkyoLanes.sizeScale("big")) }
+        assertEquals(0.5f + (13 - 1.625f) * 0.5f, big.flow(0, 200f, 1000f, 30f, JikkyoLanes.sizeScale("big"))?.top ?: 0f, 0.0001f)
+    }
+
+    @Test
+    fun 重ねたものは空きに数えない_飛んだら全部空ける() {
+        val lanes = lanes(0.99, 4f)
+        repeat(3) { lanes.flow(0, 200f, 1000f, 20f) }
+        // どこも埋まっている。くじ (0.99) で下のほうに重ねる
+        assertEquals(0.5f + 2 * 0.99f, lanes.flow(1, 200f, 1000f, 20f)?.top ?: 0f, 0.0001f)
+        // 重ねたものは数えないので、空く時刻は前のまま
+        assertEquals(0.5f, lanes.flow(734, 200f, 1000f, 20f)?.top)
+        lanes.clear()
+        assertEquals(0.5f, lanes.flow(1, 200f, 1000f, 20f)?.top)
+    }
+
+    @Test
+    fun あとから来た速いものが_前のものに枠の中で追い付く所には入れない() {
+        val lanes = lanes()
+        // 短いもの (幅 100px) は遅い。末尾 (と間) が左の端を出るのは 4072ms
+        lanes.flow(0, 100f, 1000f, 20f)
+        // 長いもの (幅 1000px) は 2 倍の速さ。500ms に入ると 2500ms に左の端へ着き、前のものに追い付く
+        assertEquals(1.5f, lanes.flow(500, 1000f, 1000f, 20f)?.top)
+        val again = lanes()
+        again.flow(0, 100f, 1000f, 20f)
+        // 2100ms に入れば、左の端に着くのは前のものが出たあと
+        assertEquals(0.5f, again.flow(2100, 1000f, 1000f, 20f)?.top)
+    }
+
+    @Test
+    fun 枠の幅が_0_なら流さない() {
+        assertNull(lanes().flow(0, 100f, 0f, 20f))
+    }
+
+    @Test
+    fun 枠の高さが変わっても_置いた場所は行の高さを_1_とした割合のまま() {
+        val lanes = lanes()
+        lanes.flow(0, 200f, 1000f, 20f)
+        lanes.resize(20f)
+        assertEquals(1.5f, lanes.flow(0, 200f, 1000f, 20f)?.top)
+    }
+
+    @Test
+    fun 止めるものは_3_秒置いて空ける_上は上の端から_下は下の端から積み_流れるものとは別に数える() {
+        val lanes = lanes(0.5, 4f)
+        assertEquals(JikkyoLanes.Flow(0.5f, 3000), lanes.hold(0, fromBottom = false))
+        assertEquals(JikkyoLanes.Flow(2.5f, 3000), lanes.hold(0, fromBottom = true))
+        assertEquals(1.5f, lanes.hold(1, fromBottom = true).top)
+        // 空いた所が無ければ、くじ (0.5) で真ん中に重ねる
+        assertEquals(JikkyoLanes.Flow(1.5f, 3000), lanes.hold(2, fromBottom = false))
+        assertEquals(0.5f, lanes.hold(3000, fromBottom = false).top)
+        // 流れるものの場所は空いたまま
+        assertEquals(0.5f, lanes.flow(1, 100f, 1000f, 20f)?.top)
+    }
+
+    @Test
+    fun 大きいものは高さぶん取る_下に止めるものは下の端から上へ積む() {
+        val lanes = lanes()
+        assertEquals(13.5f - 1.625f, lanes.hold(0, fromBottom = true, JikkyoLanes.sizeScale("big")).top, 0.0001f)
+        assertEquals(13.5f - 1.625f - 1, lanes.hold(0, fromBottom = true).top, 0.0001f)
     }
 
     @Test
