@@ -44,9 +44,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -200,14 +202,14 @@ fun ChannelRows(
                         LazyRow(
                             state = state,
                             // 枠は幅いっぱい (局の少ない列でも、フォーカスで膨らんだカードの縁と光が枠で切れないように)。送れる側の端は溶かす
-                            modifier = Modifier.fillMaxWidth().fadeEdges(state),
+                            modifier = Modifier.fillMaxWidth().bleed(FOCUS_ROOM).fadeEdges(state),
                             /*
                              * 上下で列を移ったときは、**真上・真下のカードへ** (どの列もフォーカスしたカードが `KEYLINE` にあるので、目を動かさずに済む)。
                              * 最後にフォーカスしていたカードへ戻す (`focusRestorer`) のはやめた。枠の外に出て捨てられた列では覚えが消え、
                              * 見えていないカードへ飛んだり、離れたカードにフォーカスが移ったりした
                              */
                             // 上下は、フォーカスしたカードの膨らみと光が端を溶かす層 (`fadeEdges`) で切れないだけ空ける
-                            contentPadding = PaddingValues(vertical = ROW_PADDING, horizontal = 4.dp),
+                            contentPadding = PaddingValues(vertical = ROW_PADDING, horizontal = FOCUS_ROOM),
                             horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
                         ) {
                             itemsIndexed(row.services, key = { _, it -> it.id }) { position, service ->
@@ -353,6 +355,12 @@ private val CARD_GAP = 12.dp
 /** フォーカスしたカードの左の端を置く所 (横の枠の幅に対する割合)。左に1枚ぶんのカードが見える */
 private const val KEYLINE_FRACTION = 0.25f
 
+/**
+ * **カードの列の左右の余白。** フォーカスしたカードは 5% 膨らみ (`Focus.CARD_SCALE`。横に 5.5dp)、縁と光 (`Focus.glow` の 12dp) も付く。
+ * 列の枠はその外を切るので、そのぶん空ける。空けたぶんだけ列の枠をパネルの余白へ広げ (`bleed`)、カードの左の端は名前とそろえたままにする
+ */
+private val FOCUS_ROOM = 20.dp
+
 /** 列の間と、種別の名前とカードの列の間 */
 private val ROW_GAP = 4.dp
 private val LABEL_GAP = 2.dp
@@ -399,3 +407,17 @@ private fun Modifier.fadeEdges(state: LazyListState): Modifier =
 
 /** 端を透かす幅 */
 private val EDGE_FADE = 72.dp
+
+/**
+ * **左右を `room` ずつ外へ広げて置く** (パネルの余白に入る)。中身の左の端は、広げる前と同じ所のまま。
+ * 広げたぶんは `contentPadding` で空け、フォーカスしたカードの膨らみと光を枠で切らない
+ */
+private fun Modifier.bleed(room: Dp): Modifier = layout { measurable, constraints ->
+    val extra = room.roundToPx()
+    val wide = constraints.copy(
+        minWidth = constraints.minWidth + 2 * extra,
+        maxWidth = if (constraints.hasBoundedWidth) constraints.maxWidth + 2 * extra else constraints.maxWidth,
+    )
+    val placeable = measurable.measure(wide)
+    layout(placeable.width - 2 * extra, placeable.height) { placeable.place(-extra, 0) }
+}
