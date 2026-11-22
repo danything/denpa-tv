@@ -1,6 +1,7 @@
 package io.github.danything.denpatv.ui
 
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.ParsableByteArray
@@ -44,6 +45,10 @@ class RawTsPayloadReaderFactory(
  * - ヘッダを見るのは、data_alignment_indicator が立っている (PES の先頭が ADTS のフレームの先頭にそろっている) PES だけ。
  *   立っていない PES は `AdtsReader` にそのまま渡す
  * - 作り直した `AdtsReader` が出す `Format` には、最初の `Format` と同じ id を付ける (同じトラックの形式が替わったものとして扱わせる)
+ * - PTS の無い PES では、`AdtsReader` に `packetStarted` を渡さない。Media3 1.11.1 の `AdtsReader` は渡された時刻をそのまま入れ、
+ *   その PES の中でフレームが終わると `readSample` の `checkState(timeUs != C.TIME_UNSET)` で例外になる (denpa-tv#146)。
+ *   渡さなければ、前の時刻にフレームの長さを足して続ける。まだ時刻を 1 度も渡していない間 (読み始め・シークの直後・
+ *   PTS の無い PES で作り直した直後) は、PTS の付いた PES が来るまで中身を捨てる
  */
 @OptIn(UnstableApi::class)
 class AdtsFormatReader(private val make: () -> AdtsReader) : ElementaryStreamReader {
@@ -58,10 +63,13 @@ class AdtsFormatReader(private val make: () -> AdtsReader) : ElementaryStreamRea
     private var checkHead = false
     private var pesTimeUs = 0L
     private var pesFlags = 0
+    /** いまの `AdtsReader` に時刻を渡した (PTS の付いた PES を 1 つ以上渡した) */
+    private var timed = false
 
     override fun seek() {
         reader.seek()
         checkHead = false
+        timed = false
     }
 
     override fun createTracks(extractorOutput: ExtractorOutput, idGenerator: TsPayloadReader.TrackIdGenerator) {
@@ -78,15 +86,25 @@ class AdtsFormatReader(private val make: () -> AdtsReader) : ElementaryStreamRea
         this.pesTimeUs = pesTimeUs
         pesFlags = flags
         checkHead = flags and TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR != 0
-        reader.packetStarted(pesTimeUs, flags)
+        if (pesTimeUs != C.TIME_UNSET) {
+            timed = true
+            reader.packetStarted(pesTimeUs, flags)
+        }
     }
 
     override fun consume(data: ParsableByteArray) {
+        if (!timed) {
+            // 読んだものとして進める。残すと PesReader が残りを次の PES のヘッダとして読む
+            checkHead = false
+            data.skipBytes(data.bytesLeft())
+            return
+        }
         if (checkHead) {
             checkHead = false
             val head = adtsKey(data)
             val sent = announced
             if (head != null && sent != null && head != sent) rebuild()
+            if (!timed) return data.skipBytes(data.bytesLeft())
         }
         reader.consume(data)
     }
@@ -99,6 +117,7 @@ class AdtsFormatReader(private val make: () -> AdtsReader) : ElementaryStreamRea
      * 新しい `AdtsReader` に、前と同じトラックを渡す (トラックの id は使わないので、`TrackIdGenerator` は何でもよい)。
      * ID3 のトラックは作らない (`exposeId3` が false) ので、渡すのは音声のトラックだけ。
      * 前の PES の最後のフレームが途中で切れていたら、そのフレームは前の `AdtsReader` ごと捨てる (形式が替わる境目の 1 フレーム)
+     * PTS の無い PES で作り直したときは、新しい `AdtsReader` に渡す時刻が無いので、PTS の付いた PES が来るまで捨てる
      */
     private fun rebuild() {
         val next = make()
@@ -111,7 +130,7 @@ class AdtsFormatReader(private val make: () -> AdtsReader) : ElementaryStreamRea
             },
             TsPayloadReader.TrackIdGenerator(0, 1),
         )
-        next.packetStarted(pesTimeUs, pesFlags)
+        if (pesTimeUs != C.TIME_UNSET) next.packetStarted(pesTimeUs, pesFlags) else timed = false
         reader = next
     }
 
