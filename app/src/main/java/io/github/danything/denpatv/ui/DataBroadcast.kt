@@ -384,7 +384,7 @@ class DataBroadcast internal constructor(private val base: URI) {
  * **データ放送の受け持ち** (`DataBroadcast`)。WebView を作る・捨てる、Cookie、ページへの `init`・`channel`・`receive`・`captions`・`time`、
  * ライブのデータのストリーム (`GET api/services/<id>/data`) を受け持つ。描くのは `DataBroadcastLayer` (PlayerFrame の中)。
  *
- * @param target 観ているもの。null なら出さない (追っかけ・H.265・まだ映していない)
+ * @param target 観ているもの。null なら出さない (追っかけ・まだ映していない)
  * @param receiving 開く前から受信するか (自動で受信する端末で、入口に自動起動の指定がある局・録画)
  * @param subtitles 字幕を出しているか (Hybridcast のアプリに渡す)
  * @param time いまの再生の時刻。`timeKey` が変わったらすぐ、ほかは `TIME_EVERY_MS` ごとに送る
