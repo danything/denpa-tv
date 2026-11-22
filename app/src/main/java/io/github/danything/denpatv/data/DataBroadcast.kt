@@ -137,7 +137,8 @@ object DataPage {
     /**
      * ライブのデータ放送 (0x30) と通知 (0x40)。`json` は denpa から届いた JSON のオブジェクトをそのまま埋める。
      * 読み直して組み立て直さないのは、繋いだときにまとめて届くモジュール (数十 MB) をテレビの CPU で読み直さないため。
-     * 届いたのが JSON のオブジェクトの形か (`DataFeed` が頭と尻を見る) だけ確かめてある
+     * 届いたのが JSON のオブジェクトの形か (`DataFeed` が頭と尻を見る) だけ確かめてある。途中で壊れた JSON は、ページが
+     * 読み捨てる (ページの `readIncoming` は `JSON.parse` に失敗したものを捨てる)
      */
     fun data(json: String): String = """{"type":"data","message":$json}"""
 
@@ -317,4 +318,54 @@ object WebOrigin {
         "https" -> 443
         else -> -2
     }
+}
+
+/** 開いている間のキーをどうするか (`DataKeys`) */
+sealed interface DataKeyAction {
+    /** 受けない (TV のキーとして使う) */
+    data object Pass : DataKeyAction
+
+    /** 受けて、何も送らない (押し続けた繰り返し) */
+    data object Hold : DataKeyAction
+
+    /** d を押した */
+    data object D : DataKeyAction
+
+    /** ページへ押した・離したを送る */
+    data class Send(val code: Int, val down: Boolean) : DataKeyAction
+}
+
+/**
+ * **リモコンのキーを、ページへ渡すか決める。** 押したのを渡したキーは、離したのも必ず渡す (文書は離すまで次のキーを受けない)。
+ * 押し続けた繰り返しは渡さない。閉じたあとに離したキーも、押したのを渡していれば渡す
+ */
+class DataKeys {
+    private val pressed = mutableSetOf<Int>()
+
+    /**
+     * キーを押した。`open` はデータ放送を開いているか (十字・数字・色を渡す)、`canOpen` は d で開けるか
+     * (出せるものを観ている・もう動いている・出せないと知らせる)
+     */
+    fun down(keyCode: Int, repeatCount: Int, open: Boolean, canOpen: Boolean): DataKeyAction = when (val key = dataKey(keyCode)) {
+        null -> DataKeyAction.Pass
+        DataKey.D -> when {
+            !canOpen -> DataKeyAction.Pass
+            repeatCount == 0 -> DataKeyAction.D
+            else -> DataKeyAction.Hold
+        }
+        is DataKey.Key -> when {
+            !open -> DataKeyAction.Pass
+            repeatCount == 0 && pressed.add(key.code) -> DataKeyAction.Send(key.code, true)
+            else -> DataKeyAction.Hold
+        }
+    }
+
+    /** キーを離した。押したのを渡していれば離したのも渡す */
+    fun up(keyCode: Int): DataKeyAction {
+        val key = dataKey(keyCode) as? DataKey.Key ?: return DataKeyAction.Pass
+        return if (pressed.remove(key.code)) DataKeyAction.Send(key.code, false) else DataKeyAction.Pass
+    }
+
+    /** 押したままのキーを忘れる (ページを捨てた) */
+    fun clear() = pressed.clear()
 }

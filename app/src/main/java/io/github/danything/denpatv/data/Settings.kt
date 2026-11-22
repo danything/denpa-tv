@@ -71,6 +71,8 @@ class Settings(private val context: Context) {
             it.remove(serverKey)
             it.remove(tokenKey)
         }
+        // データ放送の WebView に入れた Cookie (アクセストークンに結んだもの) も消す。次の繋ぎ先へ送らない
+        runCatching { android.webkit.CookieManager.getInstance().removeAllCookies(null) }
     }
 
     /**

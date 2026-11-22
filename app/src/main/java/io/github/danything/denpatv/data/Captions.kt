@@ -51,7 +51,10 @@ object CaptionFeed {
     const val TEXT = 0x22
     const val CONTROL = 0x40
 
-    /** 1フレームの上限。壊れた長さで何百 MB も取りにいかない */
+    /**
+     * 1フレームの上限。壊れた長さで何百 MB も取りにいかない。データ放送も 1 フレームは ResponseMessage 1 つ (大きいのはモジュール 1 つで、実機で約 90 KB を base64 にしたもの) で、
+     * 繋いだときにまとめて届く数十 MB はフレームが何百も並んだもの
+     */
     private const val MAX_FRAME = 16 * 1024 * 1024
     /** denpa は 20 秒おきに ping を送る。2 回来なければ切れたとみなす */
     private const val READ_TIMEOUT_MS = 45_000

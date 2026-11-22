@@ -47,13 +47,13 @@ import io.github.danything.denpatv.data.BaseUrl
 import io.github.danything.denpatv.data.CaptionFeed
 import io.github.danything.denpatv.data.DataFeed
 import io.github.danything.denpatv.data.DataFrame
-import io.github.danything.denpatv.data.DataKey
+import io.github.danything.denpatv.data.DataKeyAction
+import io.github.danything.denpatv.data.DataKeys
 import io.github.danything.denpatv.data.DataPage
 import io.github.danything.denpatv.data.PageMessage
 import io.github.danything.denpatv.data.Unauthorized
 import io.github.danything.denpatv.data.VideoPlace
 import io.github.danything.denpatv.data.WebOrigin
-import io.github.danything.denpatv.data.dataKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
@@ -141,8 +141,8 @@ class DataBroadcast internal constructor(private val base: URI) {
     private var view: WebView? = null
     private val main = Handler(Looper.getMainLooper())
 
-    /** ページへ渡した押したキーで、まだ離していないもの (離したほうも必ず送る。文書は離すまで次のキーを受けない) */
-    private val pressed = mutableSetOf<Int>()
+    /** ページへ渡すキー (押したのを渡したら、離したのも渡す) */
+    private val keys = DataKeys()
 
     /** ページの場所 */
     internal val pageUrl: String? = BaseUrl.resolve(base, DataPage.PATH)?.toString()
@@ -210,33 +210,17 @@ class DataBroadcast internal constructor(private val base: URI) {
     }
 
     /** キーを押した。ページへ渡したら true (TV では使わない) */
-    fun keyDown(keyCode: Int, repeatCount: Int): Boolean = when (val key = dataKey(keyCode)) {
-        null -> false
-        DataKey.D -> {
-            if (!available && !ready && !broken) {
-                false
-            } else {
-                if (repeatCount == 0) pressD()
-                true
-            }
-        }
-        is DataKey.Key -> {
-            if (!ready || !open) {
-                false
-            } else {
-                // 押し続けた繰り返しは送らない (離すまで次のキーを受けないので)
-                if (repeatCount == 0 && pressed.add(key.code)) send(DataPage.key(key.code, true))
-                true
-            }
-        }
-    }
+    fun keyDown(keyCode: Int, repeatCount: Int): Boolean =
+        act(keys.down(keyCode, repeatCount, open = ready && open, canOpen = available || ready || broken))
 
     /** キーを離した。押したのをページへ渡していれば、離したのも渡して true */
-    fun keyUp(keyCode: Int): Boolean {
-        val key = dataKey(keyCode) as? DataKey.Key ?: return false
-        if (!pressed.remove(key.code)) return false
-        send(DataPage.key(key.code, false))
-        return true
+    fun keyUp(keyCode: Int): Boolean = act(keys.up(keyCode))
+
+    private fun act(action: DataKeyAction): Boolean = when (action) {
+        DataKeyAction.Pass -> false
+        DataKeyAction.Hold -> true
+        DataKeyAction.D -> true.also { pressD() }
+        is DataKeyAction.Send -> true.also { send(DataPage.key(action.code, action.down)) }
     }
 
     /** WebView を捨てる (受信をやめる・画面が裏に回った・観るものが替わった) */
@@ -252,7 +236,7 @@ class DataBroadcast internal constructor(private val base: URI) {
         requested = false
         place = VideoPlace.Full
         note = ""
-        pressed.clear()
+        keys.clear()
         sentService = null
         sentReceive = null
         sentCaptions = null
@@ -271,8 +255,9 @@ class DataBroadcast internal constructor(private val base: URI) {
         when (message) {
             null -> Unit
             PageMessage.Ready -> {
+                // 観るものが無くなった (`available` が下りるのと行き違った)。init を送れないので捨てる
+                val init = hooks.init() ?: return teardown()
                 ready = true
-                val init = hooks.init() ?: return
                 send(init)
                 requested = false
             }
@@ -280,8 +265,6 @@ class DataBroadcast internal constructor(private val base: URI) {
             is PageMessage.Open -> {
                 if (message.on && !open) hooks.flash(OPEN_HINT)
                 open = message.on
-                // 閉じたら押したままのキーは忘れる (ページはもう受けない)
-                if (!message.on) pressed.clear()
             }
             is PageMessage.Video -> place = message.place
             is PageMessage.Tune -> hooks.onTune(message.service)

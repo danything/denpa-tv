@@ -8,6 +8,8 @@ import io.github.danything.denpatv.data.CaptionFrame
 import io.github.danything.denpatv.data.DataFeed
 import io.github.danything.denpatv.data.DataFrame
 import io.github.danything.denpatv.data.DataKey
+import io.github.danything.denpatv.data.DataKeyAction
+import io.github.danything.denpatv.data.DataKeys
 import io.github.danything.denpatv.data.DataPage
 import io.github.danything.denpatv.data.DataPaths
 import io.github.danything.denpatv.data.PageMessage
@@ -69,6 +71,27 @@ class DataBroadcastTest {
         }
         assertEquals(18, AribKey.ENTER)
         assertEquals(19, AribKey.BACK)
+    }
+
+    /** 押したのを渡したキーは離したのも渡す。繰り返しは渡さない。閉じている間は十字などを TV に残し、d は開けるときだけ受ける */
+    @Test
+    fun ページへ渡すキー() {
+        val keys = DataKeys()
+        val right = KeyEvent.KEYCODE_DPAD_RIGHT
+        assertSame(DataKeyAction.Pass, keys.down(right, 0, open = false, canOpen = true))
+        assertSame(DataKeyAction.Pass, keys.up(right))
+        assertEquals(DataKeyAction.Send(AribKey.RIGHT, true), keys.down(right, 0, open = true, canOpen = true))
+        assertSame(DataKeyAction.Hold, keys.down(right, 1, open = true, canOpen = true))
+        // 閉じたあとに離しても、押したのを渡していれば離したのも渡す
+        assertEquals(DataKeyAction.Send(AribKey.RIGHT, false), keys.up(right))
+        assertSame(DataKeyAction.Pass, keys.up(right))
+        assertSame(DataKeyAction.D, keys.down(KeyEvent.KEYCODE_TV_DATA_SERVICE, 0, open = false, canOpen = true))
+        assertSame(DataKeyAction.Hold, keys.down(KeyEvent.KEYCODE_TV_DATA_SERVICE, 1, open = false, canOpen = true))
+        assertSame(DataKeyAction.Pass, keys.down(KeyEvent.KEYCODE_TV_DATA_SERVICE, 0, open = false, canOpen = false))
+        assertSame(DataKeyAction.Pass, keys.down(KeyEvent.KEYCODE_CHANNEL_UP, 0, open = true, canOpen = true))
+        keys.down(KeyEvent.KEYCODE_PROG_RED, 0, open = true, canOpen = true)
+        keys.clear()
+        assertSame(DataKeyAction.Pass, keys.up(KeyEvent.KEYCODE_PROG_RED))
     }
 
     @Test
