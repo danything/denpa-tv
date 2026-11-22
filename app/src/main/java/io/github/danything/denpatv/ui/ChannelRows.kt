@@ -135,6 +135,7 @@ fun ChannelRows(
      * 捨てられ、戻ると送り具合も最後にフォーカスしたカードも初めからになる
      */
     val states = remember { mutableMapOf<String, LazyListState>() }
+    val keyline = with(LocalDensity.current) { remember(this) { Keyline(FOCUS_ROOM.toPx()) } }
     val scope = rememberCoroutineScope()
     /*
      * **縦は自分で送る (上の `focusedRow`) ので、カードにフォーカスしたときの送りは縦には効かせない。** テレビでは Compose の既定が
@@ -148,7 +149,7 @@ fun ChannelRows(
              * 局の列から操作の列へ上がったら、開いたときの列に戻しておく (下キーで戻る先と揃える)。その列を横に送って
              * 行き先のカードが枠の外に出ていたら、カードが見えるところまで戻す — カードが無いと、操作の列で下を押しても下りられない
              */
-            modifier = Modifier.fillMaxWidth().height(rowsHeight).fadeBottom(focusedRow < rows.lastIndex).onFocusChanged {
+            modifier = Modifier.fillMaxWidth().bleed(FOCUS_ROOM).height(rowsHeight).fadeBottom(focusedRow < rows.lastIndex).onFocusChanged {
                 if (it.hasFocus) return@onFocusChanged
                 focusedRow = start
                 val startRow = rows.getOrNull(start) ?: return@onFocusChanged
@@ -159,7 +160,8 @@ fun ChannelRows(
                 }
             },
             // 最後の列も上に揃えられるよう、下に1列ぶんに足りない分の余白
-            contentPadding = PaddingValues(bottom = rowsHeight - rowHeight),
+            // 左右は、中の横の列が広げる (`bleed`) ぶん空ける。縦の列の枠は外を切るので、空けないと横の列の広げたぶんが切れる
+            contentPadding = PaddingValues(start = FOCUS_ROOM, end = FOCUS_ROOM, bottom = rowsHeight - rowHeight),
             verticalArrangement = Arrangement.spacedBy(ROW_GAP),
         ) {
             itemsIndexed(rows, key = { _, it -> it.key }) { index, row ->
@@ -198,7 +200,7 @@ fun ChannelRows(
                      * **横は、フォーカスしたカードの左の端をいつも同じ所 (`KEYLINE`。左に1枚ぶん) に置く。** 送るたびにカードが同じ所に来るので、
                      * どの列でも目の置き場が変わらない。端のカードで送れないときは、送れるところまで
                      */
-                    CompositionLocalProvider(LocalBringIntoViewSpec provides Keyline) {
+                    CompositionLocalProvider(LocalBringIntoViewSpec provides keyline) {
                         LazyRow(
                             state = state,
                             // 枠は幅いっぱい (局の少ない列でも、フォーカスで膨らんだカードの縁と光が枠で切れないように)。送れる側の端は溶かす
@@ -249,12 +251,15 @@ private val StayPut = object : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
 }
 
-/** 横の列で、フォーカスしたカードの左の端を `KEYLINE` に置く。送れる分は列が決める (端では止まる) */
-private val Keyline = object : BringIntoViewSpec {
+/**
+ * 横の列で、フォーカスしたカードの左の端を `KEYLINE` に置く。送れる分は列が決める (端では止まる)。
+ * 列の枠は左右に `room` (px。`FOCUS_ROOM`) ずつ広げてあるので、割合は広げる前の幅で数え、置く所も広げたぶん右へずらす
+ */
+private class Keyline(private val room: Float) : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         // カードの幅が枠より広いことは無いが、念のためカードの頭を見せる
         if (size >= containerSize) return offset
-        val keyline = KEYLINE_FRACTION * containerSize
+        val keyline = room + KEYLINE_FRACTION * (containerSize - 2 * room)
         return offset - keyline.coerceAtMost(containerSize - size)
     }
 }
@@ -357,7 +362,8 @@ private const val KEYLINE_FRACTION = 0.25f
 
 /**
  * **カードの列の左右の余白。** フォーカスしたカードは 5% 膨らみ (`Focus.CARD_SCALE`。横に 5.5dp)、縁と光 (`Focus.glow` の 12dp) も付く。
- * 列の枠はその外を切るので、そのぶん空ける。空けたぶんだけ列の枠をパネルの余白へ広げ (`bleed`)、カードの左の端は名前とそろえたままにする
+ * 列の枠はその外を切るので、そのぶん空ける。空けたぶんだけ列の枠をパネルの余白へ広げ (`bleed`)、カードの左の端は名前とそろえたままにする。
+ * 横の列を並べる縦の列も外を切るので、同じだけ広げて空ける
  */
 private val FOCUS_ROOM = 20.dp
 
