@@ -375,9 +375,8 @@ class SmokeTest {
 
     /**
      * **実況のコメントを流す。** 操作の列の「実況 オフ」を押してオンにし (端末ごとに覚える)、録画を頭から開き直すと、録画の元の TS の頭の放送時刻
-     * (`api/recordings/<id>` の `jikkyo`) から過去ログ API (偽物の `FakeJikkyo`) を訊いて、映像に合わせて緑の「■」が流れる。
-     * 過去ログ API には denpa のアクセストークンも Referer も付けない。
-     * 縮めた APK を `DENPA_TV_JIKKYO_KAKOLOG=http://127.0.0.1:18080` でビルドしていないと、本物の過去ログ API を訊いて流れない
+     * (`api/recordings/<id>` の `jikkyo`) から偽の denpa の過去ログ (`api/jikkyo/kakolog`。作り物の `FakeJikkyo`) を訊いて、映像に合わせて緑の「■」が流れる。
+     * アプリは実況のコメントも denpa から受け、外へは繋がない
      */
     @Test
     fun recordingJikkyo() = watching {
@@ -392,11 +391,10 @@ class SmokeTest {
         reopenRecording()
         var dots = 0
         assertTrue(
-            "実況のコメントが流れません (緑の点 $dots)。過去ログ API への要求: ${jikkyo.requests.toList()}",
+            "実況のコメントが流れません (緑の点 $dots)。denpa への要求: ${denpa.targets.filter { "jikkyo" in it }}",
             poll(COMMENT_TIMEOUT_MS) { dots = screenshot()?.let(::greenDots) ?: 0; dots >= COMMENT_DOTS },
         )
-        assertTrue("過去ログ API を訊いていません: ${jikkyo.requests.toList()}", jikkyo.requests.any { it.startsWith("GET /api/kakolog/jk1") })
-        assertTrue("過去ログ API にアクセストークンか Referer を付けました: ${jikkyo.requests.toList()}", jikkyo.requests.none { " [" in it })
+        assertTrue("過去ログを訊いていません: ${denpa.targets.filter { "jikkyo" in it }}", denpa.targets.any { it.startsWith("/api/jikkyo/kakolog?channel=jk1&") })
 
         // 操作の列の「コメントの一覧」で、右の列にいままでのコメントと勢いが並ぶ
         // (偽の録画は 10 秒で終わるので、開き直して少し流してから開く)
@@ -767,14 +765,12 @@ class SmokeTest {
         private const val APP = "io.github.danything.denpatv"
         private val instrumentation: Instrumentation get() = InstrumentationRegistry.getInstrumentation()
         private lateinit var denpa: FakeDenpa
-        private lateinit var jikkyo: FakeJikkyo
 
         /** 偽の denpa を立て、まっさらのアプリを起動して、繋ぐ画面の欄から繋ぐ */
         @BeforeClass
         @JvmStatic
         fun connect() {
             denpa = FakeDenpa(instrumentation.context.assets)
-            jikkyo = FakeJikkyo()
             shell("pm clear $APP")
             shell("logcat -b crash -c")
             val launch = (instrumentation.context.packageManager.getLeanbackLaunchIntentForPackage(APP) ?: error("$APP が入っていません"))
@@ -811,7 +807,6 @@ class SmokeTest {
         @JvmStatic
         fun stop() {
             denpa.close()
-            jikkyo.close()
         }
 
         /**

@@ -6,13 +6,12 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * **実況のコメント** (本文と投稿時刻と流し方だけ)。読み方はブラウザの denpa (`src/lib/jikkyo/comments.ts`・`command.ts`) と同じ。
+ * **実況のコメント** (本文と投稿時刻と流し方だけ)。読み方はブラウザの denpa (`src/lib/jikkyo/live.ts`・`command.ts`) と同じ。
  *
- * NX-Jikkyo の WebSocket も過去ログ API も、旧ニコ生と同じ形式の `chat` を返す
- * (`{ thread, no, vpos, date, date_usec, mail, user_id, premium, anonymity, content }`)。値は WebSocket が数、過去ログが文字列なので、
- * どちらでも読む。**`user_id`・`premium`・`no` などは読んだその場で捨てる** — 持つのは本文と投稿時刻と、`mail` のうち色・位置・大きさだけ
+ * denpa のサーバの受け口 (`api/jikkyo/feed`・`api/jikkyo/kakolog`) は `{ at, text, mail, src, id }` を返す。
+ * 持つのは本文と投稿時刻と、`mail` のうち色・位置・大きさだけ (`src` は読んだその場で使い、`id` は読まない。テレビは書き込まないので、自分の書き込みを見分けない)
  *
- * @property at 投稿時刻 (unix ms。公式のものはニコニコ、ほかは NX-Jikkyo のサーバの時計)
+ * @property at 投稿時刻 (unix ms。公式のものはニコニコ、ほかは NX-Jikkyo か denpa-hub のサーバの時計)
  * @property style 色・位置・大きさ。既定 (白・流れる・中) なら null
  */
 data class JikkyoComment(val at: Long, val text: String, val style: CommentStyle? = null)
@@ -86,51 +85,58 @@ fun readMail(mail: String?): CommentStyle? {
     return CommentStyle(color, place, size).takeUnless { it.isDefault }
 }
 
-/** `chat` を1つ読んだ結果 */
-sealed interface ChatRead {
-    data class Ok(val comment: JikkyoComment) : ChatRead
-
-    /** 流さないもの (本文が空・`/nicoad` などの運営のコメント) */
-    data object Skip : ChatRead
-
-    /** 形式がずれていて読めない (呼ぶ側がまとめて1回だけ警告する) */
-    data object Odd : ChatRead
+/**
+ * 公式のコメントの `style` (`{ color, place, size }`。denpa のサーバが `mail` を読んだもの) を読む。
+ * 読めないところは既定 (白・流れる・中) にする。既定のままなら null
+ */
+fun readStyle(raw: JsonElement?): CommentStyle? {
+    val style = raw as? JsonObject ?: return null
+    val color = style["color"].string()?.lowercase()?.takeIf { HEX_COLOR.matches(it) && it != COLOR_VALUES["white"] }
+    val place = style["place"].string()?.takeIf { it == "ue" || it == "shita" }
+    val size = style["size"].string()?.takeIf { it == "big" || it == "small" }
+    return CommentStyle(color, place, size).takeUnless { it.isDefault }
 }
 
-/** 数か、数の文字列を数に。読めなければ NaN */
-private fun num(value: JsonElement?): Double {
-    val primitive = value as? JsonPrimitive ?: return Double.NaN
-    if (primitive.isString) return primitive.content.trim().takeIf { it.isNotEmpty() }?.toDoubleOrNull() ?: Double.NaN
-    return primitive.content.toDoubleOrNull() ?: Double.NaN
+/** 受け口のコメントを1つ読んだ結果 */
+sealed interface CommentRead {
+    /** `src` は出どころ (`hub`・`nx`・`nicolive`)。無いものは `nx` (知らない値も `nx` と同じに扱う) */
+    data class Ok(val comment: JikkyoComment, val src: String) : CommentRead
+
+    /** 流さないもの (本文が空・`/nicoad` などの運営のコメント) */
+    data object Skip : CommentRead
+
+    /** 形式がずれていて読めない (呼ぶ側がまとめて1回だけ警告する) */
+    data object Odd : CommentRead
 }
 
 private val OPERATOR = Regex("^/[a-z]")
 
-/** `chat` の中身を1つ読む */
-fun readChat(chat: JsonElement?): ChatRead {
-    val raw = chat as? JsonObject ?: return ChatRead.Odd
-    val date = num(raw["date"])
-    val usec = if (raw["date_usec"] == null) 0.0 else num(raw["date_usec"])
-    if (!date.isFinite() || !usec.isFinite()) return ChatRead.Odd
-    val content = (raw["content"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return ChatRead.Odd
-    val text = content.trim()
+/** 文字列の値。文字列でなければ null */
+internal fun JsonElement?.string(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+/** 数の値。数でない (文字列も) なら null */
+internal fun JsonElement?.number(): Double? =
+    (this as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toDoubleOrNull()?.takeIf { it.isFinite() }
+
+/** 受け口のコメント (`{ at, text, mail, src }`) を1つ読む */
+fun readComment(raw: JsonElement?): CommentRead {
+    val c = raw as? JsonObject ?: return CommentRead.Odd
+    val at = c["at"].number() ?: return CommentRead.Odd
+    val text = c["text"].string()?.trim() ?: return CommentRead.Odd
     // 運営のコメント (`/nicoad`・`/gift` など。古い過去ログに入っている) は流さない
-    if (text.isEmpty() || OPERATOR.containsMatchIn(text)) return ChatRead.Skip
-    val at = (date * 1000 + Math.floor(usec / 1000)).toLong()
-    val mail = (raw["mail"] as? JsonPrimitive)?.takeIf { it.isString }?.content
-    return ChatRead.Ok(JikkyoComment(at, text, readMail(mail)))
+    if (text.isEmpty() || OPERATOR.containsMatchIn(text)) return CommentRead.Skip
+    return CommentRead.Ok(JikkyoComment(at.toLong(), text, readMail(c["mail"].string())), c["src"].string() ?: "nx")
 }
 
-/** `{ chat: {...} }` の並び (過去ログ API の `packet`) を読む。`chat` 以外の行は飛ばし、形式のずれた行の数を返す */
-fun readPackets(packets: JsonArray): Pair<List<JikkyoComment>, Int> {
-    val comments = mutableListOf<JikkyoComment>()
+/** 受け口の `comments` を読む。流さないものは飛ばし、形式のずれた行の数を返す */
+fun readComments(list: JsonArray): Pair<List<CommentRead.Ok>, Int> {
+    val comments = mutableListOf<CommentRead.Ok>()
     var odd = 0
-    for (packet in packets) {
-        val chat = (packet as? JsonObject)?.takeIf { "chat" in it }?.get("chat") ?: continue
-        when (val read = readChat(chat)) {
-            is ChatRead.Ok -> comments += read.comment
-            ChatRead.Odd -> odd++
-            ChatRead.Skip -> Unit
+    for (raw in list) {
+        when (val read = readComment(raw)) {
+            is CommentRead.Ok -> comments += read
+            CommentRead.Odd -> odd++
+            CommentRead.Skip -> Unit
         }
     }
     return comments to odd
@@ -145,7 +151,7 @@ fun commentKey(comment: JikkyoComment): String = "${comment.at}\u0000${comment.t
 /**
  * **時刻つきのコメントの控え。** 観ている局 (録画) ごとに1つ。鍵は呼ぶ側 (`JikkyoFeed`) が掛ける。
  *
- * - コメントは投稿時刻の順に並べる。同じ時刻・同じ本文のものは1つにする (過去ログと WebSocket の境目で同じものが2度来る)
+ * - コメントは投稿時刻の順に並べる。同じ時刻・同じ本文のものは1つにする (過去ログとライブの受け口の境目で同じものが2度来る)
  * - **埋めた区間** (`[from, to)` の集まり) も持つ。過去ログに何度も同じ区間を訊かないため
  */
 class CommentStore {

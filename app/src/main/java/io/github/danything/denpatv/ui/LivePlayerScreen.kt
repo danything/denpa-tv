@@ -263,7 +263,9 @@ fun LivePlayerScreen(repo: Repository, onLeave: () -> Unit, onUnauthorized: () -
      */
     val jikkyo = rememberJikkyo(
         repo,
-        live = true,
+        receives = true,
+        // 連携した世帯では公式のニコニコ実況のコメントも受ける (追っかけと録画では受けない)
+        official = true,
         channel = playing?.takeIf { chasing == null }?.jikkyo,
         household = household && (chasing == null),
         air = if (chasing != null) AirClock { null } else AirClock {

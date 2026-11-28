@@ -1,6 +1,6 @@
 package io.github.danything.denpatv.data
 
-/** denpa の版 (`v1.44.0` の数の3つ) */
+/** denpa のバージョン (`v1.44.0` の数の3つ) */
 data class DenpaVersion(val major: Int, val minor: Int, val patch: Int) : Comparable<DenpaVersion> {
     override fun compareTo(other: DenpaVersion): Int =
         compareValuesBy(this, other, DenpaVersion::major, DenpaVersion::minor, DenpaVersion::patch)
@@ -57,4 +57,25 @@ fun denpaTooOld(version: String?): String? {
     if (version == null) return "denpa $MIN_DENPA 以上が必要です"
     val running = DenpaVersion.parse(version) ?: return null
     return if (running < MIN_DENPA) "denpa $MIN_DENPA 以上が必要です (いまは $running)" else null
+}
+
+/**
+ * **実況のコメントが要る denpa のバージョン** (`POST api/jikkyo/feed`・`GET api/jikkyo/kakolog` が 2.64.0 から。denpa #3285)。
+ * 番組表と同じく `MIN_DENPA` は上げず、実況だけがこれを見る。古ければコメントを流さずに、操作の列の「実況」に添える
+ */
+val MIN_JIKKYO = DenpaVersion(2, 64, 0)
+
+/**
+ * `version` が `MIN_JIKKYO` より古いか。**dev ビルドと読めないバージョン (null も) は確かめない** (false。
+ * 呼ぶ側は受け口を呼び、404 なら古いとみなす。`JikkyoFeed.tooOld`)
+ */
+fun jikkyoTooOld(version: String?): Boolean {
+    val running = version?.let { DenpaVersion.parse(it) } ?: return false
+    return running < MIN_JIKKYO
+}
+
+/** 実況に要る denpa のバージョンの1行。いまのバージョンが分かれば添える */
+fun jikkyoTooOldMessage(version: String?): String {
+    val running = version?.let { DenpaVersion.parse(it)?.toString() ?: it.trim() }?.takeIf { it.isNotEmpty() }
+    return "実況には denpa $MIN_JIKKYO 以上が必要です" + (running?.let { " (いまは $it)" } ?: "")
 }

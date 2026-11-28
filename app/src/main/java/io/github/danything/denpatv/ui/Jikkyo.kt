@@ -35,24 +35,23 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
-import io.github.danything.denpatv.BuildConfig
 import io.github.danything.denpatv.R
 import io.github.danything.denpatv.data.AirClock
+import io.github.danything.denpatv.data.DenpaJikkyoServer
 import io.github.danything.denpatv.data.JikkyoComment
-import io.github.danything.denpatv.data.JikkyoEndpoints
 import io.github.danything.denpatv.data.JikkyoFeed
 import io.github.danything.denpatv.data.JikkyoLanes
+import io.github.danything.denpatv.data.MIN_JIKKYO
 import io.github.danything.denpatv.data.RecordingJikkyo
 import io.github.danything.denpatv.data.Service
 import io.github.danything.denpatv.data.Unauthorized
+import io.github.danything.denpatv.data.jikkyoTooOld
+import io.github.danything.denpatv.data.jikkyoTooOldMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-
-/** 実況の取得先。smoke の縮めた APK だけ、ビルドのときに偽物へ差し替えられる (app/build.gradle.kts) */
-val jikkyoEndpoints = JikkyoEndpoints(BuildConfig.JIKKYO_NX, BuildConfig.JIKKYO_KAKOLOG)
 
 /**
  * 過去ログから取るところ (録画・追っかけ)。`from` から `to()` まで。`every` を渡すと、その間隔で新しいところを取り足す (録画中の追っかけ)
@@ -73,29 +72,31 @@ class JikkyoState internal constructor(
     val on: Boolean,
     /** 読めない */
     val down: Boolean,
+    /** 繋いだ denpa が古く、実況の受け口が無い (`MIN_JIKKYO`) */
+    val tooOld: Boolean,
     /** いま映しているコマの放送時刻 */
     val air: AirClock,
     /** 右にコメントの一覧を出す設定 (端末ごと) */
     val listOn: Boolean,
-    /** 追っかけ。新しいところ (過去ログにまだ無い 10 分以内) に来たら NX-Jikkyo で1回だけ遡る */
-    val backfill: Boolean,
     private val toggle: () -> Unit,
     private val toggleList: () -> Unit,
     private val missing: () -> Unit,
+    private val old: () -> Unit,
 ) {
     /** 流している */
-    val active: Boolean get() = supported && on && channel != null
+    val active: Boolean get() = supported && on && channel != null && !tooOld
 
     /** 右にコメントの一覧を出している (流しているときだけ) */
     val listShown: Boolean get() = active && listOn
 
     /**
      * 操作の列の「実況」(「字幕」の隣)。出さないなら null。実況の無い局は「実況 (この局にはありません)」、
-     * 読めないときは「(いまは読めません)」を添える
+     * 繋いだ denpa が古ければ「実況 (denpa v2.64.0 以上が必要です)」、読めないときは「(いまは読めません)」を添える
      */
     fun control(): Control? {
         if (!supported) return null
         if (channel == null) return Control("実況 (この局にはありません)", icon = R.drawable.ic_jikkyo) { missing() }
+        if (tooOld) return Control("実況 (denpa $MIN_JIKKYO 以上が必要です)", icon = R.drawable.ic_jikkyo) { old() }
         val label = (if (on) "実況 オン" else "実況 オフ") + if (on && down) " (いまは読めません)" else ""
         return Control(label, on = on, icon = R.drawable.ic_jikkyo) { toggle() }
     }
@@ -110,46 +111,55 @@ fun householdJikkyo(services: List<Service>): Boolean = services.any { it.jikkyo
 
 /**
  * **実況のコメントを流す支度** (局・録画ごと)。ボタンを押したら端末の設定を替える (`Settings.jikkyo`)。
+ * コメントはどれも繋いでいる denpa のサーバから受ける (`DenpaJikkyoServer`。テレビは外へ繋がない)。
+ * 繋いだ denpa が `MIN_JIKKYO` より古い (か、受け口が 404) なら流さず、ボタンに要るバージョンを添える
  *
- * @param live NX-Jikkyo の WebSocket に繋ぐか (ライブ・追っかけ)
+ * @param receives ライブのコメントを受けるか (ライブ・追っかけ)
  * @param channel この局 (録画) の実況のチャンネル。無ければ null
  * @param household 世帯の設定で実況がオンか (`householdJikkyo`)。オフならボタンを出さない
  * @param past 過去ログから取るところ (録画・追っかけ)。ライブは null
+ * @param official 公式のニコニコ実況のコメントも受ける (ライブだけ。ブラウザと同じく追っかけと録画では受けない)。
+ *   denpa は連携しているかを返さないので、ライブではいつも載せる。連携していない世帯はサーバが `unlinked` を返し、
+ *   NX-Jikkyo が取り込んだ公式のコメントをそのまま流す
  * @param air いま映しているコマの放送時刻
  */
 @Composable
 fun rememberJikkyo(
     repo: Repository,
-    live: Boolean,
+    receives: Boolean,
     channel: String?,
     household: Boolean,
     air: AirClock,
     onChange: (String) -> Unit,
     past: JikkyoPast? = null,
-    backfill: Boolean = false,
+    official: Boolean = false,
     onUnauthorized: () -> Unit = {},
 ): JikkyoState {
     val on by repo.app.settings.jikkyo.collectAsState(initial = false)
     val listOn by repo.app.settings.jikkyoList.collectAsState(initial = false)
     val supported = household
     val scope = rememberCoroutineScope()
-    // 繋ぐ出来事と取り足しは1本のスレッドで回す (NxJikkyo)。画面を離れたら閉じてから止める
+    // 受けた出来事と取り足しは1本のスレッドで回す (JikkyoLive)。画面を離れたら閉じてから止める
     val feed = remember {
         @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
         val loop = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
-        JikkyoFeed(live, loop, jikkyoEndpoints) to loop
+        JikkyoFeed(receives, loop, DenpaJikkyoServer(repo.base) { repo.token }) to loop
     }.let { (feed, loop) ->
         DisposableEffect(feed) { onDispose { feed.close { loop.cancel() } } }
         feed
     }
     val down by feed.down.collectAsState()
-    val active = supported && on && channel != null
+    val missingEndpoint by feed.tooOld.collectAsState()
+    val refused by feed.refused.collectAsState()
+    val tooOld = missingEndpoint || jikkyoTooOld(repo.denpaVersion)
+    val active = supported && on && channel != null && !tooOld
     val latestPast by rememberUpdatedState(past)
     LaunchedEffect(channel, active, past?.from) {
-        feed.set(channel, active)
+        feed.set(channel, active, official)
         if (!active) return@LaunchedEffect
         latestPast?.let { feed.kakolog(it.from, it.to, it.every) }
     }
+    LaunchedEffect(refused) { if (refused) onUnauthorized() }
     // NG ワードは流しはじめるたびに読む (denpa の設定で替えたものが、開き直さなくても次に効く)
     LaunchedEffect(active) {
         if (!active) return@LaunchedEffect
@@ -166,9 +176,9 @@ fun rememberJikkyo(
         channel = channel,
         on = on,
         down = down,
+        tooOld = tooOld,
         air = air,
         listOn = listOn,
-        backfill = backfill,
         toggle = {
             scope.launch { repo.app.settings.setJikkyo(!on) }
             onChange(if (on) "実況 オフ" else "実況 オン")
@@ -178,6 +188,7 @@ fun rememberJikkyo(
             onChange(if (listOn) "コメントの一覧 オフ" else "コメントの一覧 オン")
         },
         missing = { onChange("この局には実況がありません") },
+        old = { onChange(jikkyoTooOldMessage(repo.denpaVersion)) },
     )
 }
 
@@ -192,7 +203,7 @@ fun rememberRecordingJikkyo(
     id: Long,
     onChange: (String) -> Unit,
     onUnauthorized: () -> Unit,
-    live: Boolean = false,
+    receives: Boolean = false,
     clocks: (RecordingJikkyo) -> Pair<AirClock, JikkyoPast>,
 ): JikkyoState {
     var found by remember(id) { mutableStateOf<RecordingJikkyo?>(null) }
@@ -209,14 +220,12 @@ fun rememberRecordingJikkyo(
     val made = found?.let(clocks)
     return rememberJikkyo(
         repo,
-        live = live,
+        receives = receives,
         channel = found?.channel,
         household = found != null || householdJikkyo(repo.services),
         air = made?.first ?: AirClock { null },
         onChange = onChange,
         past = made?.second,
-        // 追っかけは、過去ログにまだ入っていない新しいところで NX-Jikkyo を1回だけ遡る
-        backfill = live,
         onUnauthorized = onUnauthorized,
     )
 }
@@ -273,7 +282,6 @@ fun JikkyoLayer(state: JikkyoState) {
         val width = frame.width.toFloat()
         lanes.resize(height / JikkyoLanes.lineHeight(height))
         val take = current.feed.take(now)
-        if (current.backfill) current.feed.backfill(now)
         if (take.jumped) {
             items.clear()
             lanes.clear()
