@@ -3,10 +3,14 @@ package io.github.danything.denpatv
 import io.github.danything.denpatv.data.DenpaVersion
 import io.github.danything.denpatv.data.MIN_DENPA
 import io.github.danything.denpatv.data.MIN_GUIDE
+import io.github.danything.denpatv.data.MIN_JIKKYO
 import io.github.danything.denpatv.data.denpaTooOld
 import io.github.danything.denpatv.data.guideTooOld
 import io.github.danything.denpatv.data.guideTooOldMessage
+import io.github.danything.denpatv.data.jikkyoTooOld
+import io.github.danything.denpatv.data.jikkyoTooOldMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,5 +59,17 @@ class DenpaVersionTest {
         assertNull(guideTooOld(null))
         assertEquals("番組表には denpa v2.33.0 以上が必要です (いまは dev)", guideTooOldMessage("dev"))
         assertEquals("番組表には denpa v2.33.0 以上が必要です", guideTooOldMessage(null))
+    }
+
+    /** 実況のコメントは v2.64.0 から (受け口がこのバージョンから)。dev と読めないバージョンは確かめない (受け口を呼んで 404 なら同じ文) */
+    @Test
+    fun 実況に要るバージョン() {
+        assertEquals("v2.64.0", MIN_JIKKYO.toString())
+        assertTrue(jikkyoTooOld("v2.63.0"))
+        assertFalse(jikkyoTooOld("v2.64.0"))
+        assertFalse(jikkyoTooOld("dev"))
+        assertFalse(jikkyoTooOld(null))
+        assertEquals("実況には denpa v2.64.0 以上が必要です (いまは v2.63.0)", jikkyoTooOldMessage("v2.63.0"))
+        assertEquals("実況には denpa v2.64.0 以上が必要です", jikkyoTooOldMessage(null))
     }
 }

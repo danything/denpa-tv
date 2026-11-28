@@ -25,6 +25,7 @@ import io.github.danything.denpatv.data.AirClock
 import io.github.danything.denpatv.data.AirTime
 import io.github.danything.denpatv.data.Chase
 import io.github.danything.denpatv.data.JikkyoFeed
+import io.github.danything.denpatv.data.Kakolog
 import io.github.danything.denpatv.data.ChaseEnd
 import io.github.danything.denpatv.data.DenpaEvent
 import io.github.danything.denpatv.data.EMPTY_STREAM_MESSAGE
@@ -155,11 +156,11 @@ fun ChasePlayerScreen(
         fromMs = { from + player.currentPosition },
         onUnauthorized = onUnauthorized,
     )
-    // 実況のコメント。放送時刻 W は元の TS の頭の放送時刻 + 元の TS の頭からの位置。過去ログの新しいところは 5 分おきに取り足す
-    val jikkyo = rememberRecordingJikkyo(repo, recording.id, flash, onUnauthorized, live = true) { j ->
+    // 実況のコメント。放送時刻 W は元の TS の頭の放送時刻 + 元の TS の頭からの位置。過去ログは 10 分より前を 5 分おきに取り足し、新しいところはライブの受け口から受ける
+    val jikkyo = rememberRecordingJikkyo(repo, recording.id, flash, onUnauthorized, receives = true) { j ->
         Pair(
             AirClock { AirTime.chase(j.head, position()) },
-            JikkyoPast(j.head, System::currentTimeMillis, every = JikkyoFeed.REFRESH_MS),
+            JikkyoPast(j.head, { System.currentTimeMillis() - Kakolog.LAG_MS }, every = JikkyoFeed.REFRESH_MS),
         )
     }
     // デュアルモノの主・副は、元の TS のときだけ配り直す (変換した追っかけは denpa が選んだ1つだけをエンコードする。下の `baked`)

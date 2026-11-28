@@ -24,7 +24,8 @@ object Http {
     /**
      * `token` があれば `Authorization: Bearer` を付ける (家の外の denpa に登録したとき。docs/pairing.md)。
      * `headers` はほかに付けるもの (GitHub のリリースを引くときの Accept など)
-     * `timeoutMs` は繋ぐのと読むのの時間切れ (ミリ秒)。省けばいつもの長さ (`CONNECT_TIMEOUT_MS`・`READ_TIMEOUT_MS`)
+     * `timeoutMs` は繋ぐのと読むのの時間切れ (ミリ秒)。省けばいつもの長さ (`CONNECT_TIMEOUT_MS`・`READ_TIMEOUT_MS`)。
+     * `opened` は繋ぐ前の HttpURLConnection を受け取る (返事を待っている途中で切れるように。実況のロングポーリング)
      */
     fun request(
         url: URI,
@@ -33,9 +34,11 @@ object Http {
         token: String? = null,
         headers: Map<String, String> = emptyMap(),
         timeoutMs: Int? = null,
+        opened: (HttpURLConnection) -> Unit = {},
     ): Response {
         val connection = connection(url, token, headers, timeoutMs ?: READ_TIMEOUT_MS, timeoutMs ?: CONNECT_TIMEOUT_MS)
         try {
+            opened(connection)
             connection.requestMethod = method
             connection.instanceFollowRedirects = true
             // GET 以外には本文が無くても Content-Type を付ける。denpa (SvelteKit) は Content-Type も Origin も無い

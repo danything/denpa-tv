@@ -37,7 +37,6 @@ class Screenshots {
     @Test
     fun shoot() {
         assumeTrue("撮るときだけ (-e shots 1)", InstrumentationRegistry.getArguments().getString("shots") != null)
-        val jikkyo = FakeJikkyo(showcase = true)
         FakeDenpa(instrumentation.context.assets, showcase = true).use { denpa ->
             shell("pm clear $APP")
             shell("rm -rf $DIR")
@@ -76,11 +75,10 @@ class Screenshots {
             }
             SystemClock.sleep(SETTLE_MS)
         }
-        jikkyo.close()
     }
 
     /**
-     * 実況のコメントと、右の列のコメントの一覧 (作り物の過去ログ。`FakeJikkyo`)。操作の列で「実況」と「コメントの一覧」をオンにして撮り、
+     * 実況のコメントと、右の列のコメントの一覧 (偽の denpa が返す作り物の過去ログ。`FakeJikkyo`)。操作の列で「実況」と「コメントの一覧」をオンにして撮り、
      * いちばん後に撮る (オンのまま終える。ほかの画像に出さない)。終わったら録画の一覧へ戻る (続く軽さの測り方は一覧で送る)
      */
     private fun jikkyo() {

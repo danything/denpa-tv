@@ -100,24 +100,32 @@ class FakeDenpa(
             val headers = generateSequence { readLine(input)?.takeIf { it.isNotEmpty() } }
                 .mapNotNull { line -> line.indexOf(':').takeIf { it > 0 }?.let { line.take(it).trim().lowercase() to line.substring(it + 1).trim() } }
                 .toMap()
-            // 本文 (観た位置の POST) は読み捨てる (readNBytes は Android 13 からなので1つずつ)
-            repeat(headers["content-length"]?.toIntOrNull() ?: 0) { if (input.read() < 0) return }
+            // 本文 (観た位置・実況のライブの受け口の POST) は読む (readNBytes は Android 13 からなので1つずつ)
+            val body = ByteArrayOutputStream()
+            repeat(headers["content-length"]?.toIntOrNull() ?: 0) { input.read().takeIf { it >= 0 }?.let(body::write) ?: return }
             val path = target.substringBefore('?')
             requests += "$method $path"
             targets += target
-            route(method, path, target.substringAfter('?', ""), headers["range"], out)
+            route(method, path, target.substringAfter('?', ""), headers["range"], body.toString("UTF-8"), out)
         } catch (_: SocketException) {
             // アプリが先に閉じた (局を替えた・画面を離れた)
+        } catch (_: InterruptedException) {
+            // 閉じている途中 (実況のライブの受け口が待たせている間)
         }
     }
 
-    private fun route(method: String, path: String, query: String, range: String?, out: OutputStream) {
+    private fun route(method: String, path: String, query: String, range: String?, body: String, out: OutputStream) {
+        // 実況のコメント (smoke もスクリーンショットも同じ。作り物の過去ログは `showcase` で替える)
+        when (path) {
+            "/api/jikkyo/kakolog" -> return json(out, FakeJikkyo.kakolog(query, showcase))
+            "/api/jikkyo/feed" -> return json(out, FakeJikkyo.feed(body))
+        }
         if (showcase && showcaseRoute(method, path, query, range, out)) return
         val recording = Regex("/api/recordings/(\\d+)/(detail|resume|file|poster)").matchEntire(path)
         val live = Regex("/api/services/(\\d+)/live").matchEntire(path)?.groupValues?.get(1)?.toLong()
         val reserve = Regex("/api/programs/(\\d+)/record").matchEntire(path)?.groupValues?.get(1)?.toLong()
         when {
-            path == "/api/health" -> json(out, """{"ok":true,"version":"v2.33.0"}""")
+            path == "/api/health" -> json(out, """{"ok":true,"version":"v2.64.0"}""")
             // 番組表 (地上波だけ。局の一覧と同じ2局)
             path == "/api/programs" -> json(out, guide(query))
             reserve != null -> reserveRoute(method, reserve, out)
@@ -147,7 +155,7 @@ class FakeDenpa(
             // 録画の観方。エンコード済みのファイル (H.264) をそのまま開く
             path == "/api/recordings/$RECORDING_ID/playback" ->
                 json(out, """{"duration":10,"axis":"encoded","audios":[],"offers":[{"codec":"h264","way":"file","source":"encoded","codecs":"avc1.42c00d,mp4a.40.2"},{"codec":"h264","way":"stream","codecs":"avc1.42c00d,mp4a.40.2"}],"ruler":{"kept":null,"skip":0},"auto":${auto(query, FILE_H264)}}""")
-            // 録画の状態。実況のチャンネルと元の TS の頭の放送時刻 (コメントは偽の過去ログ API `FakeJikkyo` から)
+            // 録画の状態。実況のチャンネルと元の TS の頭の放送時刻 (コメントは作り物の過去ログ。`FakeJikkyo`)
             path == "/api/recordings/$RECORDING_ID" ->
                 json(out, """{"id":$RECORDING_ID,"encoded":true,"state":"available","durationMs":10000,"jikkyo":{"channel":"jk1","head":$JIKKYO_HEAD,"end":${JIKKYO_HEAD + 10_000}}}""")
             path == "/api/recordings/$RECORDING_ID/file" -> media(out, "recording.mkv", "video/x-matroska", range)

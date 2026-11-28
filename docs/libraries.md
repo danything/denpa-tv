@@ -85,11 +85,9 @@ Media3 の [ネットワーク スタックのページ](https://developer.andro
 (`androidx.lifecycle:lifecycle-runtime-compose`。Compose UI が既に引いているので依存は増えない) で Activity に沿わせる
 (`ProcessLifecycleOwner` の `lifecycle-process` は使わない)。
 
-→ **実況のコメント (NX-Jikkyo の WebSocket) は自前の WebSocket** (`data/WebSocket.kt`、2026-11-02 に決めた)。HttpURLConnection は WebSocket を話さず、
-OkHttp を戻すほどのことではない。使うのは RFC 6455 のうち、ハンドシェイク・文字のフレーム (断片はつなぐ)・ping / pong・close と、
-送るものにマスクを掛けることだけ (拡張・副プロトコルは使わない)。`wss:` は OS の `SSLSocketFactory` に載せ、繋いだあとホスト名を OS の
-`HostnameVerifier` で確かめる。黙ったまま 30 秒経てば ping を送り、さらに 30 秒黙っていれば切れたとみなす。過去ログ API は HttpURLConnection (`data/Kakolog.kt`。
-denpa のアクセストークンも Referer も付けない)。単体テストは ServerSocket の偽のサーバで見る (`WebSocketTest`)
+→ **実況のコメント (`api/jikkyo/feed`・`api/jikkyo/kakolog`) も HttpURLConnection** で読む (`data/JikkyoServer.kt`)。どちらも denpa の受け口で、
+テレビは外 (NX-Jikkyo・過去ログ API) へ繋がない (2026-11-28 に、denpa v2.64.0 に合わせて自前の WebSocket から替えた)。ライブはロングポーリングで、
+denpa が 20 秒まで返事を待つのは読みの時間切れ (`READ_TIMEOUT_MS`、30 秒) に収まる。局を替えたときは待っている繋ぎを `disconnect` で切る
 
 OkHttp (と Retrofit / Ktor) を採らない理由:
 

@@ -1,14 +1,15 @@
 package io.github.danything.denpatv
 
-import io.github.danything.denpatv.data.ChatRead
+import io.github.danything.denpatv.data.CommentRead
 import io.github.danything.denpatv.data.CommentStore
 import io.github.danything.denpatv.data.CommentStyle
 import io.github.danything.denpatv.data.JikkyoComment
 import io.github.danything.denpatv.data.KEEP_SPAN_MS
 import io.github.danything.denpatv.data.lenientJson
-import io.github.danything.denpatv.data.readChat
+import io.github.danything.denpatv.data.readComment
+import io.github.danything.denpatv.data.readComments
 import io.github.danything.denpatv.data.readMail
-import io.github.danything.denpatv.data.readPackets
+import io.github.danything.denpatv.data.readStyle
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import org.junit.Assert.assertEquals
@@ -16,15 +17,15 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * 実況のコメントのコマンド (色・位置・大きさ)・本文と時刻だけにする・控え。例は denpa の `command.test.ts`・`comments.test.ts` と同じ
+ * 実況のコメントのコマンド (色・位置・大きさ)・本文と時刻だけにする・控え。例は denpa の `command.test.ts`・`live.test.ts`・`comments.test.ts` と同じ
  * (コメントは自分で作った偽物)
  */
 class JikkyoCommentTest {
     private val t = 1_793_188_800_000L // 2026-10-28 12:00:00 UTC
 
     private fun json(text: String): JsonElement = lenientJson.parseToJsonElement(text)
-    private fun chat(text: String) = readChat(json(text))
-    private fun ok(at: Long, text: String, style: CommentStyle? = null) = ChatRead.Ok(JikkyoComment(at, text, style))
+    private fun comment(text: String) = readComment(json(text))
+    private fun ok(at: Long, text: String, style: CommentStyle? = null, src: String = "nx") = CommentRead.Ok(JikkyoComment(at, text, style), src)
 
     @Test
     fun 色_位置_大きさを読み_184_などほかのコマンドは無視する() {
@@ -59,47 +60,53 @@ class JikkyoCommentTest {
     }
 
     @Test
-    fun WebSocket_の数でも過去ログの文字列でも読む_date_usec_はミリ秒に切り捨てる() {
-        assertEquals(ok(t + 123, "わこつ"), chat("""{"date":${t / 1000},"date_usec":123999,"content":"わこつ"}"""))
-        assertEquals(ok(t + 5, "888"), chat("""{"date":"${t / 1000}","date_usec":"5000","content":"888"}"""))
-    }
-
-    @Test
-    fun 本文と時刻と流し方だけを持つ() {
+    fun 受け口のコメントは本文と時刻と流し方と出どころだけを持つ() {
         assertEquals(
-            ok(t, "テスト"),
-            chat("""{"date":${t / 1000},"content":"テスト","user_id":"1234567","mail":"184","premium":1,"no":10}"""),
+            ok(t + 123, "わこつ", src = "hub"),
+            comment("""{"at":${t + 123},"text":"わこつ","mail":"184","src":"hub","id":"x1","user_id":"1234567"}"""),
         )
+        // 出どころが無いもの・知らないものは nx と同じに扱う (知らない値はそのまま持つ)
+        assertEquals(ok(t, "a"), comment("""{"at":$t,"text":"a"}"""))
+        assertEquals(ok(t, "a", src = "future"), comment("""{"at":$t,"text":"a","src":"future"}"""))
     }
 
     @Test
     fun mail_の色_位置_大きさは流し方として持つ() {
-        assertEquals(ok(t, "赤", CommentStyle("#ff0000", "ue", "big")), chat("""{"date":${t / 1000},"content":"赤","mail":"184 red ue big"}"""))
-        val (comments, _) = readPackets(json("""[{"chat":{"date":"${t / 1000}","content":"下","mail":"shita"}}]""") as JsonArray)
-        assertEquals(listOf(JikkyoComment(t, "下", CommentStyle(place = "shita"))), comments)
+        assertEquals(ok(t, "赤", CommentStyle("#ff0000", "ue", "big")), comment("""{"at":$t,"text":"赤","mail":"184 red ue big"}"""))
+        val (comments, _) = readComments(json("""[{"at":$t,"text":"下","mail":"shita","src":"nicolive"}]""") as JsonArray)
+        assertEquals(listOf(ok(t, "下", CommentStyle(place = "shita"), "nicolive")), comments)
     }
 
     @Test
-    fun 本文が空_運営のコメントは流さない() {
-        assertEquals(ChatRead.Skip, chat("""{"date":${t / 1000},"content":"  "}"""))
-        assertEquals(ChatRead.Skip, chat("""{"date":${t / 1000},"content":"/nicoad {}"}"""))
+    fun 本文が空_運営のコメントは流さない_本文の前後の空白は落とす() {
+        assertEquals(CommentRead.Skip, comment("""{"at":$t,"text":"  "}"""))
+        assertEquals(CommentRead.Skip, comment("""{"at":$t,"text":"/nicoad {}"}"""))
+        assertEquals(ok(t, "8888"), comment("""{"at":$t,"text":" 8888 "}"""))
     }
 
     @Test
     fun 形式がずれていれば_Odd() {
-        assertEquals(ChatRead.Odd, chat("""{"content":"時刻が無い"}"""))
-        assertEquals(ChatRead.Odd, chat("""{"date":"x","content":"a"}"""))
-        assertEquals(ChatRead.Odd, chat("""{"date":${t / 1000},"content":5}"""))
-        assertEquals(ChatRead.Odd, chat("null"))
+        assertEquals(CommentRead.Odd, comment("""{"text":"時刻が無い"}"""))
+        // 時刻は数だけ (受け口は数で返す)
+        assertEquals(CommentRead.Odd, comment("""{"at":"$t","text":"a"}"""))
+        assertEquals(CommentRead.Odd, comment("""{"at":$t,"text":5}"""))
+        assertEquals(CommentRead.Odd, comment("null"))
     }
 
     @Test
-    fun 過去ログの_packet_は_chat_の行だけ読み_ずれた行を数える() {
-        val (comments, odd) = readPackets(
-            json("""[{"chat":{"date":"${t / 1000}","content":"a"}},{"thread":{}},{"chat":{"content":"b"}}]""") as JsonArray,
-        )
-        assertEquals(listOf(JikkyoComment(t, "a")), comments)
+    fun comments_は流さないものを飛ばし_ずれた行を数える() {
+        val (comments, odd) = readComments(json("""[{"at":$t,"text":"a"},{"at":$t,"text":""},{"text":"b"}]""") as JsonArray)
+        assertEquals(listOf(ok(t, "a")), comments)
         assertEquals(1, odd)
+    }
+
+    @Test
+    fun 公式のコメントの_style_は読めるところだけ読み_既定なら持たない() {
+        assertEquals(CommentStyle("#ff0000", "ue", "big"), readStyle(json("""{"color":"#FF0000","place":"ue","size":"big"}""")))
+        assertEquals(CommentStyle(place = "shita"), readStyle(json("""{"color":"red","place":"shita","size":"huge"}""")))
+        assertNull(readStyle(json("""{"color":"#ffffff"}""")))
+        assertNull(readStyle(json("\"ue\"")))
+        assertNull(readStyle(null))
     }
 
     @Test
